@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — trade</title>
+  <meta name="description" content="Trade synthetic 1000x perpetuals on meme coins against the Confetti house on HyperEVM. Direct wallet transactions, no order book, no funding.">
+  <meta name="theme-color" content="#f4ecd8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="paper.css">
+  <script>
+    /* Apply a saved night theme before first paint so the page never flashes cream. */
+    try {
+      if (localStorage.getItem('confetti.theme') === 'night') {
+        document.documentElement.setAttribute('data-theme', 'night');
+      }
+    } catch (e) { /* storage blocked: stay on paper */ }
+  </script>
+  <style>
+    /* Page-specific rules only. Tokens and components come from paper.css. */
+    .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
+
+    .header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+    .nav a[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+
+    /* Market bar: selector, live price, stats chips */
+    .market-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 0 0 var(--gap); }
+    .market-select { position: relative; flex: none; }
+    .market-btn {
+      -webkit-appearance: none; appearance: none;
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 36px; padding: 0 10px;
+      border: 1px solid var(--ink); background: var(--raised); color: var(--ink);
+      font-family: var(--font-display); font-size: var(--text-xl); line-height: 1; cursor: pointer;
+    }
+    .market-btn:hover { background: var(--sunken); }
+    .market-caret { font-family: var(--font-ui); font-size: 11px; color: var(--ink-faint); }
+    .market-menu {
+      position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
+      width: min(360px, calc(100vw - 2 * var(--gutter)));
+      max-height: 60vh; overflow: auto;
+      background: var(--raised); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--sunken);
+    }
+    .market-menu[hidden] { display: none; }
+    .market-filter { position: sticky; top: 0; padding: 8px; background: var(--raised); border-bottom: 1px solid var(--rule); }
+    .market-filter .input { min-height: 30px; font-size: var(--text-sm); }
+    .market-group { padding: 6px 10px 2px; border-bottom: 1px solid var(--rule); }
+    .market-row {
+      -webkit-appearance: none; appearance: none;
+      display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center;
+      width: 100%; padding: 6px 10px; border: 0; border-bottom: 1px dotted var(--rule);
+      background: transparent; color: var(--ink); font-family: var(--font-ui); font-size: var(--text-sm);
+      text-align: left; cursor: pointer;
+    }
+    .market-row:hover, .market-row[aria-selected="true"] { background: var(--sunken); }
+    .market-row .sym { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: var(--text-lg); line-height: 1.1; }
+    .market-row .px { font-family: var(--font-mono); text-align: right; }
+    .market-row .chg { font-family: var(--font-mono); font-size: var(--text-xs); min-width: 58px; text-align: right; }
+    .market-row .lev { grid-column: 1; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .market-row.is-soon .sym, .market-row.is-soon .px { opacity: 0.55; }
+    .market-tag { font-family: var(--font-ui); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--rule-strong); padding: 1px 4px; color: var(--ink-faint); }
+    .market-price { font-family: var(--font-mono); font-size: var(--text-xl); font-variant-numeric: tabular-nums; }
+    .market-change { font-family: var(--font-mono); font-size: var(--text-sm); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+    .chip-live.is-stale { border-color: var(--neg); color: var(--neg); }
+
+    /* Chart */
+    .chart-canvas { position: absolute; inset: 0; }
+    .chart-head { position: absolute; top: 8px; left: 8px; z-index: 3; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+    .chart-box .pill { position: static; }
+    .chart-meta { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .chart-note { position: absolute; left: 8px; bottom: 30px; z-index: 3; padding: 2px 6px; border: 1px solid var(--rule); background: var(--sunken); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .chart-note[hidden] { display: none; }
+
+    /* Order panel */
+    .order-form { border-top: 1px solid var(--rule); }
+    .lev-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .lev-input { width: 84px; min-height: 26px; padding: 0 6px; text-align: right; font-size: var(--text-sm); }
+    .hint { min-height: 1.4em; font-size: var(--text-xs); line-height: 1.4; color: var(--ink-faint); text-align: center; }
+    .hint.is-err { color: var(--neg); }
+    .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); text-align: center; }
+
+    /* Bottom tabs */
+    .tab .count { margin-left: 4px; font-family: var(--font-mono); color: var(--ink-faint); letter-spacing: 0; }
+    .tab-panel[hidden] { display: none; }
+    .empty { padding: 20px 12px; color: var(--ink-faint); font-size: var(--text-sm); text-align: center; }
+    .table td.actions { text-align: right; }
+    .table td.actions .btn { min-height: 24px; }
+    .hist-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-top: 1px solid var(--rule); }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 8px; }
+    .status-grid .kv-val a { text-decoration-color: var(--rule); }
+    .status-grid h4 { margin: 12px 0 2px; }
+
+    /* Dialogs */
+    .modal { width: min(420px, calc(100vw - 2 * var(--gutter))); padding: 0; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 8px 8px 0 var(--sunken); }
+    .modal::backdrop { background: rgba(42, 37, 32, 0.35); }
+    [data-theme="night"] .modal::backdrop { background: rgba(0, 0, 0, 0.55); }
+    .modal form { margin: 0; }
+    .modal .panel-head { font-size: var(--text-xl); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-actions .btn { flex: 1 1 auto; }
+
+    /* Toasts */
+    .toasts { position: fixed; right: var(--gutter); bottom: var(--gutter); z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
+    .toast { pointer-events: auto; padding: 8px 12px; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); font-size: var(--text-sm); line-height: 1.4; box-shadow: 4px 4px 0 var(--sunken); overflow-wrap: anywhere; }
+    .toast-ok { border-color: var(--pos); }
+    .toast-err { border-color: var(--neg); }
+    .toast-pending { border-color: var(--rule-strong); }
+    .toast a { color: var(--ink); }
+
+    .trade-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: var(--text-xs); color: var(--ink-faint); }
+    .trade-foot .spacer { flex: 1 1 auto; }
+    .trade-foot a { color: var(--ink-muted); }
+
+    @media (max-width: 600px) {
+      .header-actions { margin-left: 0; width: 100%; }
+      .header-actions .btn { flex: 1 1 0; }
+      .chips { margin-left: 0; width: 100%; }
+      .market-price { font-size: var(--text-lg); }
+      .toasts { right: var(--gutter); left: var(--gutter); width: auto; }
+    }
+  </style>
+</head>
+<body class="trade">
+
+  <header class="header container-fluid">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <nav class="nav" aria-label="Primary">
+      <a href="trade.html" aria-current="page">Trade</a>
+      <a href="#" data-soon="Portfolio" aria-disabled="true">Portfolio</a>
+      <a href="#" data-soon="House" aria-disabled="true">House</a>
+      <a href="#" data-soon="Confetti" aria-disabled="true">Confetti</a>
+      <a href="#" data-soon="Leaderboard" aria-disabled="true">Leaderboard</a>
+    </nav>
+    <div class="header-actions">
+      <button class="btn btn-sm" id="depositBtn" type="button">Deposit</button>
+      <button class="btn btn-sm" id="withdrawBtn" type="button">Withdraw</button>
+      <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
+    </div>
+  </header>
+
+  <main class="container trade-main">
+
+    <!-- Market selector, live price, stats -->
+    <div class="market-bar">
+      <div class="market-select">
+        <button class="market-btn" id="marketBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="marketMenu">
+          <span id="marketSym">—</span>
+          <span class="badge" id="marketTier" title="Tier">·</span>
+          <span class="market-caret" aria-hidden="true">▼</span>
+        </button>
+        <div class="market-menu" id="marketMenu" role="listbox" aria-label="Markets" hidden>
+          <div class="market-filter">
+            <input class="input" id="marketFilter" type="search" placeholder="Filter markets" autocomplete="off" spellcheck="false" aria-label="Filter markets">
+          </div>
+          <div id="marketList"></div>
+        </div>
+      </div>
+      <span class="market-price" id="marketPrice">—</span>
+      <span class="market-change" id="marketChange" title="24h change"></span>
+      <div class="chips">
+        <span class="chip"><span class="chip-label">24h vol</span><span class="chip-value" id="chipVol">—</span></span>
+        <span class="chip"><span class="chip-label">long oi</span><span class="chip-value" id="chipLongOi">—</span></span>
+        <span class="chip"><span class="chip-label">short oi</span><span class="chip-value" id="chipShortOi">—</span></span>
+        <span class="chip"><span class="chip-label">tick</span><span class="chip-value">1m</span></span>
+        <span class="chip chip-live" id="chipLive"><span class="dot dot-pulse" aria-hidden="true"></span><span id="chipLiveText">live</span></span>
+      </div>
+    </div>
+
+    <div class="trade-layout">
+
+      <!-- Candlestick chart -->
+      <section class="trade-chart" aria-label="Price chart">
+        <div class="chart-box" id="chartBox">
+          <div class="chart-canvas" id="chart"></div>
+          <div class="chart-head">
+            <span class="pill" id="pricePill">—</span>
+            <span class="chart-meta" id="chartMeta">1m</span>
+          </div>
+          <span class="chart-note" id="chartNote" hidden>candles unavailable · retrying</span>
+        </div>
+      </section>
+
+      <!-- Order panel -->
+      <aside class="trade-side" aria-label="Order panel">
+        <div class="panel">
+          <div class="panel-body">
+            <div class="kv"><span class="kv-key">Account Equity</span><span class="kv-val" id="eqEquity">—</span></div>
+            <div class="kv"><span class="kv-key">Available to Trade</span><span class="kv-val" id="eqAvailable">—</span></div>
+            <div class="kv"><span class="kv-key">Margin in Use</span><span class="kv-val" id="eqMargin">—</span></div>
+            <div class="kv"><span class="kv-key">Open PnL</span><span class="kv-val" id="eqPnl">—</span></div>
+          </div>
+
+          <form class="panel-body stack order-form" id="orderForm" autocomplete="off" novalidate>
+            <div class="seg" id="sideSeg" role="group" aria-label="Direction">
+              <button class="seg-item seg-long" type="button" data-side="long" aria-pressed="true">Long</button>
+              <button class="seg-item seg-short" type="button" data-side="short" aria-pressed="false">Short</button>
+            </div>
+
+            <label class="label" for="marginInput">Margin</label>
+            <div class="input-group">
+              <input class="input" id="marginInput" type="number" min="10" step="any" inputmode="decimal" placeholder="10.00">
+              <span class="unit">USDC</span>
+            </div>
+            <div class="quick" role="group" aria-label="Quick size">
+              <button class="btn" type="button" data-mult="0.5">½x</button>
+              <button class="btn" type="button" data-mult="2">2x</button>
+              <button class="btn" type="button" data-mult="max">Max</button>
+            </div>
+
+            <div class="lev-row">
+              <label class="label" for="levInput">Leverage</label>
+              <div class="input-group" style="width:auto">
+                <span class="unit" style="border-left:0;border-right:1px solid var(--rule)">x</span>
+                <input class="input lev-input" id="levInput" type="number" min="1" max="1000" step="1" inputmode="numeric" value="100">
+              </div>
+            </div>
+            <input class="slider" id="levSlider" type="range" min="0" max="1000" value="0" aria-label="Leverage">
+            <div class="slider-scale"><span class="safe">x1 Safe</span><span class="wild" id="levWild">Wild x1000</span></div>
+
+            <div>
+              <div class="kv"><span class="kv-key">Order Value</span><span class="kv-val" id="orderValue">—</span></div>
+              <div class="kv"><span class="kv-key">Bust Price</span><span class="kv-val neg" id="bustPrice">—</span></div>
+              <div class="kv"><span class="kv-key">Max Profit</span><span class="kv-val" id="maxProfit" title="Profit on one position is capped at the market's payout cap times its margin; anything above stays with the LP.">—</span></div>
+            </div>
+
+            <button class="btn btn-lg btn-block btn-accent" id="actionBtn" type="submit">Connect wallet</button>
+            <div class="hint" id="actionHint" aria-live="polite"></div>
+            <div class="fineprint" id="finePrint">No funding, no spread. Wins pay the impact haircut plus 2%.</div>
+          </form>
+        </div>
+      </aside>
+
+      <!-- Positions / History / Status -->
+      <section class="trade-bottom panel" aria-label="Account">
+        <div class="tabs" role="tablist">
+          <button class="tab" id="tabPositions" type="button" role="tab" aria-selected="true" aria-controls="panelPositions" data-tab="positions">Positions<span class="count" id="posCount"></span></button>
+          <button class="tab" id="tabHistory" type="button" role="tab" aria-selected="false" aria-controls="panelHistory" data-tab="history">History</button>
+          <button class="tab" id="tabStatus" type="button" role="tab" aria-selected="false" aria-controls="panelStatus" data-tab="status">Status</button>
+          <span class="grow"></span>
+          <button class="btn btn-sm btn-ghost" id="closeAllBtn" type="button" disabled>Close all</button>
+        </div>
+
+        <div class="tab-panel" id="panelPositions" role="tabpanel" aria-labelledby="tabPositions">
+          <div class="table-wrap">
+            <table class="table" id="posTable">
+              <thead>
+                <tr>
+                  <th>Market</th><th>Side</th>
+                  <th class="right">Size</th><th class="right">Margin</th>
+                  <th class="right">Entry</th><th class="right">Mark</th><th class="right">Bust</th>
+                  <th class="right">PnL (est.)</th><th class="right"></th>
+                </tr>
+              </thead>
+              <tbody id="posBody"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
+        </div>
+
+        <div class="tab-panel" id="panelHistory" role="tabpanel" aria-labelledby="tabHistory" hidden>
+          <div class="table-wrap">
+            <table class="table" id="histTable">
+              <thead>
+                <tr><th>Time</th><th>Event</th><th>Market</th><th>Details</th><th class="right">Tx</th></tr>
+              </thead>
+              <tbody id="histBody"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="histEmpty">Connect a wallet to load your history.</div>
+          <div class="hist-foot">
+            <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
+            <span class="faint xs" id="histRange"></span>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panelStatus" role="tabpanel" aria-labelledby="tabStatus" hidden>
+          <div class="status-grid">
+            <div>
+              <h4>Chain</h4>
+              <div class="kv"><span class="kv-key">Network</span><span class="kv-val" id="stChain">—</span></div>
+              <div class="kv"><span class="kv-key">Latest block</span><span class="kv-val" id="stBlock">—</span></div>
+              <div class="kv"><span class="kv-key">RPC</span><span class="kv-val truncate" id="stRpc">—</span></div>
+              <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="stWallet">not connected</span></div>
+              <div class="kv"><span class="kv-key">Wallet chain</span><span class="kv-val" id="stWalletChain">—</span></div>
+              <h4>House</h4>
+              <div class="kv"><span class="kv-key">LP balance</span><span class="kv-val" id="stLp">—</span></div>
+              <div class="kv"><span class="kv-key">Fee pool</span><span class="kv-val" id="stFeePool">—</span></div>
+              <div class="kv"><span class="kv-key">Queued payouts</span><span class="kv-val" id="stQueued">—</span></div>
+              <div class="kv"><span class="kv-key">Queue entries</span><span class="kv-val" id="stQueueLen">—</span></div>
+              <div class="kv"><span class="kv-key">Opens paused</span><span class="kv-val" id="stPaused">—</span></div>
+              <div class="kv"><span class="kv-key">LP breaker</span><span class="kv-val" id="stBreaker">—</span></div>
+              <div class="kv"><span class="kv-key">Markets on chain</span><span class="kv-val" id="stInstCount">—</span></div>
+            </div>
+            <div>
+              <h4>Contracts</h4>
+              <div class="kv"><span class="kv-key">Exchange</span><span class="kv-val" id="stExchange">—</span></div>
+              <div class="kv"><span class="kv-key">USDC</span><span class="kv-val" id="stUsdc">—</span></div>
+              <div class="kv"><span class="kv-key">Oracle</span><span class="kv-val" id="stOracle">—</span></div>
+              <div class="kv"><span class="kv-key">CONFETTI</span><span class="kv-val" id="stConfetti">—</span></div>
+              <div class="kv"><span class="kv-key">Tokenomics</span><span class="kv-val" id="stTokenomics">—</span></div>
+              <div class="kv"><span class="kv-key">Staking</span><span class="kv-val" id="stStaking">—</span></div>
+              <div class="kv"><span class="kv-key">Owner</span><span class="kv-val" id="stOwner">—</span></div>
+              <div class="kv"><span class="kv-key">Fee recipient</span><span class="kv-val" id="stFeeRecipient">—</span></div>
+              <h4>This market</h4>
+              <div class="kv"><span class="kv-key">Instrument</span><span class="kv-val" id="stInst">—</span></div>
+              <div class="kv"><span class="kv-key">Deadband / clamp</span><span class="kv-val" id="stBand">—</span></div>
+              <div class="kv"><span class="kv-key">Impact curve</span><span class="kv-val" id="stCurve">—</span></div>
+              <div class="kv"><span class="kv-key">OI caps L / S</span><span class="kv-val" id="stCaps">—</span></div>
+              <div class="kv"><span class="kv-key">Oracle price</span><span class="kv-val" id="stOraclePx">—</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>every trade is against the house · HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">x</a>
+      <button class="btn btn-sm btn-ghost" id="themeToggle" type="button" aria-pressed="false">Night</button>
+    </footer>
+  </main>
+
+  <!-- Deposit -->
+  <dialog class="modal" id="depositModal" aria-labelledby="depositTitle">
+    <form method="dialog" id="depositForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="depositTitle">Deposit USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+      <div class="panel-body stack">
+        <div class="kv"><span class="kv-key">Wallet USDC</span><span class="kv-val" id="depWallet">—</span></div>
+        <div class="kv"><span class="kv-key">Exchange available</span><span class="kv-val" id="depAvailable">—</span></div>
+        <div class="kv"><span class="kv-key">Current allowance</span><span class="kv-val" id="depAllowance">—</span></div>
+        <label class="label" for="depositAmount">Amount</label>
+        <div class="input-group">
+          <input class="input" id="depositAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00">
+          <span class="unit">USDC</span>
+        </div>
+        <div class="quick"><button class="btn" type="button" id="depMax">Max</button></div>
+        <div class="hint" id="depositHint">Approves the exact amount, then deposits it into your exchange balance.</div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="depositSubmit">Approve &amp; deposit</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Withdraw -->
+  <dialog class="modal" id="withdrawModal" aria-labelledby="withdrawTitle">
+    <form method="dialog" id="withdrawForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="withdrawTitle">Withdraw USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+      <div class="panel-body stack">
+        <div class="kv"><span class="kv-key">Exchange available</span><span class="kv-val" id="wdAvailable">—</span></div>
+        <div class="kv"><span class="kv-key">Margin in use</span><span class="kv-val" id="wdMargin">—</span></div>
+        <label class="label" for="withdrawAmount">Amount</label>
+        <div class="input-group">
+          <input class="input" id="withdrawAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00">
+          <span class="unit">USDC</span>
+        </div>
+        <div class="quick"><button class="btn" type="button" id="wdMax">Max</button></div>
+        <div class="hint" id="withdrawHint">Only the available balance can be withdrawn. Margin in open positions stays locked.</div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="withdrawSubmit">Withdraw</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <!-- ethers v6 from cdnjs. lightweight-charts is not on cdnjs at all, so the exact
+       4.1.3 standalone build comes from jsdelivr with unpkg as a fallback. -->
+  <!-- Both carry the sha384 of the exact file (subresource integrity): ethers builds and signs
+       every transaction, so a modified copy from a CDN or an on-path attacker must be refused,
+       not run. The unpkg fallback serves the same npm file, hence the same hash. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" integrity="sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP" crossorigin="anonymous" referrerpolicy="no-referrer"
+          onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
+  <script src="trade.js" defer></script>
+</body>
+</html>

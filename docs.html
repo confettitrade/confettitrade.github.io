@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — docs</title>
+  <meta name="description" content="How Confetti works: the clamped Hyperliquid price feed, tiered meme-coin markets, discrete positions, settlement against the house, the CONFETTI mint curve, roles and risks.">
+  <meta name="theme-color" content="#f4ecd8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="paper.css">
+  <script>
+    /* Apply a saved night theme before first paint so the page never flashes cream. */
+    try {
+      if (localStorage.getItem('confetti.theme') === 'night') {
+        document.documentElement.setAttribute('data-theme', 'night');
+      }
+    } catch (e) { /* storage blocked: stay on paper */ }
+  </script>
+  <style>
+    /* ------------------------------------------------------------------
+       docs.html only. Tokens and components come from paper.css.
+       ------------------------------------------------------------------ */
+
+    .skip {
+      position: absolute;
+      left: -999px;
+      top: 8px;
+      z-index: 20;
+      padding: 8px 12px;
+      background: var(--ink);
+      color: var(--page);
+    }
+    .skip:focus { left: 8px; }
+
+    .header .container {
+      display: flex;
+      align-items: center;
+      gap: var(--gap);
+      width: 100%;
+    }
+    .header .nav { flex: none; }
+    .header-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      flex: none;
+      min-width: 0;
+    }
+    .header .chip { min-width: 0; }
+    .header .chip-value {
+      text-transform: none;
+      letter-spacing: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Two columns on desktop: sticky contents, then the text. */
+    .docs-layout {
+      display: grid;
+      grid-template-columns: 224px minmax(0, 1fr);
+      gap: 44px;
+      align-items: start;
+      padding-top: 28px;
+      padding-bottom: 72px;
+    }
+
+    .toc {
+      position: sticky;
+      top: calc(var(--header-h) + 20px);
+      border: 1px solid var(--rule);
+      background: var(--raised);
+    }
+
+    .toc summary {
+      list-style: none;
+      cursor: default;
+      pointer-events: none;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--rule);
+      font-family: var(--font-ui);
+      font-size: var(--text-xs);
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .toc summary::-webkit-details-marker { display: none; }
+    .toc summary .mark { display: none; }
+
+    .toc-list,
+    .toc-list ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .toc-list { padding: 6px 0; }
+    .toc-list a {
+      display: block;
+      padding: 5px 12px 5px 10px;
+      border-left: 2px solid transparent;
+      color: var(--ink-muted);
+      font-size: var(--text-sm);
+      text-decoration: none;
+      line-height: 1.35;
+    }
+    .toc-list a:hover { color: var(--ink); }
+    .toc-list a[aria-current="true"] {
+      color: var(--ink);
+      border-left-color: var(--accent);
+    }
+    .toc-list ol a {
+      padding-left: 24px;
+      font-size: var(--text-xs);
+    }
+    .toc-list .n {
+      display: inline-block;
+      width: 1.6em;
+      font-family: var(--font-mono);
+      color: var(--ink-faint);
+    }
+    .toc-foot {
+      padding: 8px 12px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--text-xs);
+      color: var(--ink-faint);
+    }
+
+    .docs-main {
+      min-width: 0;
+      max-width: 780px;
+    }
+    .docs-main > header { margin-bottom: 28px; }
+    .docs-main h1 { margin-bottom: 6px; }
+    .lede {
+      font-family: var(--font-display);
+      font-size: 19px;
+      line-height: 1.45;
+      color: var(--ink-muted);
+      max-width: 60ch;
+    }
+
+    .docs-main section {
+      padding: 4px 0 28px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .docs-main section:last-of-type { border-bottom: 0; }
+    .docs-main h2 {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 14px;
+      scroll-margin-top: calc(var(--header-h) + 20px);
+    }
+    .docs-main h2 .n {
+      font-family: var(--font-mono);
+      font-size: var(--text-md);
+      color: var(--ink-faint);
+    }
+    .docs-main h3 {
+      margin-top: 22px;
+      scroll-margin-top: calc(var(--header-h) + 20px);
+    }
+    .docs-main p,
+    .docs-main li { max-width: 70ch; }
+    .docs-main ul,
+    .docs-main ol { padding-left: 1.3em; margin: 0 0 1em; }
+    .docs-main li { margin-bottom: 0.35em; }
+    .docs-main li::marker { color: var(--ink-faint); }
+
+    .rules { list-style: none; padding: 0; counter-reset: rule; }
+    .rules li {
+      counter-increment: rule;
+      display: grid;
+      grid-template-columns: 2.2em minmax(0, 1fr);
+      gap: 6px;
+      padding: 8px 0;
+      border-top: 1px dotted var(--rule);
+    }
+    .rules li::before {
+      content: counter(rule, decimal-leading-zero);
+      font-family: var(--font-mono);
+      color: var(--ink-faint);
+    }
+    .rules li b { font-weight: 600; }
+
+    /* A parameter that can be read from chain. JS adds .is-live and a title. */
+    .param {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .param.is-live {
+      text-decoration: underline dotted var(--pos);
+      text-decoration-thickness: 1.5px;
+      text-underline-offset: 3px;
+    }
+    .addr {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      word-break: break-all;
+      white-space: normal;
+    }
+
+    /* Formula blocks: mono, boxed, fractions built from flex columns. */
+    .formula {
+      margin: 12px 0 18px;
+      padding: 12px 14px;
+      border: 1px solid var(--rule);
+      background: var(--sunken);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.9;
+      overflow-x: auto;
+    }
+    .formula .fname {
+      display: block;
+      margin-bottom: 2px;
+      font-family: var(--font-ui);
+      font-size: var(--text-xs);
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .formula .line {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0 6px;
+      white-space: nowrap;
+    }
+    .formula .op { color: var(--ink-faint); }
+    .formula .note {
+      font-family: var(--font-ui);
+      font-size: var(--text-xs);
+      color: var(--ink-muted);
+      white-space: normal;
+    }
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      vertical-align: middle;
+      margin: 0 3px;
+      line-height: 1.3;
+    }
+    .frac-n { padding: 0 5px 1px; border-bottom: 1px solid var(--ink); }
+    .frac-d { padding: 1px 5px 0; }
+    .paren {
+      display: inline-flex;
+      align-items: center;
+      font-size: 1.6em;
+      font-weight: 300;
+      color: var(--ink-faint);
+      line-height: 1;
+    }
+
+    /* Figures: inline SVG drawn by the script from the formulas. */
+    .fig {
+      margin: 14px 0 18px;
+      padding: 12px 12px 8px;
+      border: 1px solid var(--rule);
+      background: var(--raised);
+    }
+    .fig svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .fig .axis { stroke: var(--rule-strong); stroke-width: 1; fill: none; }
+    .fig .grid { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 2 3; fill: none; }
+    .fig .curve { stroke: var(--ink); stroke-width: 2; fill: none; stroke-linejoin: round; }
+    .fig .flat { stroke: var(--pos); stroke-width: 2; fill: none; }
+    .fig .ref { stroke: var(--neg); stroke-width: 1; stroke-dasharray: 4 3; fill: none; }
+    .fig .lbl { fill: var(--ink-faint); }
+    .fig .lbl-ink { fill: var(--ink); }
+    .fig .lbl-pos { fill: var(--pos); }
+    .fig .lbl-neg { fill: var(--neg); }
+    .fig .pt { fill: var(--page); stroke: var(--ink); stroke-width: 1.5; }
+    .fig .now { fill: var(--accent); stroke: var(--page); stroke-width: 1.5; }
+    .fig .band { fill: var(--pos-soft); }
+    .fig-cap {
+      margin-top: 8px;
+      font-size: var(--text-xs);
+      color: var(--ink-faint);
+      max-width: none;
+    }
+
+    .table .ui { font-family: var(--font-ui); white-space: normal; }
+    .table-wrap { margin: 10px 0 16px; }
+    .table caption {
+      caption-side: top;
+      text-align: left;
+      padding: 0 0 6px;
+      font-family: var(--font-ui);
+      font-size: var(--text-xs);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .status-open { color: var(--pos); }
+    .status-paused { color: var(--neg); }
+    .status-off { color: var(--ink-faint); }
+
+    .house { margin: 16px 0 20px; }
+    .house .panel-body {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0 24px;
+    }
+    .house .kv-key { font-size: var(--text-xs); }
+    .house .kv-val { font-size: var(--text-sm); }
+
+    .example .panel-head { font-size: var(--text-md); }
+    .example .kv-key { font-size: var(--text-xs); }
+    .example .kv-val { font-size: var(--text-xs); }
+    .example .panel-foot {
+      font-size: var(--text-xs);
+      color: var(--ink-muted);
+    }
+
+    .docs-foot {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 20px;
+      padding-top: 20px;
+      padding-bottom: 40px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--text-xs);
+      color: var(--ink-faint);
+    }
+    .docs-foot .wordmark { font-size: var(--text-lg); }
+    .docs-foot a { color: var(--ink-muted); }
+    .docs-foot .spacer { flex: 1 1 auto; }
+
+    /* Phones and narrow tablets: contents collapse above the text. */
+    @media (max-width: 899px) {
+      .docs-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 20px;
+        padding-top: 16px;
+      }
+      .toc { position: static; }
+      .toc summary {
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--ink);
+      }
+      .toc summary .mark { display: inline; font-family: var(--font-mono); color: var(--ink-faint); }
+      .toc[open] summary .mark::before { content: "[ − ]"; }
+      .toc:not([open]) summary .mark::before { content: "[ + ]"; }
+      .toc:not([open]) summary { border-bottom: 0; }
+      .toc-foot { display: none; }
+      .house .panel-body { grid-template-columns: minmax(0, 1fr); }
+    }
+
+    @media (max-width: 600px) {
+      /* Two rows: wordmark and nav, then the status chip and the theme button. */
+      .header .container { flex-wrap: wrap; row-gap: 4px; }
+      .header-tools {
+        flex-basis: 100%;
+        margin-left: 0;
+        justify-content: space-between;
+      }
+      .formula { font-size: 12px; padding: 10px; }
+      .lede { font-size: 17px; }
+    }
+
+    @media print {
+      .toc, .docs-foot .btn { display: none !important; }
+      .docs-layout { display: block; }
+    }
+  </style>
+</head>
+<body class="docs">
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="header">
+    <div class="container">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <nav class="nav" aria-label="Site">
+        <a href="trade.html">Trade</a>
+        <a href="docs.html" aria-current="page">Docs</a>
+      </nav>
+      <div class="header-tools">
+        <span class="chip" id="chainStatus" title="Parameters marked with a dotted green underline are read from the contracts.">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="chip-value" id="chainStatusText">spec defaults · not deployed</span>
+        </span>
+        <button class="btn btn-sm btn-ghost" id="themeToggle" type="button" aria-pressed="false">Night</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+
+    <details class="toc" id="toc" open>
+      <summary>Contents <span class="mark" aria-hidden="true"></span></summary>
+      <ol class="toc-list" id="tocList">
+        <li><a href="#what"><span class="n">1</span>What it is</a></li>
+        <li><a href="#price"><span class="n">2</span>Price feed</a></li>
+        <li><a href="#markets"><span class="n">3</span>Markets and tiers</a></li>
+        <li><a href="#positions"><span class="n">4</span>Positions</a></li>
+        <li><a href="#settlement"><span class="n">5</span>Settlement</a>
+          <ol>
+            <li><a href="#losing">Losing close</a></li>
+            <li><a href="#winning">Winning close</a></li>
+            <li><a href="#queue">Queue and fee pool</a></li>
+          </ol>
+        </li>
+        <li><a href="#confetti"><span class="n">6</span>CONFETTI</a></li>
+        <li><a href="#roles"><span class="n">7</span>Roles and safety</a></li>
+        <li><a href="#risks"><span class="n">8</span>Risks</a></li>
+      </ol>
+      <div class="toc-foot">v1 spec · HyperEVM (999)</div>
+    </details>
+
+    <main class="docs-main" id="content">
+      <header>
+        <h1>How Confetti works</h1>
+        <p class="lede">Synthetic perpetuals on meme coins, up to 1000x, settled against a house that is funded only by losses. Everything below is enforced by immutable contracts on HyperEVM.</p>
+        <p class="sm muted">Numbers with a <span class="param is-live">dotted green underline</span> are read live from the contracts. Everything else is the spec. Fees are hard-coded and have no setter.</p>
+      </header>
+
+      <!-- 1 ------------------------------------------------------------- -->
+      <section id="what" aria-labelledby="what-h">
+        <h2 id="what-h"><span class="n">1</span>What it is</h2>
+        <p>Confetti is a house, not an exchange. There is no order book and no counterparty on the other side of your trade except the protocol's own liquidity pool, which we call the LP. When you open a position you are betting against the LP at the mid price of Hyperliquid's order book, read on-chain at that moment. When you close, the same kind of price settles you.</p>
+        <p>The LP starts at zero and nobody can deposit into it. It grows only when traders lose, and it pays winners only out of what earlier losers left behind. The mechanism is the one Papertrade published for BTC and ETH; this is a fresh implementation of it, written for the meme-coin perpetuals Hyperliquid already quotes, with the extra guards those markets need.</p>
+        <p>Five rules cover most of it:</p>
+        <ol class="rules">
+          <li><span><b>One price for everyone.</b> Every open, close and liquidation settles at the clamped Hyperliquid mid. No spread, no funding, no fee on notional, no slippage.</span></li>
+          <li><span><b>Positions are discrete.</b> Margin and leverage are fixed when you open. You close in full or you get liquidated. There are no top-ups, partial closes or edits.</span></li>
+          <li><span><b>Wins pay a haircut.</b> A winning close is scaled down by an impact curve that bites hardest on small moves, then pays a 2% fee. Losses pay nothing extra: a 2% fee is carved out of what the LP gains.</span></li>
+          <li><span><b>Winners wait if the LP is dry.</b> Margin always comes back immediately. Profit the LP cannot pay goes into a first-in, first-out queue and is paid as new losses arrive.</span></li>
+          <li><span><b>Losers get CONFETTI.</b> Every dollar lost mints CONFETTI on a flat-then-decaying curve. Staked CONFETTI collects half of all fees plus every dollar the LP holds above a cap.</span></li>
+        </ol>
+
+        <div class="panel house">
+          <div class="panel-head">The house right now <span class="label" id="houseAsOf">not deployed</span></div>
+          <div class="panel-body">
+            <div class="kv"><span class="kv-key">LP cash</span><span class="kv-val param" data-param="house.lp">—</span></div>
+            <div class="kv"><span class="kv-key">Fee pool (undistributed)</span><span class="kv-val param" data-param="house.feePool">—</span></div>
+            <div class="kv"><span class="kv-key">Profit waiting in the queue</span><span class="kv-val param" data-param="house.queued">—</span></div>
+            <div class="kv"><span class="kv-key">Live queue entries</span><span class="kv-val param" data-param="house.queueLive">—</span></div>
+            <div class="kv"><span class="kv-key">Tracked LP P&amp;L</span><span class="kv-val param" data-param="tok.trackedLp">—</span></div>
+            <div class="kv"><span class="kv-key">Mint rate now</span><span class="kv-val param" data-param="tok.rate">100 per $1</span></div>
+            <div class="kv"><span class="kv-key">CONFETTI minted so far</span><span class="kv-val param" data-param="tok.minted">—</span></div>
+            <div class="kv"><span class="kv-key">Opens paused globally</span><span class="kv-val param" data-param="house.paused">—</span></div>
+            <div class="kv"><span class="kv-key">LP breaker</span><span class="kv-val param" data-param="house.breaker">—</span></div>
+          </div>
+        </div>
+
+        <h3>What meme coins change</h3>
+        <p>A BTC-only house can run one set of parameters. Meme books are thinner, wider and easier to push, so Confetti adds guards the original did not need. The table lists every deliberate difference.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Topic</th><th>BTC/ETH original</th><th>Confetti</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="ui">Markets</td><td class="ui">2</td><td class="ui">About 25 Hyperliquid-listed meme perps, in three tiers</td></tr>
+              <tr><td class="ui">Max leverage</td><td class="ui">1000x everywhere</td><td class="ui">1000x / 250x / 50x by tier</td></tr>
+              <tr><td class="ui">Deadband</td><td class="ui">0.2 bps</td><td class="ui">Per market, about one typical spread</td></tr>
+              <tr><td class="ui">Price safety</td><td class="ui">None</td><td class="ui">Mid is clamped to within D bps of HyperCore's oracle price, a validator median of external venues that a push on Hyperliquid's own book does not move; D per tier</td></tr>
+              <tr><td class="ui">Position size</td><td class="ui">Notional up to $10M, OI cap $1B per side</td><td class="ui">Notional capped per position by tier ($25K / $10K / $2.5K), small OI caps per side, profit on one position capped at 50x margin</td></tr>
+              <tr><td class="ui">LP protection</td><td class="ui">None</td><td class="ui">Opens pause on every market when the LP's net outflow in an hour passes 10% of what it started the hour with; closes always work</td></tr>
+              <tr><td class="ui">Collateral</td><td class="ui">HyperCore USDC via proxies</td><td class="ui">Plain USDC ERC-20 on HyperEVM, <code>deposit()</code> / <code>withdraw()</code></td></tr>
+              <tr><td class="ui">Trade submission</td><td class="ui">Relayer and session keys</td><td class="ui">v1: direct wallet transactions. v2: session keys and a relayer</td></tr>
+              <tr><td class="ui">Liquidations</td><td class="ui">Protocol keeper</td><td class="ui">Anyone, for 0.5% of the margin</td></tr>
+              <tr><td class="ui">Contracts</td><td class="ui">Upgradeable proxies</td><td class="ui">Immutable. Markets are added by the owner, never changed</td></tr>
+              <tr><td class="ui">Mint curve</td><td class="ui">Flat to $2M, S = $120M, cap $5M</td><td class="ui">Flat to <span class="param" data-param="tok.flatThreshold">$250,000</span>, S = <span class="param" data-param="tok.S">$15,000,000</span>, cap <span class="param" data-param="tok.stakerCap">$500,000</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 2 ------------------------------------------------------------- -->
+      <section id="price" aria-labelledby="price-h">
+        <h2 id="price-h"><span class="n">2</span>Price feed</h2>
+        <p>Prices come from the HyperCore precompiles: contracts at fixed addresses that let HyperEVM read Hyperliquid's own prices in the same block. The price oracle calls two of them for every execution price and exposes a third for display, each with <code>abi.encode(uint32 assetIndex)</code>.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Precompile</th><th>Address</th><th>Returns</th><th>Used for</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>BBO</td><td class="addr">0x000000000000000000000000000000000000080e</td><td>(uint64 bid, uint64 ask)</td><td class="ui">Execution price (the mid)</td></tr>
+              <tr><td>Oracle</td><td class="addr">0x0000000000000000000000000000000000000807</td><td>uint64 oracle</td><td class="ui">Safety clamp (validator median of external venues)</td></tr>
+              <tr><td>Mark</td><td class="addr">0x0000000000000000000000000000000000000806</td><td>uint64 mark</td><td class="ui">Display only (<code>markPrice</code>); never used to settle</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Raw values are integers with <code>6 − szDecimals</code> implied decimals, where <code>szDecimals</code> is the asset's size precision on Hyperliquid. The oracle brings them to 1e18 fixed point and takes the mid:</p>
+        <div class="formula">
+          <span class="fname">Execution price</span>
+          <div class="line">price<sub>$</sub> <span class="op">=</span> raw <span class="op">/</span> 10<sup>(6 − szDecimals)</sup></div>
+          <div class="line">mid <span class="op">=</span> <span class="frac"><span class="frac-n">bid + ask</span><span class="frac-d">2</span></span></div>
+          <div class="line">lo <span class="op">=</span> oracle <span class="op">×</span> (1 − D) <span class="op">,</span> hi <span class="op">=</span> oracle <span class="op">×</span> (1 + D)</div>
+          <div class="line">execution <span class="op">=</span> min( hi, max( lo, mid ) ) <span class="note">D is the market's clamp half-width in bps, set by tier</span></div>
+        </div>
+        <p>The clamp is the one safety feature a meme-coin house cannot skip, and what it is anchored to matters. Hyperliquid's mark price is partly derived from Hyperliquid's own book (its best bid and ask, last trade and a short average of the mid), so a sustained push on a thin book drags the mark along, and a band around the mark would drift with the push. The oracle price is a validator median of external exchanges; a push on one venue does not move it. Confetti clamps to the oracle price, so however far the book is pushed, the execution price moves at most D from what the rest of the market says the coin is worth, and a manufactured win is worth at most about D in price. The band bounds the price, not liquidations: it keeps a push from reaching the bust move only when D is narrower than that move, which is why tier A uses 5 bps against the 9.5 bps bust of a 1000x position (tier B: 25 vs 38 bps, tier C: 50 vs 190). It reduces the attack, it does not remove it (see <a href="#risks">Risks</a>).</p>
+        <p>If the BBO or the oracle call fails or returns zero, the price oracle reverts (a dead mark feed changes nothing). There is no stale-price fallback and no last-known value: the market is simply untradeable until the feed is back, and that includes closes, liquidations and the guardian's retire. If a feed is dead for good, because Hyperliquid delisted the perp, the owner can retire the market at a stated price so that open margins are not locked forever; the contract accepts that call only while the feed is dead, so it can never override a live price (<a href="#roles">section 7</a>). Opens, closes and liquidations all use the same clamped price, so there is no second price to argue about.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <caption>Verified on mainnet, 12 Oct 2026</caption>
+            <thead>
+              <tr><th>Asset</th><th class="right">Index</th><th class="right">szDecimals</th><th class="right">Raw BBO</th><th class="right">Bid / ask in dollars</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>BTC</td><td class="right">0</td><td class="right">5</td><td class="right">827660 / 827670</td><td class="right">$82,766.0 / $82,767.0</td></tr>
+              <tr><td>DOGE</td><td class="right">12</td><td class="right">0</td><td class="right">85187 / 85191</td><td class="right">$0.085187 / $0.085191</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 3 ------------------------------------------------------------- -->
+      <section id="markets" aria-labelledby="markets-h">
+        <h2 id="markets-h"><span class="n">3</span>Markets and tiers</h2>
+        <p>A 1000x position is liquidated by a 9.5 bps adverse move, so a market only qualifies for 1000x if its spread is far below that. Markets are sorted into three tiers by the spread we measured from the BBO precompile on 12 Oct 2026. The tier sets the maximum leverage, the deadband (how far the exit is moved against a winner), the clamp half-width D and the largest notional one position may carry.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Tier</th><th class="right">Max leverage</th><th class="right">Deadband</th><th class="right">Clamp D</th><th class="right">Max notional per position</th><th class="right">OI cap per side at launch</th><th>Markets (Hyperliquid index)</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-a">A</span></td>
+                <td class="right"><span class="param" data-param="tierA.maxLev">1000x</span></td>
+                <td class="right">1 bps</td><td class="right">5 bps</td><td class="right">$25,000</td><td class="right">$250,000</td>
+                <td class="ui">DOGE (12), FARTCOIN (165), VIRTUAL (162), WIF (98), MELANIA (175), kFLOKI (119), PENGU (163), PEOPLE (100)</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-b">B</span></td>
+                <td class="right"><span class="param" data-param="tierB.maxLev">250x</span></td>
+                <td class="right">3 bps</td><td class="right">25 bps</td><td class="right">$10,000</td><td class="right">$100,000</td>
+                <td class="ui">TRUMP (174), kSHIB (38), PNUT (153), POPCAT (128), kNEIRO (148), BABY (189), kPEPE (15), kBONK (85), kLUNC (91), SPX (171), BRETT (134), BERA (180), GOAT (149)</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-c">C</span></td>
+                <td class="right"><span class="param" data-param="tierC.maxLev">50x</span></td>
+                <td class="right">10 bps</td><td class="right">50 bps</td><td class="right">$2,500</td><td class="right">$25,000</td>
+                <td class="ui">ANIME (176), MOODENG (150), PURR (152), TURBO (133), BOME (120), MEME (75)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Launch is tier A plus TRUMP and kPEPE. The rest are added by owner call once liquidations and the clamp have run for a week. Every market has separate long and short open-interest caps in USD notional; the market keeper moves them within a ceiling per tier ($2M / $500K / $100K), and an open that would push a side past its cap reverts. On top of that, no single position may exceed the tier's notional cap (owner-set, at most $100,000), and the profit paid on one position is capped at <code>payoutCapX</code> times its margin (50x at launch, owner-set between 10x and 200x); anything above the cap stays with the LP. The trade page shows both before you open.</p>
+        <p>Each market also carries the parameters of its impact curve (<a href="#winning">section 5</a>): base rate <span class="param" data-param="impact.baseRate">10%</span>, rate multiplier <span class="param" data-param="impact.rateMultiplier">15,000</span>, reference notional <span class="param" data-param="impact.refNotional">$20,000</span>, and a position multiplier fixed per market at deploy so that a 1% move keeps about 88% of its raw gain and a 0.1% move about 74% (130,000,000 for the reference curve).</p>
+
+        <div class="table-wrap">
+          <table class="table" id="marketsTable">
+            <caption id="marketsCaption">Markets on chain · spec launch set, nothing deployed yet</caption>
+            <thead>
+              <tr><th>Market</th><th>Tier</th><th class="right">Max lev</th><th class="right">Deadband</th><th class="right">Clamp</th><th class="right">Long OI / cap</th><th class="right">Short OI / cap</th><th>Status</th></tr>
+            </thead>
+            <tbody id="marketsBody">
+              <tr><td>DOGE</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>FARTCOIN</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>VIRTUAL</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>WIF</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>MELANIA</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>kFLOKI</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>PENGU</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>PEOPLE</td><td><span class="badge badge-a">A</span></td><td class="right">1000x</td><td class="right">1 bps</td><td class="right">10 bps</td><td class="right">— / $250,000</td><td class="right">— / $250,000</td><td class="status-off">spec</td></tr>
+              <tr><td>TRUMP</td><td><span class="badge badge-b">B</span></td><td class="right">250x</td><td class="right">3 bps</td><td class="right">25 bps</td><td class="right">— / $100,000</td><td class="right">— / $100,000</td><td class="status-off">spec</td></tr>
+              <tr><td>kPEPE</td><td><span class="badge badge-b">B</span></td><td class="right">250x</td><td class="right">3 bps</td><td class="right">25 bps</td><td class="right">— / $100,000</td><td class="right">— / $100,000</td><td class="status-off">spec</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4 ------------------------------------------------------------- -->
+      <section id="positions" aria-labelledby="positions-h">
+        <h2 id="positions-h"><span class="n">4</span>Positions</h2>
+        <p>Collateral is plain USDC. <code>deposit()</code> moves it into your available balance on the Exchange; <code>withdraw()</code> sends available balance back to your wallet. Opening a position moves margin from available into the position; closing moves it back, plus or minus the result.</p>
+        <h3>Open</h3>
+        <p><code>open(instrumentId, isLong, marginUsdc, leverage)</code> succeeds when all of these hold:</p>
+        <ul>
+          <li>margin is at least <span class="param" data-param="minMargin">10 USDC</span> and you have it available;</li>
+          <li>leverage is a whole number from 1 to the market's tier maximum;</li>
+          <li>notional = margin × leverage is at most the market's per-position cap and fits under that side's open-interest headroom;</li>
+          <li>the market exists, is not retired, opens are not paused for it or globally, and the LP breaker is not tripped.</li>
+        </ul>
+        <p>Entry is the clamped mid at that block. Nothing is charged to open.</p>
+
+        <h3>Bust price</h3>
+        <p>A position busts when the adverse move reaches 95% of what would wipe its margin. The 5% buffer means a liquidation always lands before the voluntary close path would have returned zero, so the LP never has to chase a trader for more than their margin.</p>
+        <div class="formula">
+          <span class="fname">Bust price</span>
+          <div class="line">long: entry <span class="op">×</span> <span class="paren">(</span> 1 − <span class="frac"><span class="frac-n">0.95</span><span class="frac-d">leverage</span></span> <span class="paren">)</span> <span class="op">·</span> short: entry <span class="op">×</span> <span class="paren">(</span> 1 + <span class="frac"><span class="frac-n">0.95</span><span class="frac-d">leverage</span></span> <span class="paren">)</span></div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th class="right">Leverage</th><th class="right">Adverse move that busts</th></tr></thead>
+            <tbody>
+              <tr><td class="right">1000x</td><td class="right">0.095% (9.5 bps)</td></tr>
+              <tr><td class="right">250x</td><td class="right">0.38%</td></tr>
+              <tr><td class="right">50x</td><td class="right">1.9%</td></tr>
+              <tr><td class="right">10x</td><td class="right">9.5%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Close</h3>
+        <p><code>close(positionId)</code> can only be called by the owner, only for the whole position, and settles at the current clamped mid using the rules in <a href="#settlement">section 5</a>.</p>
+
+        <h3>Liquidate</h3>
+        <p><code>liquidate(positionId)</code> can be called by anyone once the clamped mid is at or beyond the bust price. The whole margin is forfeited: 0.5% goes to the caller as a bounty, a 2% loss fee goes to the fee pool (while the queue is empty), and the rest goes to the LP. CONFETTI is minted to the position's owner on the full margin.</p>
+        <p>There are no margin top-ups, no partial closes, no cross-margin and no edits. A retired market has its price frozen; positions in it can only be closed or liquidated at that frozen price.</p>
+      </section>
+
+      <!-- 5 ------------------------------------------------------------- -->
+      <section id="settlement" aria-labelledby="settlement-h">
+        <h2 id="settlement-h"><span class="n">5</span>Settlement</h2>
+        <p>Every close is computed from four numbers: the entry price, the exit price, the notional and the direction.</p>
+        <div class="formula">
+          <span class="fname">Definitions</span>
+          <div class="line">notional <span class="op">=</span> margin <span class="op">×</span> leverage</div>
+          <div class="line">move <span class="op">=</span> <span class="frac"><span class="frac-n">| exit − entry |</span><span class="frac-d">entry</span></span></div>
+          <div class="line">rawPnl <span class="op">=</span> notional <span class="op">×</span> <span class="paren">(</span> <span class="frac"><span class="frac-n">exit</span><span class="frac-d">entry</span></span> − 1 <span class="paren">)</span> <span class="op">×</span> dir <span class="note">dir = +1 for a long, −1 for a short</span></div>
+        </div>
+
+        <h3 id="losing">Losing close</h3>
+        <p>When rawPnl is negative the loss is capped at the margin. You get the rest of your margin back at once; the LP gains the loss.</p>
+        <div class="formula">
+          <span class="fname">Losing close (rawPnl &lt; 0)</span>
+          <div class="line">loss <span class="op">=</span> min( margin, −rawPnl )</div>
+          <div class="line">returned now <span class="op">=</span> margin − loss</div>
+          <div class="line">queue empty: fee <span class="op">=</span> 2% <span class="op">×</span> loss <span class="op">→</span> fee pool <span class="op">,</span> LP gains loss − fee <span class="op">,</span> CONFETTI mints on loss − fee</div>
+          <div class="line">queue active: no fee <span class="op">,</span> LP gains loss <span class="op">,</span> CONFETTI mints on loss</div>
+        </div>
+        <p>No deadband and no impact apply to a loss. The only thing taken from a loss is the 2% fee, and it is carved out of the LP's gain, not added to what you pay.</p>
+
+        <h3 id="winning">Winning close</h3>
+        <p>A win goes through five steps, in this order.</p>
+        <ol>
+          <li><b>Deadband.</b> The exit price is moved <code>deadbandBps</code> against you before the gain is computed. A gain that does not survive the deadband is zero and you simply get your margin back.</li>
+          <li><b>Impact.</b> The raw gain is multiplied by a scale that depends only on the size of the move. Small moves keep little; the scale climbs toward <code>1 − baseRate</code> as the move grows.</li>
+          <li><b>Payout cap.</b> The adjusted gain is capped at <code>payoutCapX × margin</code> (50x at launch, the gain of a 5% move at 1000x). Anything above it stays in the LP.</li>
+          <li><b>Win fee.</b> 2% of the capped, impact-adjusted gain goes to the fee pool.</li>
+          <li><b>Payout.</b> Margin comes back immediately. The profit is paid from LP cash if the LP has it; otherwise it is appended to the queue.</li>
+        </ol>
+        <div class="formula">
+          <span class="fname">Winning close (rawPnl &gt; 0)</span>
+          <div class="line">exit′ <span class="op">=</span> exit <span class="op">×</span> (1 − deadband) for a long <span class="op">,</span> exit <span class="op">×</span> (1 + deadband) for a short</div>
+          <div class="line">scale <span class="op">=</span>
+            <span class="frac">
+              <span class="frac-n">1 − baseRate</span>
+              <span class="frac-d">1 + <span class="frac"><span class="frac-n">1</span><span class="frac-d">move × rateMultiplier</span></span> + <span class="frac"><span class="frac-n">referenceNotional</span><span class="frac-d">move × positionMultiplier</span></span></span>
+            </span>
+          </div>
+          <div class="line">adjusted <span class="op">=</span> min( rawPnl <span class="op">×</span> scale <span class="op">,</span> payoutCapX <span class="op">×</span> margin )</div>
+          <div class="line">fee <span class="op">=</span> 2% <span class="op">×</span> adjusted <span class="op">→</span> fee pool</div>
+          <div class="line">payout <span class="op">=</span> margin + adjusted − fee <span class="note">move and rawPnl use exit′; referenceNotional in dollars; positionMultiplier is the market's deploy-time constant</span></div>
+        </div>
+        <p>The impact curve is what lets the house quote a single mid with no spread: it takes back most of the gain on moves so small that they could be noise or a pushed book, and almost nothing on moves large enough to be real. With the reference parameters the scale works out like this.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th class="right">Move (after deadband)</th><th class="right">Share of raw gain kept</th></tr></thead>
+            <tbody>
+              <tr><td class="right">1 bps</td><td class="right" data-scale="0.0001">28.1%</td></tr>
+              <tr><td class="right">5 bps</td><td class="right" data-scale="0.0005">62.5%</td></tr>
+              <tr><td class="right">0.1%</td><td class="right" data-scale="0.001">73.7%</td></tr>
+              <tr><td class="right">0.5%</td><td class="right" data-scale="0.005">86.2%</td></tr>
+              <tr><td class="right">1%</td><td class="right" data-scale="0.01">88.1%</td></tr>
+              <tr><td class="right">5%</td><td class="right" data-scale="0.05">89.6%</td></tr>
+              <tr><td class="right">10%</td><td class="right" data-scale="0.1">89.8%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <figure class="fig">
+          <svg id="impactCurve" viewBox="0 0 600 240" role="img" aria-labelledby="impactCurveTitle">
+            <title id="impactCurveTitle">Share of raw gain kept, against the size of the move on a log scale</title>
+          </svg>
+          <figcaption class="fig-cap" id="impactCap">Impact scale from the formula above with the reference parameters: base rate 10%, rate multiplier 15,000, referenceNotional $20,000, positionMultiplier 130,000,000 (so referenceNotional / positionMultiplier = 0.000154).</figcaption>
+        </figure>
+
+        <h3>Worked examples</h3>
+        <p>$100 of margin at 250x on DOGE, so $25,000 of notional, with the reference curve and a 1 bps deadband.</p>
+        <div class="grid grid-3">
+          <div class="panel example">
+            <div class="panel-head">Win: +1.00%</div>
+            <div class="panel-body">
+              <div class="kv"><span class="kv-key">Move after deadband</span><span class="kv-val">+0.99%</span></div>
+              <div class="kv"><span class="kv-key">Raw gain</span><span class="kv-val">$247.48</span></div>
+              <div class="kv"><span class="kv-key">Impact scale</span><span class="kv-val">0.880</span></div>
+              <div class="kv"><span class="kv-key">Adjusted gain</span><span class="kv-val">$217.87</span></div>
+              <div class="kv"><span class="kv-key">Win fee (2%)</span><span class="kv-val">$4.36</span></div>
+              <div class="kv"><span class="kv-key">Profit</span><span class="kv-val pos">+$213.52</span></div>
+            </div>
+            <div class="panel-foot">$100 margin returns now. The $213.52 is paid now if the LP has it, else queued.</div>
+          </div>
+          <div class="panel example">
+            <div class="panel-head">Loss: −0.30%</div>
+            <div class="panel-body">
+              <div class="kv"><span class="kv-key">Loss (capped at margin)</span><span class="kv-val neg">−$75.00</span></div>
+              <div class="kv"><span class="kv-key">Returned now</span><span class="kv-val">$25.00</span></div>
+              <div class="kv"><span class="kv-key">Loss fee (2%) to pool</span><span class="kv-val">$1.50</span></div>
+              <div class="kv"><span class="kv-key">LP gains</span><span class="kv-val">$73.50</span></div>
+              <div class="kv"><span class="kv-key">CONFETTI minted</span><span class="kv-val">7,350</span></div>
+            </div>
+            <div class="panel-foot">At the flat rate of 100 per $1 on the LP's net gain.</div>
+          </div>
+          <div class="panel example">
+            <div class="panel-head">Liquidation: −0.38%</div>
+            <div class="panel-body">
+              <div class="kv"><span class="kv-key">Margin forfeited</span><span class="kv-val neg">−$100.00</span></div>
+              <div class="kv"><span class="kv-key">Bounty to liquidator (0.5%)</span><span class="kv-val">$0.50</span></div>
+              <div class="kv"><span class="kv-key">Loss fee (2%) to pool</span><span class="kv-val">$2.00</span></div>
+              <div class="kv"><span class="kv-key">LP gains</span><span class="kv-val">$97.50</span></div>
+              <div class="kv"><span class="kv-key">CONFETTI minted</span><span class="kv-val">10,000</span></div>
+            </div>
+            <div class="panel-foot">Minted on the full margin, not the LP's net gain.</div>
+          </div>
+        </div>
+
+        <h3 id="queue">Queue and fee pool</h3>
+        <p>All USDC sits in the Exchange. LP cash is what is left after every available balance and every open margin. Four claims compete for it, and they are paid strictly in this order:</p>
+        <ol>
+          <li><b>The queue.</b> Profit the LP could not pay at close time, oldest first. <code>harvest()</code> is permissionless: anyone can call it to pay the head of the queue as far as LP cash reaches, partial payments included. While the queue is not empty, every new win is queued in full and no loss fee is carved, so losses refill the queue as fast as possible.</li>
+          <li><b>Wins at close time.</b> With an empty queue, a win is paid from LP cash on the spot; any shortfall starts a new queue.</li>
+          <li><b>The fee pool.</b> <code>pushFees()</code> is permissionless and only works while the queue is empty and LP cash covers the whole pool. It sends 50% to CONFETTI stakers and 50% to the dev fee recipient.</li>
+          <li><b>Staker overflow.</b> LP cash above the staker cap, swept by <code>pushStakerFees()</code> (<a href="#confetti">section 6</a>).</li>
+        </ol>
+        <p>Queued profit earns nothing while it waits and has no deadline. It is a claim on future losses, nothing more.</p>
+      </section>
+
+      <!-- 6 ------------------------------------------------------------- -->
+      <section id="confetti" aria-labelledby="confetti-h">
+        <h2 id="confetti-h"><span class="n">6</span>CONFETTI</h2>
+        <p>CONFETTI is what losers get. Every losing close and every liquidation mints it to the trader who lost, in proportion to what the LP gained from them. It cannot be bought, it cannot be transferred at launch, and the only thing it does is collect fees when staked.</p>
+
+        <h3>Mint basis and rate</h3>
+        <div class="formula">
+          <span class="fname">Mint</span>
+          <div class="line">basis <span class="op">=</span> LP's net gain from the loss <span class="note">(loss − fee while the queue is empty; the whole loss while it is active; the whole margin on a liquidation)</span></div>
+          <div class="line">minted <span class="op">=</span> basis <span class="op">×</span> rate</div>
+        </div>
+        <p>The rate depends on two running numbers in the Tokenomics contract:</p>
+        <ul>
+          <li><code>trackedLpUsd</code>, the LP's cumulative profit and loss: losses add to it, wins and fee payouts subtract from it, and it can be negative while the queue is owed.</li>
+          <li><code>tailProgressUsd</code>, a one-way high-water mark of cumulative LP gain past the flat threshold. Each loss that lifts <code>trackedLpUsd</code> above both the threshold and its previous level adds that slice. Nothing ever lowers it.</li>
+        </ul>
+        <div class="formula">
+          <span class="fname">Rate (CONFETTI per $1 of basis)</span>
+          <div class="line">flat region, trackedLpUsd &lt; <span class="param" data-param="tok.flatThreshold">$250,000</span> : rate <span class="op">=</span> flatRate <span class="op">=</span> <span class="param" data-param="tok.flatRate">100</span></div>
+          <div class="line">tail region, otherwise : rate <span class="op">=</span> flatRate <span class="op">×</span> <span class="paren">(</span> <span class="frac"><span class="frac-n">S</span><span class="frac-d">S + tailProgress</span></span> <span class="paren">)</span><sup>2</sup> <span class="note">S = <span class="param" data-param="tok.S">$15,000,000</span></span></div>
+        </div>
+        <p>Because <code>tailProgress</code> never falls, the rate never goes back up once it has decayed, even if the LP later pays out everything it made. A win that pulls <code>trackedLpUsd</code> back under the threshold does switch the next mint back to the flat rate, though, so the curve is flat-then-decaying rather than strictly monotone in time.</p>
+        <figure class="fig">
+          <svg id="mintCurve" viewBox="0 0 600 260" role="img" aria-labelledby="mintCurveTitle">
+            <title id="mintCurveTitle">CONFETTI minted per dollar lost, against cumulative LP gain past the flat threshold</title>
+          </svg>
+          <figcaption class="fig-cap" id="mintCap">Mint rate from the formula above. The green band is the flat region, not to scale; the curve is 100 × (S / (S + tailProgress))² with S = $15M. At S the rate is a quarter of the flat rate, at 3S a sixteenth.</figcaption>
+        </figure>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Parameter</th><th class="right">Value</th><th>Who sets it</th></tr></thead>
+            <tbody>
+              <tr><td class="ui">Flat rate</td><td class="right"><span class="param" data-param="tok.flatRate">100</span> per $1</td><td class="ui">Fixed at deploy, no setter</td></tr>
+              <tr><td class="ui">Flat threshold</td><td class="right"><span class="param" data-param="tok.flatThreshold">$250,000</span></td><td class="ui">Owner, within bounds</td></tr>
+              <tr><td class="ui">Tail scale S</td><td class="right"><span class="param" data-param="tok.S">$15,000,000</span></td><td class="ui">Owner, within bounds</td></tr>
+              <tr><td class="ui">Staker cap</td><td class="right"><span class="param" data-param="tok.stakerCap">$500,000</span></td><td class="ui">Owner, must stay above the threshold</td></tr>
+              <tr><td class="ui">Tail progress now</td><td class="right"><span class="param" data-param="tok.tailProgress">—</span></td><td class="ui">Read only</td></tr>
+              <tr><td class="ui">Rate now</td><td class="right"><span class="param" data-param="tok.rate">100 per $1</span></td><td class="ui">Read only</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Staker cap</h3>
+        <p>Once <code>trackedLpUsd</code> is above the staker cap, everything above it belongs to stakers. <code>pushStakerFees()</code> is permissionless: it sweeps <code>min(trackedLpUsd − cap, LP cash)</code> to the Staking contract, but only while the queue is empty. The sweep debits <code>trackedLpUsd</code> and leaves <code>tailProgress</code> alone, so it does not change the mint rate. The LP therefore never holds more than the cap for long; the cap is the house's working float.</p>
+
+        <h3>The token</h3>
+        <ul>
+          <li>ERC-20, 18 decimals, symbol CONFETTI. Minted only by the Exchange, never pre-minted. Total minted so far: <span class="param" data-param="tok.minted">—</span>.</li>
+          <li>Transfers are <span class="param" data-param="confetti.transfers">locked</span>. Until the owner calls <code>enableTransfers()</code>, the only moves allowed are mints and transfers to or from the Staking contract. The switch is one-way.</li>
+        </ul>
+
+        <h3>Staking</h3>
+        <ul>
+          <li>Stake and unstake are instant, with no lockup and no cooldown. Currently staked: <span class="param" data-param="staking.totalStaked">—</span>.</li>
+          <li>Dividends are USDC, split pro rata by a per-share accumulator. The accumulator is scaled by 1e30, which gives twelve digits of headroom below one micro-USDC; whole units the split cannot absorb wait in a carry and ride along with the next payment. Total paid to stakers so far: <span class="param" data-param="staking.totalRewards">—</span>.</li>
+          <li><code>claim()</code> does not send USDC to your wallet. It credits your Exchange balance, where you can trade it or withdraw it.</li>
+          <li>Income comes from two places: half of every <code>pushFees()</code>, and all of every staker-cap sweep.</li>
+        </ul>
+      </section>
+
+      <!-- 7 ------------------------------------------------------------- -->
+      <section id="roles" aria-labelledby="roles-h">
+        <h2 id="roles-h"><span class="n">7</span>Roles and safety</h2>
+        <p>The contracts are immutable: no proxy, no upgrade path, no admin function that touches a user's balance or moves LP cash. What the privileged roles can and cannot do is the whole list.</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Role</th><th>Can</th><th>Cannot</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="ui"><b>Owner</b><br><span class="faint xs">a Safe behind a 48h timelock in production</span><br><span class="addr param" data-param="roles.owner">not deployed</span></td>
+                <td class="ui">Add markets; set impact, deadband and clamp per market within bounds; set the per-position notional and payout caps and the LP breaker share within bounds; set the fee recipient; set tokenomics parameters within bounds; enable CONFETTI transfers; appoint the guardian and keeper; unpause; clear a tripped breaker; retire a market whose feed is dead at a stated price (only while the feed is dead)</td>
+                <td class="ui">Touch user balances, move LP cash, change an existing market's id, asset or price decimals (the price oracle locks them once a market is added; only the clamp width can move), override a live price, upgrade code</td>
+              </tr>
+              <tr>
+                <td class="ui"><b>Pause guardian</b><br><span class="addr param" data-param="roles.guardian">not deployed</span></td>
+                <td class="ui">Pause opens globally or per market; retire a market while its feed answers (freezes its price, closes only); clear a tripped LP breaker</td>
+                <td class="ui">Unpause (owner only); anything else</td>
+              </tr>
+              <tr>
+                <td class="ui"><b>Market keeper</b><br><span class="addr param" data-param="roles.keeper">not deployed</span></td>
+                <td class="ui">Move the long and short OI caps per market, up to the tier's ceiling</td>
+                <td class="ui">Anything else</td>
+              </tr>
+              <tr>
+                <td class="ui"><b>Fee recipient</b><br><span class="addr param" data-param="roles.feeRecipient">not deployed</span></td>
+                <td class="ui">Receive the dev half of pushed fees, as Exchange balance</td>
+                <td class="ui">Anything else</td>
+              </tr>
+              <tr>
+                <td class="ui"><b>Anyone</b></td>
+                <td class="ui">Liquidate, harvest the queue, push fees, push staker overflow</td>
+                <td class="ui"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Bounds and constants</h3>
+        <ul>
+          <li>Max leverage per tier is a constant: <span class="param" data-param="tierA.maxLev">1000x</span> / <span class="param" data-param="tierB.maxLev">250x</span> / <span class="param" data-param="tierC.maxLev">50x</span>.</li>
+          <li>Deadband <span class="param" data-param="bounds.deadband">1 to 50 bps</span> in whole bps (the spec's 0.5 bps floor rounds up to 1). Clamp <span class="param" data-param="bounds.clamp">5 to 100 bps</span>. Base rate <span class="param" data-param="bounds.baseRate">5% to 20%</span>. The impact curve as a whole must keep between 50% and 95% of a raw gain at a 1% move, so no setting can quietly zero every win.</li>
+          <li>Notional per position at most <span class="param" data-param="bounds.notional">$100,000</span>. Payout cap <span class="param" data-param="bounds.payout">10x to 200x</span> margin. LP breaker <span class="param" data-param="bounds.breaker">2% to 50%</span> of the LP per hour; only the guardian or owner clears it. OI caps per side at most $2M / $500K / $100K by tier.</li>
+          <li>Fixed, with no setter: win fee 2%, loss fee 2%, liquidation bounty 0.5%, bust buffer 95%, minimum margin <span class="param" data-param="minMargin">10 USDC</span>.</li>
+          <li>Tokenomics: the flat rate is fixed for life; the threshold must not exceed the staker cap; S must be positive.</li>
+        </ul>
+
+        <h3>Contracts</h3>
+        <div class="table-wrap">
+          <table class="table">
+            <tbody>
+              <tr><td class="ui">Exchange</td><td><span class="addr param" data-param="roles.exchange">not deployed</span></td></tr>
+              <tr><td class="ui">PriceOracle</td><td><span class="addr param" data-param="roles.oracle">not deployed</span></td></tr>
+              <tr><td class="ui">Tokenomics</td><td><span class="addr param" data-param="roles.tokenomics">not deployed</span></td></tr>
+              <tr><td class="ui">Confetti</td><td><span class="addr param" data-param="roles.confetti">not deployed</span></td></tr>
+              <tr><td class="ui">Staking</td><td><span class="addr param" data-param="roles.staking">not deployed</span></td></tr>
+              <tr><td class="ui">USDC</td><td><span class="addr param" data-param="roles.usdc">0xb88339CB7199b77E23DB6E890353E22632Ba630f</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Not in v1</h3>
+        <p>Session keys and a relayer for gasless trading, HyperCore deposit proxies, builder codes, a leaderboard backend, debt-funded positions and HIP-3 markets. Each is planned for v2 and none is needed for the mechanism above to work.</p>
+      </section>
+
+      <!-- 8 ------------------------------------------------------------- -->
+      <section id="risks" aria-labelledby="risks-h">
+        <h2 id="risks-h"><span class="n">8</span>Risks</h2>
+        <p>Read this part twice.</p>
+        <ul>
+          <li><b>This is a house.</b> Every trade is against the LP, and the LP is funded only by other traders' losses. If traders win net, winners wait in the queue, with no interest and no deadline. A queued profit is a claim on future losses that may never arrive.</li>
+          <li><b>Thin books can be pushed.</b> The main attack is moving the top of a meme-coin order book to print a price that is not real. The oracle clamp, the per-position caps, the deadband, the impact curve and the tiered leverage all shrink the payoff of doing that, and the LP breaker pauses opens once an hour's net outflow passes its share; none of them makes it impossible.</li>
+          <li><b>A dead feed freezes everything.</b> If the BBO or oracle precompile stops answering for a market, that market cannot be opened, closed, liquidated or retired by the guardian until it recovers; no last good price is kept. The one way out is the owner, behind its 48-hour timelock, retiring the market at a stated price, which the contract accepts only while the feed is still dead. Until then, margin in that market is locked.</li>
+          <li><b>Liquidations are permissionless, not guaranteed.</b> A position past its bust price stays open until somebody calls <code>liquidate()</code>, and until then it can come back. The 0.5% bounty exists so that somebody does, but nobody is obliged to.</li>
+          <li><b>Immutable means unfixable.</b> There is no upgrade path. If a bug is found, the tools are pause, retire and withdraw; there is no patch.</li>
+          <li><b>CONFETTI is not money.</b> It is non-transferable at launch and is worth exactly what the fees it collects are worth. The mint rate decays and never recovers.</li>
+          <li><b>Regulation.</b> Synthetic leveraged products are regulated derivatives in most jurisdictions. The operator must take legal advice before launch and geo-fence the frontend; the contracts themselves cannot.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <footer class="container docs-foot">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <span>synthetic perpetuals on meme coins · HyperEVM (999) · every trade is against the house</span>
+    <span class="spacer"></span>
+    <a href="trade.html">trade</a>
+    <a href="index.html">home</a>
+    <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">x</a>
+  </footer>
+
+  <script>
+  /* ==========================================================================
+     docs.html script. Three jobs, none of them required for the page to read:
+       1. table of contents: sticky and always open on desktop, collapsible on
+          phones, with the current section highlighted while scrolling;
+       2. the two figures, drawn from the settlement and mint formulas;
+       3. live parameters: when site/config.json exists and names an Exchange,
+          load ethers 6.13.2 from cdnjs, read the contracts, and overwrite every
+          [data-param] element that has a chain value. Anything that fails
+          leaves the spec defaults in place.
+     ========================================================================== */
+  (function () {
+    'use strict';
+
+    var THEME_KEY = 'confetti.theme';
+    var ETHERS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js';
+    /* Subresource integrity of that exact file: the browser refuses a modified copy. */
+    var ETHERS_SRI = 'sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP';
+    var DEFAULT_RPC = 'https://rpc.hyperliquid.xyz/evm';
+    var DEFAULT_CHAIN_ID = 999;
+    var MAX_INSTRUMENTS = 64;
+
+    /* Spec defaults (DESIGN sections 4, 6, 7). Shown until a deployment is readable. */
+    var SPEC = {
+      flatRate: 100,
+      flatThreshold: 250000,
+      tailScale: 15000000,
+      stakerCap: 500000,
+      baseRate: 0.10,
+      rateMultiplier: 15000,
+      /* referenceNotional / positionMultiplier for the reference curve ($20,000 / 130,000,000):
+         keeps about 88% of a 1% move and 74% of a 0.1% move. */
+      sizeTerm: 20000 / 130000000
+    };
+    var TIER_CODES = ['A', 'B', 'C'];
+    /* Hyperliquid perp index -> symbol, for every market in the spec. */
+    var HL_SYMBOL = {
+      12: 'DOGE', 165: 'FARTCOIN', 162: 'VIRTUAL', 98: 'WIF', 175: 'MELANIA', 119: 'kFLOKI', 163: 'PENGU', 100: 'PEOPLE',
+      174: 'TRUMP', 38: 'kSHIB', 153: 'PNUT', 128: 'POPCAT', 148: 'kNEIRO', 189: 'BABY', 15: 'kPEPE', 85: 'kBONK',
+      91: 'kLUNC', 171: 'SPX', 134: 'BRETT', 180: 'BERA', 149: 'GOAT',
+      176: 'ANIME', 150: 'MOODENG', 152: 'PURR', 133: 'TURBO', 120: 'BOME', 75: 'MEME'
+    };
+
+    var EXCHANGE_ABI = [
+      'function MIN_MARGIN_USDC() view returns (uint256)',
+      'function TIER_A_MAX_LEVERAGE() view returns (uint32)',
+      'function TIER_B_MAX_LEVERAGE() view returns (uint32)',
+      'function TIER_C_MAX_LEVERAGE() view returns (uint32)',
+      'function MIN_DEADBAND_BPS() view returns (uint16)',
+      'function MAX_DEADBAND_BPS() view returns (uint16)',
+      'function MIN_CLAMP_BPS() view returns (uint16)',
+      'function MAX_CLAMP_BPS() view returns (uint16)',
+      'function MIN_BASE_RATE_BPS() view returns (uint16)',
+      'function MAX_BASE_RATE_BPS() view returns (uint16)',
+      'function instrumentCount() view returns (uint32)',
+      'function MAX_POSITION_NOTIONAL_USD() view returns (uint128)',
+      'function MIN_PAYOUT_CAP_X() view returns (uint16)',
+      'function MAX_PAYOUT_CAP_X() view returns (uint16)',
+      'function MIN_BREAKER_BPS() view returns (uint16)',
+      'function MAX_BREAKER_BPS() view returns (uint16)',
+      'function breakerBps() view returns (uint16)',
+      'function breakerTripped() view returns (bool)',
+      'function instrument(uint32) view returns (tuple(uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6, uint128 longOiCapUsd, uint128 shortOiCapUsd, uint128 maxNotionalUsd, uint16 payoutCapX, bool opensPaused, bool retired, uint256 frozenPx18))',
+      'function openInterest(uint32) view returns (uint256 longUsd, uint256 shortUsd)',
+      'function lpBalance() view returns (uint256)',
+      'function feePool() view returns (uint256)',
+      'function queuedTotal() view returns (uint256)',
+      'function queueLength() view returns (uint256)',
+      'function queueHead() view returns (uint256)',
+      'function globalOpensPaused() view returns (bool)',
+      'function owner() view returns (address)',
+      'function pauseGuardian() view returns (address)',
+      'function marketKeeper() view returns (address)',
+      'function feeRecipient() view returns (address)',
+      'function oracle() view returns (address)',
+      'function confetti() view returns (address)',
+      'function tokenomics() view returns (address)',
+      'function staking() view returns (address)',
+      'function usdc() view returns (address)'
+    ];
+    var TOKENOMICS_ABI = [
+      'function params() view returns (uint256 flatThresholdUsd, uint256 tailDecayScaleUsd, uint256 stakerCapUsd, uint256 flatRateE18)',
+      'function trackedLpUsd() view returns (int256)',
+      'function tailProgressUsd() view returns (uint256)',
+      'function currentRateE18() view returns (uint256)',
+      'function totalMinted() view returns (uint256)'
+    ];
+    var CONFETTI_ABI = ['function transfersEnabled() view returns (bool)'];
+    var STAKING_ABI = [
+      'function totalStaked() view returns (uint256)',
+      'function totalRewardsUsdc() view returns (uint256)'
+    ];
+
+    /* ---- helpers ------------------------------------------------------- */
+
+    function $(id) { return document.getElementById(id); }
+
+    function num(v) { return typeof v === 'bigint' ? Number(v) : Number(v); }
+
+    function group(n, maxFrac) {
+      if (!isFinite(n)) return '—';
+      return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: maxFrac == null ? 2 : maxFrac });
+    }
+
+    /* USDC 6-dec integer (BigInt) -> "$1,234.56"; whole amounts drop the cents. */
+    function usd6(v, cents) {
+      if (v == null) return '—';
+      var n = num(v) / 1e6;
+      var whole = Math.abs(n - Math.round(n)) < 1e-9;
+      return (n < 0 ? '−' : '') + '$' + group(Math.abs(n), whole && !cents ? 0 : 2);
+    }
+
+    function e18(v, maxFrac) {
+      if (v == null) return '—';
+      return group(num(v) / 1e18, maxFrac == null ? 2 : maxFrac);
+    }
+
+    function money(n) {
+      if (n >= 1e9) return '$' + group(n / 1e9, 1) + 'B';
+      if (n >= 1e6) return '$' + group(n / 1e6, 1) + 'M';
+      if (n >= 1e3) return '$' + group(n / 1e3, 0) + 'K';
+      return '$' + group(n, 0);
+    }
+
+    function pct(x, frac) { return (x * 100).toFixed(frac == null ? 1 : frac) + '%'; }
+
+    function pick(obj, keys) {
+      if (!obj) return null;
+      for (var i = 0; i < keys.length; i++) {
+        var v = obj[keys[i]];
+        if (v != null && v !== '') return v;
+      }
+      return null;
+    }
+
+    function isAddress(a) { return typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a); }
+    var ZERO = '0x0000000000000000000000000000000000000000';
+
+    /* Write a chain value into every element marked with that data-param. */
+    function setParam(key, text, title) {
+      if (text == null) return;
+      var nodes = document.querySelectorAll('[data-param="' + key + '"]');
+      for (var i = 0; i < nodes.length; i++) {
+        nodes[i].textContent = text;
+        nodes[i].classList.add('is-live');
+        nodes[i].setAttribute('title', title || 'read from chain');
+      }
+    }
+
+    function setStatus(text, live) {
+      var chip = $('chainStatus');
+      var t = $('chainStatusText');
+      if (t) t.textContent = text;
+      if (chip) chip.classList.toggle('chip-live', !!live);
+    }
+
+    /* ---- the two formulas ---------------------------------------------- */
+
+    /* Share of a raw gain the trader keeps (DESIGN section 6), p = {baseRate, rateMultiplier, sizeTerm}. */
+    function impactScale(move, p) {
+      if (!(move > 0)) return 0;
+      return (1 - p.baseRate) / (1 + 1 / (move * p.rateMultiplier) + p.sizeTerm / move);
+    }
+
+    /* CONFETTI per $1 at a given tail progress (DESIGN section 7). */
+    function mintRate(tail, p) {
+      var s = p.tailScale;
+      return p.flatRate * Math.pow(s / (s + tail), 2);
+    }
+
+    function fillScaleTable(p) {
+      var cells = document.querySelectorAll('[data-scale]');
+      for (var i = 0; i < cells.length; i++) {
+        cells[i].textContent = pct(impactScale(Number(cells[i].getAttribute('data-scale')), p));
+      }
+    }
+
+    /* ---- svg figures --------------------------------------------------- */
+
+    var NS = 'http://www.w3.org/2000/svg';
+
+    function el(parent, tag, attrs, text) {
+      var node = document.createElementNS(NS, tag);
+      for (var k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) node.setAttribute(k, attrs[k]);
+      if (text != null) node.textContent = text;
+      parent.appendChild(node);
+      return node;
+    }
+
+    function clearSvg(svg) {
+      var keep = svg.querySelector('title');
+      while (svg.lastChild) svg.removeChild(svg.lastChild);
+      if (keep) svg.appendChild(keep);
+    }
+
+    function drawImpactCurve(p) {
+      var svg = $('impactCurve');
+      if (!svg) return;
+      clearSvg(svg);
+      var W = 600, H = 240, L = 50, R = 16, T = 18, B = 42;
+      var pw = W - L - R, ph = H - T - B;
+      var x0 = -4, x1 = -1; /* log10(move): 1 bps .. 10% */
+      function X(logm) { return L + ((logm - x0) / (x1 - x0)) * pw; }
+      function Y(s) { return T + (1 - s) * ph; }
+
+      /* grid and y labels */
+      var yt = [0, 0.25, 0.5, 0.75, 1];
+      for (var i = 0; i < yt.length; i++) {
+        el(svg, 'line', { x1: L, y1: Y(yt[i]), x2: L + pw, y2: Y(yt[i]), 'class': i === 0 ? 'axis' : 'grid' });
+        el(svg, 'text', { x: L - 6, y: Y(yt[i]) + 4, 'text-anchor': 'end', 'class': 'lbl' }, Math.round(yt[i] * 100) + '%');
+      }
+      /* x ticks */
+      var xt = [[-4, '1 bps'], [-3, '0.1%'], [-2, '1%'], [-1, '10%']];
+      for (var j = 0; j < xt.length; j++) {
+        el(svg, 'line', { x1: X(xt[j][0]), y1: T, x2: X(xt[j][0]), y2: T + ph, 'class': 'grid' });
+        el(svg, 'text', { x: X(xt[j][0]), y: T + ph + 16, 'text-anchor': 'middle', 'class': 'lbl' }, xt[j][1]);
+      }
+      el(svg, 'text', { x: L + pw / 2, y: H - 6, 'text-anchor': 'middle', 'class': 'lbl' }, 'move after deadband, log scale');
+      el(svg, 'text', { x: L - 6, y: T - 6, 'text-anchor': 'end', 'class': 'lbl' }, 'kept');
+
+      /* ceiling: 1 - baseRate */
+      el(svg, 'line', { x1: L, y1: Y(1 - p.baseRate), x2: L + pw, y2: Y(1 - p.baseRate), 'class': 'ref' });
+      el(svg, 'text', { x: L + pw - 4, y: Y(1 - p.baseRate) - 5, 'text-anchor': 'end', 'class': 'lbl-neg' }, '1 − baseRate = ' + pct(1 - p.baseRate, 0));
+
+      /* curve */
+      var d = '';
+      var steps = 120;
+      for (var k = 0; k <= steps; k++) {
+        var lm = x0 + ((x1 - x0) * k) / steps;
+        var s = impactScale(Math.pow(10, lm), p);
+        d += (k === 0 ? 'M' : 'L') + X(lm).toFixed(1) + ',' + Y(s).toFixed(1);
+      }
+      el(svg, 'path', { d: d, 'class': 'curve' });
+
+      /* reference points */
+      var marks = [[0.001, '0.1%'], [0.01, '1%']];
+      for (var m = 0; m < marks.length; m++) {
+        var mv = marks[m][0];
+        var sc = impactScale(mv, p);
+        var cx = X(Math.log10(mv)), cy = Y(sc);
+        el(svg, 'circle', { cx: cx, cy: cy, r: 4, 'class': 'pt' });
+        el(svg, 'text', { x: cx + 8, y: cy + 14, 'class': 'lbl-ink' }, marks[m][1] + ' → ' + pct(sc, 0));
+      }
+    }
+
+    function drawMintCurve(p, now) {
+      var svg = $('mintCurve');
+      if (!svg) return;
+      clearSvg(svg);
+      var W = 600, H = 260, L = 50, R = 16, T = 20, B = 44;
+      var pw = W - L - R, ph = H - T - B;
+      var band = 64; /* width of the flat region, not to scale */
+      var S = p.tailScale, xmax = 4 * S;
+      var ymax = p.flatRate * 1.06;
+      function X(tail) { return L + band + (tail / xmax) * (pw - band); }
+      function Y(r) { return T + (1 - r / ymax) * ph; }
+
+      /* flat band */
+      el(svg, 'rect', { x: L, y: T, width: band, height: ph, 'class': 'band' });
+      el(svg, 'line', { x1: L + band, y1: T, x2: L + band, y2: T + ph, 'class': 'ref' });
+      el(svg, 'text', { x: L + band / 2, y: T + ph - 10, 'text-anchor': 'middle', 'class': 'lbl-pos' }, 'flat');
+      el(svg, 'text', { x: L + band + 6, y: T + 12, 'class': 'lbl' }, 'LP gain passes ' + money(p.flatThreshold));
+
+      /* y grid */
+      var fr = [0, 0.25, 0.5, 0.75, 1];
+      for (var i = 0; i < fr.length; i++) {
+        var r = p.flatRate * fr[i];
+        el(svg, 'line', { x1: L, y1: Y(r), x2: L + pw, y2: Y(r), 'class': i === 0 ? 'axis' : 'grid' });
+        el(svg, 'text', { x: L - 6, y: Y(r) + 4, 'text-anchor': 'end', 'class': 'lbl' }, group(r, 0));
+      }
+      el(svg, 'text', { x: L - 6, y: T - 7, 'text-anchor': 'end', 'class': 'lbl' }, 'per $1');
+
+      /* x ticks at multiples of S */
+      for (var j = 0; j <= 4; j++) {
+        var tx = j * S;
+        el(svg, 'line', { x1: X(tx), y1: T + ph, x2: X(tx), y2: T + ph + 4, 'class': 'axis' });
+        /* The last label is right-anchored so it is not clipped by the viewBox edge. */
+        el(svg, 'text', { x: X(tx), y: T + ph + 16, 'text-anchor': j === 4 ? 'end' : 'middle', 'class': 'lbl' }, j === 0 ? '+$0' : (j === 1 ? 'S = ' : j + 'S = ') + money(tx));
+      }
+      el(svg, 'text', { x: L + band + (pw - band) / 2, y: H - 6, 'text-anchor': 'middle', 'class': 'lbl' }, 'cumulative LP gain past the threshold (tailProgress)');
+
+      /* flat segment then the decay */
+      el(svg, 'line', { x1: L, y1: Y(p.flatRate), x2: L + band, y2: Y(p.flatRate), 'class': 'flat' });
+      var d = '';
+      var steps = 160;
+      for (var k = 0; k <= steps; k++) {
+        var tail = (xmax * k) / steps;
+        d += (k === 0 ? 'M' : 'L') + X(tail).toFixed(1) + ',' + Y(mintRate(tail, p)).toFixed(1);
+      }
+      el(svg, 'path', { d: d, 'class': 'curve' });
+
+      /* reference points at S and 3S */
+      var refs = [[S, '÷ 4'], [3 * S, '÷ 16']];
+      for (var m = 0; m < refs.length; m++) {
+        var rr = mintRate(refs[m][0], p);
+        el(svg, 'circle', { cx: X(refs[m][0]), cy: Y(rr), r: 4, 'class': 'pt' });
+        el(svg, 'text', { x: X(refs[m][0]) + 8, y: Y(rr) - 8, 'class': 'lbl-ink' }, group(rr, 2) + ' (' + refs[m][1] + ')');
+      }
+
+      /* where the deployment is right now */
+      if (now) {
+        var inFlat = now.trackedLp < p.flatThreshold;
+        var nx = inFlat ? L + band / 2 : X(Math.min(now.tailProgress, xmax));
+        var ny = inFlat ? Y(p.flatRate) : Y(mintRate(now.tailProgress, p));
+        el(svg, 'circle', { cx: nx, cy: ny, r: 5, 'class': 'now' });
+        el(svg, 'text', { x: nx + 9, y: ny + 4, 'class': 'lbl-ink' }, 'now: ' + group(now.rate, 2) + ' per $1');
+      }
+    }
+
+    /* ---- table of contents ---------------------------------------------- */
+
+    function initToc() {
+      var toc = $('toc');
+      var list = $('tocList');
+      if (!toc || !list) return;
+      var desktop = window.matchMedia ? window.matchMedia('(min-width: 900px)') : null;
+
+      function sync() {
+        var wide = desktop ? desktop.matches : true;
+        toc.open = wide;
+      }
+      sync();
+      if (desktop) {
+        if (desktop.addEventListener) desktop.addEventListener('change', sync);
+        else if (desktop.addListener) desktop.addListener(sync);
+      }
+      /* On a phone, picking an entry closes the list. */
+      list.addEventListener('click', function (ev) {
+        var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+        if (a && desktop && !desktop.matches) toc.open = false;
+      });
+
+      /* Scroll spy: the last heading above the top of the viewport is current. */
+      var links = list.querySelectorAll('a[href^="#"]');
+      var targets = [];
+      for (var i = 0; i < links.length; i++) {
+        var t = document.getElementById(links[i].getAttribute('href').slice(1));
+        if (t) targets.push({ link: links[i], el: t });
+      }
+      var ticking = false;
+      function spy() {
+        ticking = false;
+        var line = window.scrollY + 80;
+        var current = null;
+        for (var j = 0; j < targets.length; j++) {
+          if (targets[j].el.offsetTop <= line) current = targets[j];
+        }
+        if (!current && targets.length) current = targets[0];
+        for (var k = 0; k < targets.length; k++) {
+          if (targets[k] === current) targets[k].link.setAttribute('aria-current', 'true');
+          else targets[k].link.removeAttribute('aria-current');
+        }
+      }
+      function onScroll() {
+        if (ticking) return;
+        ticking = true;
+        (window.requestAnimationFrame || function (fn) { setTimeout(fn, 16); })(spy);
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll);
+      spy();
+    }
+
+    /* ---- night theme --------------------------------------------------- */
+
+    function initTheme() {
+      var btn = $('themeToggle');
+      var root = document.documentElement;
+      var meta = document.querySelector('meta[name="theme-color"]');
+      function apply(night, persist) {
+        if (night) root.setAttribute('data-theme', 'night');
+        else root.removeAttribute('data-theme');
+        if (btn) {
+          btn.setAttribute('aria-pressed', night ? 'true' : 'false');
+          btn.textContent = night ? 'Paper' : 'Night';
+        }
+        if (meta) {
+          var page = getComputedStyle(root).getPropertyValue('--page');
+          meta.setAttribute('content', (page || '#f4ecd8').trim());
+        }
+        if (persist) {
+          try { localStorage.setItem(THEME_KEY, night ? 'night' : 'paper'); } catch (e) { /* ignore */ }
+        }
+      }
+      apply(root.getAttribute('data-theme') === 'night', false);
+      if (btn) {
+        btn.addEventListener('click', function () {
+          apply(root.getAttribute('data-theme') !== 'night', true);
+        });
+      }
+    }
+
+    /* ---- live parameters ------------------------------------------------ */
+
+    function loadConfig() {
+      if (typeof fetch !== 'function') return Promise.resolve(null);
+      return fetch('config.json', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .catch(function () { return null; });
+    }
+
+    function loadEthers() {
+      if (window.ethers && window.ethers.Contract) return Promise.resolve(window.ethers);
+      return new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = ETHERS_URL;
+        s.integrity = ETHERS_SRI;
+        s.crossOrigin = 'anonymous';
+        s.async = true;
+        s.onload = function () {
+          if (window.ethers && window.ethers.Contract) resolve(window.ethers);
+          else reject(new Error('ethers did not load'));
+        };
+        s.onerror = function () { reject(new Error('ethers failed to load')); };
+        document.head.appendChild(s);
+      });
+    }
+
+    /* Run every promise in `calls`, resolving each failure to null, and return {key: value}. */
+    function settle(calls) {
+      var keys = Object.keys(calls);
+      return Promise.all(keys.map(function (k) {
+        return Promise.resolve(calls[k]).then(function (v) { return v; }, function () { return null; });
+      })).then(function (values) {
+        var out = {};
+        for (var i = 0; i < keys.length; i++) out[keys[i]] = values[i];
+        return out;
+      });
+    }
+
+    /* config.json lists markets by Hyperliquid asset index, never by instrument id, so an
+       on-chain instrument is matched to its name through hlAssetIndex (same as trade.js). */
+    function marketNames(cfg) {
+      var byIndex = {};
+      var list = Array.isArray(cfg.markets) ? cfg.markets : [];
+      for (var i = 0; i < list.length; i++) {
+        var m = list[i] || {};
+        var idx = pick(m, ['hlAssetIndex', 'assetIndex', 'index']);
+        var name = pick(m, ['symbol', 'name', 'coin']);
+        if (idx != null && name) byIndex[Number(idx)] = String(name);
+      }
+      return byIndex;
+    }
+
+    function renderMarkets(rows, globalPaused, blockTag) {
+      var body = $('marketsBody');
+      var cap = $('marketsCaption');
+      if (!body) return;
+      body.textContent = '';
+      if (!rows.length) {
+        var tr0 = document.createElement('tr');
+        var td0 = document.createElement('td');
+        td0.colSpan = 8;
+        td0.className = 'ui status-off';
+        td0.textContent = 'No markets added yet.';
+        tr0.appendChild(td0);
+        body.appendChild(tr0);
+      }
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var inst = r.inst;
+        var tierIdx = Number(inst.tier);
+        var tier = TIER_CODES[tierIdx] || '?';
+        var status, statusClass;
+        if (inst.retired) { status = 'retired'; statusClass = 'status-off'; }
+        else if (inst.opensPaused || globalPaused) { status = 'paused'; statusClass = 'status-paused'; }
+        else { status = 'open'; statusClass = 'status-open'; }
+        var tr = document.createElement('tr');
+        var cells = [
+          [r.name, ''],
+          [null, ''],
+          [num(inst.maxLeverage) + 'x', 'right'],
+          [num(inst.deadbandBps) + ' bps', 'right'],
+          [num(inst.clampBps) + ' bps', 'right'],
+          [(r.oi ? usd6(r.oi.longUsd) : '—') + ' / ' + usd6(inst.longOiCapUsd), 'right'],
+          [(r.oi ? usd6(r.oi.shortUsd) : '—') + ' / ' + usd6(inst.shortOiCapUsd), 'right'],
+          [status, statusClass]
+        ];
+        for (var c = 0; c < cells.length; c++) {
+          var td = document.createElement('td');
+          if (cells[c][1]) td.className = cells[c][1];
+          if (c === 1) {
+            var badge = document.createElement('span');
+            badge.className = 'badge badge-' + tier.toLowerCase();
+            badge.textContent = tier;
+            td.appendChild(badge);
+          } else {
+            td.textContent = cells[c][0];
+          }
+          tr.appendChild(td);
+        }
+        body.appendChild(tr);
+      }
+      if (cap) cap.textContent = 'Markets on chain · ' + rows.length + ' listed · ' + blockTag;
+    }
+
+    function readChain(cfg) {
+      var contracts = cfg.contracts || cfg.addresses || cfg;
+      var exchangeAddr = pick(contracts, ['exchange', 'Exchange']);
+      if (!isAddress(exchangeAddr)) {
+        setStatus('config.json has no exchange address · spec defaults');
+        return Promise.resolve();
+      }
+      if (exchangeAddr === ZERO) {
+        setStatus('not deployed yet · spec defaults');
+        return Promise.resolve();
+      }
+      var rpc = pick(cfg, ['rpc', 'rpcUrl']) || (Array.isArray(cfg.rpcUrls) ? cfg.rpcUrls[0] : null) || DEFAULT_RPC;
+      var chainId = Number(cfg.chainId || DEFAULT_CHAIN_ID);
+      /* The public HyperEVM RPC rejects JSON-RPC batches above 20 requests, and ethers would
+         otherwise pack every call below into one batch; 10 keeps well under that. config.json
+         can lower it to 1 for RPCs that reject batches outright. */
+      var options = { staticNetwork: true, batchMaxCount: 10 };
+      if (cfg.rpcBatchMaxCount != null && Number(cfg.rpcBatchMaxCount) >= 1) {
+        options.batchMaxCount = Number(cfg.rpcBatchMaxCount);
+      }
+      setStatus('reading chain…');
+
+      return loadEthers().then(function (ethers) {
+        var provider = new ethers.JsonRpcProvider(rpc, chainId, options);
+        var ex = new ethers.Contract(exchangeAddr, EXCHANGE_ABI, provider);
+
+        return settle({
+          block: provider.getBlockNumber(),
+          minMargin: ex.MIN_MARGIN_USDC(),
+          tierA: ex.TIER_A_MAX_LEVERAGE(),
+          tierB: ex.TIER_B_MAX_LEVERAGE(),
+          tierC: ex.TIER_C_MAX_LEVERAGE(),
+          minDb: ex.MIN_DEADBAND_BPS(),
+          maxDb: ex.MAX_DEADBAND_BPS(),
+          minClamp: ex.MIN_CLAMP_BPS(),
+          maxClamp: ex.MAX_CLAMP_BPS(),
+          minBase: ex.MIN_BASE_RATE_BPS(),
+          maxBase: ex.MAX_BASE_RATE_BPS(),
+          count: ex.instrumentCount(),
+          lp: ex.lpBalance(),
+          feePool: ex.feePool(),
+          queued: ex.queuedTotal(),
+          qLen: ex.queueLength(),
+          qHead: ex.queueHead(),
+          paused: ex.globalOpensPaused(),
+          breaker: ex.breakerTripped(),
+          breakerBps: ex.breakerBps(),
+          maxNotional: ex.MAX_POSITION_NOTIONAL_USD(),
+          minPayout: ex.MIN_PAYOUT_CAP_X(),
+          maxPayout: ex.MAX_PAYOUT_CAP_X(),
+          minBreaker: ex.MIN_BREAKER_BPS(),
+          maxBreaker: ex.MAX_BREAKER_BPS(),
+          owner: ex.owner(),
+          guardian: ex.pauseGuardian(),
+          keeper: ex.marketKeeper(),
+          feeRecipient: ex.feeRecipient(),
+          oracle: ex.oracle(),
+          confetti: ex.confetti(),
+          tokenomics: ex.tokenomics(),
+          staking: ex.staking(),
+          usdc: ex.usdc()
+        }).then(function (r) {
+          if (r.block == null) {
+            setStatus('chain unreachable · spec defaults');
+            return;
+          }
+          /* Any Exchange answers these two; another contract at the address (or none) will not. */
+          if (r.count == null && r.lp == null) {
+            setStatus('no Exchange at the configured address · spec defaults');
+            return;
+          }
+          var blockTag = 'block ' + group(r.block, 0);
+          var title = 'read from chain ' + chainId + ' at ' + blockTag;
+          setStatus('live · chain ' + chainId + ' · ' + blockTag, true);
+          var asOf = $('houseAsOf');
+          if (asOf) asOf.textContent = blockTag;
+
+          /* constants and bounds */
+          if (r.minMargin != null) setParam('minMargin', group(num(r.minMargin) / 1e6, 2) + ' USDC', title);
+          if (r.tierA != null) setParam('tierA.maxLev', num(r.tierA) + 'x', title);
+          if (r.tierB != null) setParam('tierB.maxLev', num(r.tierB) + 'x', title);
+          if (r.tierC != null) setParam('tierC.maxLev', num(r.tierC) + 'x', title);
+          if (r.minDb != null && r.maxDb != null) setParam('bounds.deadband', num(r.minDb) + ' to ' + num(r.maxDb) + ' bps', title);
+          if (r.minClamp != null && r.maxClamp != null) setParam('bounds.clamp', num(r.minClamp) + ' to ' + num(r.maxClamp) + ' bps', title);
+          if (r.minBase != null && r.maxBase != null) setParam('bounds.baseRate', (num(r.minBase) / 100) + '% to ' + (num(r.maxBase) / 100) + '%', title);
+          if (r.maxNotional != null) setParam('bounds.notional', usd6(r.maxNotional), title);
+          if (r.minPayout != null && r.maxPayout != null) setParam('bounds.payout', num(r.minPayout) + 'x to ' + num(r.maxPayout) + 'x', title);
+          if (r.minBreaker != null && r.maxBreaker != null) setParam('bounds.breaker', (num(r.minBreaker) / 100) + '% to ' + (num(r.maxBreaker) / 100) + '%', title);
+
+          /* house */
+          setParam('house.lp', r.lp == null ? null : usd6(r.lp, true), title);
+          setParam('house.feePool', r.feePool == null ? null : usd6(r.feePool, true), title);
+          setParam('house.queued', r.queued == null ? null : usd6(r.queued, true), title);
+          if (r.qLen != null && r.qHead != null) setParam('house.queueLive', group(num(r.qLen) - num(r.qHead), 0), title);
+          if (r.paused != null) setParam('house.paused', r.paused ? 'yes' : 'no', title);
+          if (r.breaker != null) {
+            var share = r.breakerBps != null ? (num(r.breakerBps) / 100) + '% per hour' : null;
+            setParam('house.breaker', r.breaker ? 'tripped · opens paused' + (share ? ' (' + share + ')' : '') : 'armed' + (share ? ' at ' + share : ''), title);
+          }
+
+          /* roles and addresses */
+          var roleKeys = { owner: 'roles.owner', guardian: 'roles.guardian', keeper: 'roles.keeper', feeRecipient: 'roles.feeRecipient', oracle: 'roles.oracle', confetti: 'roles.confetti', tokenomics: 'roles.tokenomics', staking: 'roles.staking', usdc: 'roles.usdc' };
+          for (var rk in roleKeys) {
+            if (!Object.prototype.hasOwnProperty.call(roleKeys, rk)) continue;
+            var a = r[rk];
+            if (a == null) continue;
+            setParam(roleKeys[rk], a === ZERO ? 'not set' : a, title);
+          }
+          setParam('roles.exchange', exchangeAddr, title);
+
+          /* secondary contracts: addresses from config first, then from the Exchange */
+          var tokAddr = pick(contracts, ['tokenomics', 'Tokenomics']) || r.tokenomics;
+          var confAddr = pick(contracts, ['confetti', 'Confetti', 'token']) || r.confetti;
+          var stakeAddr = pick(contracts, ['staking', 'Staking']) || r.staking;
+          var second = {};
+          if (isAddress(tokAddr) && tokAddr !== ZERO) {
+            var tok = new ethers.Contract(tokAddr, TOKENOMICS_ABI, provider);
+            second.params = tok.params();
+            second.tracked = tok.trackedLpUsd();
+            second.tail = tok.tailProgressUsd();
+            second.rate = tok.currentRateE18();
+            second.minted = tok.totalMinted();
+          }
+          if (isAddress(confAddr) && confAddr !== ZERO) {
+            second.transfers = new ethers.Contract(confAddr, CONFETTI_ABI, provider).transfersEnabled();
+          }
+          if (isAddress(stakeAddr) && stakeAddr !== ZERO) {
+            var st = new ethers.Contract(stakeAddr, STAKING_ABI, provider);
+            second.totalStaked = st.totalStaked();
+            second.totalRewards = st.totalRewardsUsdc();
+          }
+          /* instruments */
+          var count = r.count == null ? 0 : Math.min(num(r.count), MAX_INSTRUMENTS);
+          for (var i = 0; i < count; i++) {
+            second['inst' + i] = ex.instrument(i);
+            second['oi' + i] = ex.openInterest(i);
+          }
+
+          return settle(second).then(function (s) {
+            /* tokenomics */
+            var curve = { flatRate: SPEC.flatRate, flatThreshold: SPEC.flatThreshold, tailScale: SPEC.tailScale, stakerCap: SPEC.stakerCap };
+            if (s.params) {
+              curve.flatThreshold = num(s.params.flatThresholdUsd) / 1e6;
+              curve.tailScale = num(s.params.tailDecayScaleUsd) / 1e6;
+              curve.stakerCap = num(s.params.stakerCapUsd) / 1e6;
+              curve.flatRate = num(s.params.flatRateE18) / 1e18;
+              setParam('tok.flatThreshold', '$' + group(curve.flatThreshold, 0), title);
+              setParam('tok.S', '$' + group(curve.tailScale, 0), title);
+              setParam('tok.stakerCap', '$' + group(curve.stakerCap, 0), title);
+              setParam('tok.flatRate', group(curve.flatRate, 2), title);
+            }
+            if (s.tracked != null) setParam('tok.trackedLp', usd6(s.tracked, true), title);
+            if (s.tail != null) setParam('tok.tailProgress', usd6(s.tail), title);
+            if (s.rate != null) setParam('tok.rate', e18(s.rate, 2) + ' per $1', title);
+            if (s.minted != null) setParam('tok.minted', e18(s.minted, 0) + ' CONFETTI', title);
+            if (s.transfers != null) setParam('confetti.transfers', s.transfers ? 'enabled' : 'locked', title);
+            if (s.totalStaked != null) setParam('staking.totalStaked', e18(s.totalStaked, 0) + ' CONFETTI', title);
+            if (s.totalRewards != null) setParam('staking.totalRewards', usd6(s.totalRewards, true), title);
+
+            var now = null;
+            if (s.tracked != null && s.tail != null && s.rate != null) {
+              now = { trackedLp: num(s.tracked) / 1e6, tailProgress: num(s.tail) / 1e6, rate: num(s.rate) / 1e18 };
+            }
+            drawMintCurve(curve, now);
+            var mintCap = $('mintCap');
+            if (mintCap) {
+              mintCap.textContent = 'Mint rate from the formula above with the live parameters: flat rate ' + group(curve.flatRate, 2) +
+                ', threshold ' + money(curve.flatThreshold) + ', S = ' + money(curve.tailScale) + '. The green band is the flat region, not to scale. ' +
+                'At S the rate is a quarter of the flat rate, at 3S a sixteenth.' + (now ? ' The red dot is where the house is at ' + blockTag + '.' : '');
+            }
+
+            /* markets */
+            var names = marketNames(cfg);
+            var rows = [];
+            for (var i = 0; i < count; i++) {
+              var inst = s['inst' + i];
+              if (!inst) continue;
+              var hl = num(inst.hlAssetIndex);
+              rows.push({ name: names[hl] || HL_SYMBOL[hl] || ('asset #' + hl), inst: inst, oi: s['oi' + i] });
+            }
+            renderMarkets(rows, !!r.paused, blockTag);
+
+            /* impact curve from the first market's live parameters */
+            if (rows.length) {
+              var first = rows[0].inst;
+              var ip = {
+                baseRate: num(first.baseRateBps) / 10000,
+                rateMultiplier: num(first.rateMultiplier),
+                sizeTerm: num(first.referenceNotionalUsd) / num(first.positionMultiplierE6)
+              };
+              if (isFinite(ip.sizeTerm) && ip.sizeTerm > 0 && ip.rateMultiplier > 0) {
+                setParam('impact.baseRate', pct(ip.baseRate, 0), title);
+                setParam('impact.rateMultiplier', group(ip.rateMultiplier, 0), title);
+                setParam('impact.refNotional', usd6(first.referenceNotionalUsd), title);
+                fillScaleTable(ip);
+                drawImpactCurve(ip);
+                var impactCap = $('impactCap');
+                if (impactCap) {
+                  impactCap.textContent = 'Impact scale from the formula above with ' + rows[0].name + "'s live parameters: base rate " + pct(ip.baseRate, 0) +
+                    ', rate multiplier ' + group(ip.rateMultiplier, 0) + ', referenceNotional / positionMultiplier = ' + ip.sizeTerm.toPrecision(3) + '.';
+                }
+              }
+            }
+          });
+        });
+      }).catch(function () {
+        setStatus('chain unreachable · spec defaults');
+      });
+    }
+
+    /* ---- wiring ---------------------------------------------------------- */
+
+    function init() {
+      initToc();
+      initTheme();
+      fillScaleTable(SPEC);
+      drawImpactCurve(SPEC);
+      drawMintCurve(SPEC, null);
+      loadConfig().then(function (cfg) {
+        if (!cfg || typeof cfg !== 'object') {
+          setStatus('spec defaults · not deployed');
+          return;
+        }
+        return readChain(cfg);
+      });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  })();
+  </script>
+</body>
+</html>
