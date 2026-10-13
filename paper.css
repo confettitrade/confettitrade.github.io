@@ -829,6 +829,21 @@ pre {
   display: none;
 }
 
+/* the standing consent to the automatic fallback fill, in the tab bar next to Close all */
+.tabs .auto-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  align-self: center;
+  margin-right: 0.75em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tabs .auto-fill input {
+  margin: 0;
+}
+
 .tab {
   -webkit-appearance: none;
   appearance: none;

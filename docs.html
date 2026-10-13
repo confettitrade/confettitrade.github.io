@@ -410,14 +410,13 @@
 
       <section id="fix">
         <h2>What Confetti reads instead</h2>
-        <p>Every fill here is checked against the HyperCore oracle, the validator median of external venues, read on-chain in the same block. The book mid is accepted inside 5 bps of it on 1000x markets, 25 bps at 250x, 50 bps at 50x. A 1000x position busts at 9.5 bps. The band is narrower than the bust. Push the book all you like. Nothing that settles moves.</p>
-        <p>A position carries at most $25,000 of notional on a 1000x market, $10,000 at 250x, $2,500 at 50x, and pays out at most 50 times its margin. If the house loses more than a tenth of itself in an hour, opens pause until a human clears it. Anyone can liquidate anything past its bust price and keep 0.5% of the margin for the trouble.</p>
-        <p>Ten markets at launch. DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE at 1000x. TRUMP and PEPE at 250x. No order book, no funding, no spread. The contracts cannot be upgraded.</p>
+        <p>Every fill here is the HyperCore oracle price, the validator median of external venues; the book settles nothing. You ask, and a keeper fills you a few seconds later at the print the oracle shows then. If no keeper comes, anyone may fill you at the worse of the two prints until the request expires, so the page asks your wallet to fill it the moment the keeper window closes. Leverage is set per coin: up to 1000x on DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE, up to 250x on TRUMP and PEPE.</p>
+        <p>A position carries at most $25,000 of notional ($10,000 on the 250x coins), pays out at most 50 times its margin, and anyone can liquidate it past its bust price for 0.5% of the margin. If the house loses a tenth of itself in an hour, opens pause until a human clears it; the contracts cannot be upgraded.</p>
       </section>
 
       <section id="up">
         <h2>Up</h2>
-        <p>Every trade is against the house. The house opens at zero and is built from losses. Each dollar lost mints 100 CONFETTI to the wallet that lost it, until the house has taken its first $250,000. After that the rate decays and does not climb back on its own (the owner can retune the curve within bounds). Staked CONFETTI collects 40% of every fee and every dollar the house holds above $500,000. The fee is 5% of what you win or lose. The team mints 10% on top of every mint.</p>
+        <p>Every trade is against the house. The house opens at zero and is built from losses. Each dollar lost mints 100 CONFETTI to the wallet that lost it, until the house has taken its first $250,000. After that the rate decays and does not climb back on its own (the owner can retune the curve within bounds). Staked CONFETTI collects every dollar the house holds above $500,000. The fee is 5% of what you win or lose. Refer someone and 15% of their fees are yours. The team mints 10% on top of every mint.</p>
         <p>Paper did $3.3 billion on one coin. There are ten here, and memes move.</p>
         <p><a class="btn btn-lg" href="trade.html">Trade</a></p>
       </section>
@@ -435,6 +434,11 @@
 
   <script>
     (function () {
+      /* ?ref=CODE on any page: kept for the trade page, which passes the referrer on the first fill. */
+      try {
+        var code = new URLSearchParams(location.search).get('ref');
+        if (code && /^[a-z0-9_]{3,16}$/.test(code.trim().toLowerCase())) localStorage.setItem('confetti.ref', code.trim().toLowerCase());
+      } catch (e) { /* storage blocked */ }
       var KEY = 'confetti.theme', root = document.documentElement, btn = document.getElementById('themeToggle');
       function apply(night) {
         if (night) root.setAttribute('data-theme', 'night'); else root.removeAttribute('data-theme');

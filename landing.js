@@ -16,7 +16,9 @@
   var CANDLE_COUNT = 60;
   var TAPE_SPEED_PX_S = 55;
   var THEME_KEY = 'confetti.theme';
-  var BUST_BUFFER = 0.95; /* DESIGN s5: bust when the adverse move equals margin/notional x 0.95 */
+  /* DESIGN s5: bust when the adverse move reaches the smaller of 0.95 / leverage and
+     1 / leverage - 5 bps (ImpactLib.bustPrice): 5 bps at 1000x, 95 bps at 100x and below. */
+  function bustMove(lev) { return Math.min(0.95 / lev, 1 / lev - 0.0005); }
 
   /* ---- small helpers ---------------------------------------------------- */
 
@@ -413,7 +415,7 @@
     if (notional) notional.textContent = fmtUsd(form.margin * form.lev);
     if (bust) {
       var dir = form.side === 'long' ? -1 : 1;
-      var bp = isFinite(form.price) ? form.price * (1 + (dir * BUST_BUFFER) / form.lev) : NaN;
+      var bp = isFinite(form.price) ? form.price * (1 + dir * bustMove(form.lev)) : NaN;
       bust.textContent = fmtPrice(bp);
     }
     if (action) {
@@ -544,7 +546,16 @@
     }
   }
 
+  /* ?ref=CODE on any page: kept for the trade page, which passes the referrer on the first fill. */
+  function captureRef() {
+    try {
+      var code = new URLSearchParams(location.search).get('ref');
+      if (code && /^[a-z0-9_]{3,16}$/.test(code.trim().toLowerCase())) localStorage.setItem('confetti.ref', code.trim().toLowerCase());
+    } catch (e) { /* storage blocked */ }
+  }
+
   function init() {
+    captureRef();
     buildTape();
     initTheme();
     scatterConfetti();

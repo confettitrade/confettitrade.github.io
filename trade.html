@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — trade</title>
-  <meta name="description" content="Trade synthetic 1000x perpetuals on meme coins against the Confetti house on HyperEVM. Direct wallet transactions, no order book, no funding.">
+  <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no order book, no funding.">
   <meta name="theme-color" content="#f4ecd8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -90,6 +90,20 @@
     .pos-lines .pos-line:first-child, .pos-lines .empty[hidden] + .pos-line { border-top: 0; }
     .pos-line .btn { min-height: 24px; }
     .pos-line a { color: inherit; text-decoration-color: var(--rule); }
+    /* A request still filling: the line waits, its status counts down, its button appears
+       only when the user can do something (fill after the keeper window, cancel after expiry). */
+    .pos-line.is-pending { background: var(--sunken); }
+    .pos-line.is-pending [data-role="status"] { min-width: 9ch; }
+    .pos-line .btn[hidden] { display: none; }
+
+    /* Refer panel */
+    .refer { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 12px; }
+    .refer .kv-val { overflow-wrap: anywhere; text-align: right; }
+    .refer .kv-val a { color: inherit; text-decoration-color: var(--rule); }
+    .refer-form { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .refer-form .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
+    .refer-form[hidden] { display: none; }
+    .refer .hint { text-align: left; margin-top: 6px; }
     .hist-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-top: 1px solid var(--rule); }
     .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 8px; }
     .status-grid .kv-val a { text-decoration-color: var(--rule); }
@@ -230,7 +244,7 @@
 
             <button class="btn btn-lg btn-block btn-accent" id="actionBtn" type="submit">Connect wallet</button>
             <div class="hint" id="actionHint" aria-live="polite"></div>
-            <div class="fineprint" id="finePrint">No funding, no spread. Wins pay the impact haircut plus a 5% fee.</div>
+            <div class="fineprint" id="finePrint">Fills at the oracle price, a few seconds after you click. Wins pay the impact haircut plus a 5% fee.</div>
           </form>
         </div>
       </aside>
@@ -240,8 +254,10 @@
         <div class="tabs" role="tablist">
           <button class="tab" id="tabPositions" type="button" role="tab" aria-selected="true" aria-controls="panelPositions" data-tab="positions">Positions<span class="count" id="posCount"></span></button>
           <button class="tab" id="tabHistory" type="button" role="tab" aria-selected="false" aria-controls="panelHistory" data-tab="history">History</button>
+          <button class="tab" id="tabRefer" type="button" role="tab" aria-selected="false" aria-controls="panelRefer" data-tab="refer">Refer</button>
           <button class="tab" id="tabStatus" type="button" role="tab" aria-selected="false" aria-controls="panelStatus" data-tab="status">Status</button>
           <span class="grow"></span>
+          <label class="auto-fill xs faint" title="After the keeper window anyone may fill a request at the worse of the two oracle prints until it expires, and you cannot cancel it. On, the page asks your wallet to fill it the moment that window opens."><input type="checkbox" id="autoFillChk" checked> fill from my wallet if the keeper misses</label>
           <button class="btn btn-sm btn-ghost" id="closeAllBtn" type="button" disabled>Close all</button>
         </div>
 
@@ -261,6 +277,26 @@
           </div>
         </div>
 
+        <div class="tab-panel" id="panelRefer" role="tabpanel" aria-labelledby="tabRefer" hidden>
+          <div class="refer">
+            <div>
+              <div class="kv"><span class="kv-key">Your code</span><span class="kv-val" id="rfCode">—</span></div>
+              <div class="kv"><span class="kv-key">Your link</span><span class="kv-val" id="rfLink">—</span></div>
+              <div class="kv"><span class="kv-key">Earned</span><span class="kv-val" id="rfEarned">—</span></div>
+              <div class="kv"><span class="kv-key">You get</span><span class="kv-val" id="rfShare">15% of their fees</span></div>
+              <div class="kv"><span class="kv-key">Referred by</span><span class="kv-val" id="rfBy">—</span></div>
+              <div class="quick"><button class="btn" type="button" id="rfCopy" hidden>Copy link</button></div>
+            </div>
+            <div>
+              <form class="refer-form" id="referForm" autocomplete="off" novalidate hidden>
+                <input class="input" id="referCode" type="text" maxlength="16" placeholder="your_code" spellcheck="false" aria-label="Referral code">
+                <button class="btn btn-primary" type="submit" id="referSubmit">Register</button>
+              </form>
+              <div class="hint" id="referHint" aria-live="polite">Connect a wallet to get a code.</div>
+            </div>
+          </div>
+        </div>
+
         <div class="tab-panel" id="panelStatus" role="tabpanel" aria-labelledby="tabStatus" hidden>
           <div class="status-grid">
             <div>
@@ -274,6 +310,10 @@
               <div class="kv"><span class="kv-key">LP balance</span><span class="kv-val" id="stLp">—</span></div>
               <div class="kv"><span class="kv-key">Fee pool</span><span class="kv-val" id="stFeePool">—</span></div>
               <div class="kv"><span class="kv-key">Fee rate</span><span class="kv-val" id="stFee">—</span></div>
+              <div class="kv"><span class="kv-key">To stakers</span><span class="kv-val" id="stStakerShare">—</span></div>
+              <div class="kv"><span class="kv-key">To referrers</span><span class="kv-val" id="stRefShare">—</span></div>
+              <div class="kv"><span class="kv-key">Fill windows</span><span class="kv-val" id="stWindows">—</span></div>
+              <div class="kv"><span class="kv-key">Jump guard</span><span class="kv-val" id="stJump">—</span></div>
               <div class="kv"><span class="kv-key">Queued payouts</span><span class="kv-val" id="stQueued">—</span></div>
               <div class="kv"><span class="kv-key">Queue entries</span><span class="kv-val" id="stQueueLen">—</span></div>
               <div class="kv"><span class="kv-key">Opens paused</span><span class="kv-val" id="stPaused">—</span></div>
@@ -288,13 +328,16 @@
               <div class="kv"><span class="kv-key">CONFETTI</span><span class="kv-val" id="stConfetti">—</span></div>
               <div class="kv"><span class="kv-key">Tokenomics</span><span class="kv-val" id="stTokenomics">—</span></div>
               <div class="kv"><span class="kv-key">Staking</span><span class="kv-val" id="stStaking">—</span></div>
+              <div class="kv"><span class="kv-key">Referrals</span><span class="kv-val" id="stReferrals">—</span></div>
               <div class="kv"><span class="kv-key">Owner</span><span class="kv-val" id="stOwner">—</span></div>
               <div class="kv"><span class="kv-key">Fee recipient</span><span class="kv-val" id="stFeeRecipient">—</span></div>
               <h4>This market</h4>
               <div class="kv"><span class="kv-key">Instrument</span><span class="kv-val" id="stInst">—</span></div>
-              <div class="kv"><span class="kv-key">Deadband / clamp</span><span class="kv-val" id="stBand">—</span></div>
+              <div class="kv"><span class="kv-key">Max leverage</span><span class="kv-val" id="stMaxLev">—</span></div>
+              <div class="kv"><span class="kv-key">Deadband</span><span class="kv-val" id="stBand">—</span></div>
               <div class="kv"><span class="kv-key">Impact curve</span><span class="kv-val" id="stCurve">—</span></div>
               <div class="kv"><span class="kv-key">OI caps L / S</span><span class="kv-val" id="stCaps">—</span></div>
+              <div class="kv"><span class="kv-key">Position cap · payout</span><span class="kv-val" id="stPosCap">—</span></div>
               <div class="kv"><span class="kv-key">Oracle price</span><span class="kv-val" id="stOraclePx">—</span></div>
             </div>
           </div>
