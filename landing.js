@@ -114,7 +114,7 @@
         item.setAttribute('data-sym', sym);
         var s = document.createElement('span');
         s.className = 'sym';
-        s.textContent = sym;
+        s.textContent = sym.replace(/^k(?=[A-Z])/, ''); /* kPEPE shows as PEPE */
         var p = document.createElement('span');
         p.className = 'px';
         p.textContent = tape.lastRaw[sym] || '—';

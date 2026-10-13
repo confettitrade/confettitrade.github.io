@@ -1662,3 +1662,26 @@ pre {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Position lines: one row per position, no table
+   -------------------------------------------------------------------------- */
+.pos-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.pos-line .sym { font-weight: 600; color: var(--ink); }
+.pos-line .grow { flex: 1 1 auto; }
+.pos-line .btn { flex: 0 0 auto; }
+/* A list of lines scrolls as one unit; the page never widens. */
+.pos-lines { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pos-lines .pos-line { overflow: visible; min-width: max-content; }
+.pos-lines .empty { padding: 12px 0; color: var(--ink-faint); font-size: var(--text-sm); }
+@media (max-width: 480px) { .pos-line { gap: 10px; font-size: var(--text-xs); } }

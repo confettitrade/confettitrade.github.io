@@ -28,8 +28,11 @@
   /* Fixed protocol constants (IExchange header). Config may restate them but cannot change the contract. */
   var MIN_MARGIN = 10;
   var BUST_BUFFER_PCT = 95;
-  var WIN_FEE = 0.02;
-  var LOSS_FEE = 0.02;
+  /* Fee rate on wins, losses and liquidations. The owner can set it from 0 to 5% (never above).
+     The rate (like the market's deadband and payout cap) is stamped on each position at open,
+     so an open position's preview uses its own stamped terms (positions() returns them); the
+     order form uses the live feeBps() once refreshHouse has read it, and the 5% cap until then. */
+  var DEFAULT_FEE_RATE = 0.05;
 
   /* ---- tiny helpers ------------------------------------------------------- */
 
@@ -100,6 +103,11 @@
       d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
+  function fmtClock(ts) {
+    if (!ts) return '…';
+    return new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
   function usd6ToNum(x) { return Number(x) / 1e6; }
   function px18ToNum(x) { return Number(x) / 1e18; }
   function tokenToNum(x) { return Number(x) / 1e18; }
@@ -149,7 +157,7 @@
     /* views */
     'function balanceOf(address user) view returns (uint256 availableUsdc)',
     'function marginInUse(address user) view returns (uint256 usdc)',
-    'function positions(uint256 positionId) view returns (tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint64 openedAt))',
+    'function positions(uint256 positionId) view returns (tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint64 openedAt, uint16 deadbandBps, uint16 payoutCapX, uint16 feeBps))',
     'function positionIdsOf(address user) view returns (uint256[])',
     'function bustPrice(uint256 positionId) view returns (uint256 px18)',
     'function previewClose(uint256 positionId) view returns (int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc)',
@@ -166,6 +174,7 @@
     'function globalOpensPaused() view returns (bool)',
     'function breakerTripped() view returns (bool)',
     'function breakerBps() view returns (uint16)',
+    'function feeBps() view returns (uint16)',
     'function usdc() view returns (address)',
     'function oracle() view returns (address)',
     'function confetti() view returns (address)',
@@ -277,7 +286,8 @@
 
   var house = {
     addrs: {}, lp: null, feePool: null, queued: null, queueLen: null, queueHead: null,
-    globalPaused: false, breakerTripped: false, instCount: null, block: null, blockAt: 0, oi: {}, oraclePx: null
+    globalPaused: false, breakerTripped: false, instCount: null, block: null, blockAt: 0, oi: {}, oraclePx: null,
+    feeRate: null
   };
 
   var read = { provider: null, logProvider: null, exchange: null };
@@ -707,26 +717,40 @@
     return (1 - c.baseRate) / (1 + rateTerm + sizeTerm);
   }
 
-  /* What close() would settle to at price px. Returns { pnl, fee, payout, flat } in USD. */
+  /* Live fee rate (feeBps / 1e4) once read from the exchange, the 5% cap before that. */
+  function feeRate() { return house.feeRate != null ? house.feeRate : DEFAULT_FEE_RATE; }
+
+  /* "5%", "2.5%": the fee rate for UI text. */
+  function feePctText() { return (feeRate() * 100).toFixed(2).replace(/\.?0+$/, '') + '%'; }
+
+  /* What close() would settle to at price px. Returns { pnl, fee, payout, flat } in USD.
+     A position carries the deadband, payout cap and fee rate stamped on it at open
+     (pos.deadbandBps / payoutCapX / feeBps) and settles on those; the market's live values
+     are only the fallback for a position object that lacks them. The impact curve is live. */
   function estimateClose(pos, inst, px, queueEmpty) {
     var out = { pnl: 0, fee: 0, payout: pos.margin, flat: true };
     if (!(px > 0) || !(pos.entry > 0)) return out;
+    var rate = pos.feeBps >= 0 ? pos.feeBps / 1e4 : feeRate();
     var notional = pos.margin * pos.leverage;
     var isWin = pos.isLong ? px > pos.entry : px < pos.entry;
     if (!isWin) {
       var diff = Math.abs(pos.entry - px);
       var loss = Math.min(pos.margin, notional * diff / pos.entry);
       if (loss <= 0) return out;
-      var lfee = queueEmpty === false ? 0 : loss * LOSS_FEE;
+      var lfee = queueEmpty === false ? 0 : loss * rate;
       return { pnl: -loss, fee: lfee, payout: pos.margin - loss, flat: false };
     }
     var c = curveOf(inst);
-    var exit = pos.isLong ? px * (1 - c.deadbandBps / 1e4) : px * (1 + c.deadbandBps / 1e4);
+    var band = pos.deadbandBps > 0 ? pos.deadbandBps : c.deadbandBps;
+    var exit = pos.isLong ? px * (1 - band / 1e4) : px * (1 + band / 1e4);
     if (pos.isLong ? exit <= pos.entry : exit >= pos.entry) return out;
     var move = Math.abs(exit - pos.entry) / pos.entry;
     var gain = notional * move;
     var adjusted = gain * impactScale(move, c);
-    var fee = adjusted * WIN_FEE;
+    /* payout cap (DESIGN 3b): the contract caps the adjusted gain before taking the fee */
+    var capX = pos.payoutCapX > 0 ? pos.payoutCapX : (inst ? inst.payoutCapX : 0);
+    if (capX > 0) adjusted = Math.min(adjusted, pos.margin * capX);
+    var fee = adjusted * rate;
     return { pnl: adjusted - fee, fee: fee, payout: pos.margin + adjusted - fee, flat: false };
   }
 
@@ -771,7 +795,7 @@
     setText('bustPrice', fmtPrice(bustPriceNum(px, form.side === 'long', form.lev), m ? m.szDecimals : null));
     /* DESIGN 3b: the payout cap is shown before the user opens. */
     var capX = m && m.inst ? m.inst.payoutCapX : 0;
-    setText('maxProfit', capX > 0 && isFinite(form.margin) && form.margin > 0 ? fmtUsd(form.margin * capX) + ' (x' + capX + ')' : '—');
+    setText('maxProfit', capX > 0 && isFinite(form.margin) && form.margin > 0 ? fmtUsd(form.margin * capX * (1 - feeRate())) + ' (x' + capX + ')' : '—');
   }
 
   function renderSide() {
@@ -993,11 +1017,13 @@
     }
     return Promise.all([
       ex.lpBalance(), ex.feePool(), ex.queuedTotal(), ex.queueLength(), ex.queueHead(), ex.globalOpensPaused(), read.provider.getBlockNumber(),
-      ex.breakerTripped().catch(function () { return false; })
+      ex.breakerTripped().catch(function () { return false; }),
+      ex.feeBps().catch(function () { return null; })
     ]).then(function (r) {
       house.lp = usd6ToNum(r[0]); house.feePool = usd6ToNum(r[1]); house.queued = usd6ToNum(r[2]);
       house.queueLen = Number(r[3]); house.queueHead = Number(r[4]); house.globalPaused = !!r[5];
       house.block = Number(r[6]); house.blockAt = Date.now(); house.breakerTripped = !!r[7];
+      if (r[8] != null) house.feeRate = Number(r[8]) / 1e4;
       renderStatus(); renderAction();
     }).catch(function () { /* transient RPC trouble: keep the last values */ });
   }
@@ -1051,7 +1077,9 @@
           positions.push({
             id: ids[i], instrumentId: Number(p.instrumentId), isLong: !!p.isLong,
             margin: usd6ToNum(p.marginUsdc), leverage: Number(p.leverage),
-            entry: px18ToNum(p.entryPx18), entryPx18: BigInt(p.entryPx18), openedAt: Number(p.openedAt)
+            entry: px18ToNum(p.entryPx18), entryPx18: BigInt(p.entryPx18), openedAt: Number(p.openedAt),
+            /* settlement terms stamped at open (DESIGN 5); the close settles on these */
+            deadbandBps: Number(p.deadbandBps), payoutCapX: Number(p.payoutCapX), feeBps: Number(p.feeBps)
           });
         });
         positions.sort(function (x, y) { return x.id < y.id ? -1 : x.id > y.id ? 1 : 0; });
@@ -1124,64 +1152,82 @@
     }
   }
 
+  function sideLev(isLong, lev) { return (isLong ? 'long' : 'short') + ' ' + lev + 'x'; }
+
+  function clearLines(host) {
+    var lines = host.querySelectorAll('.pos-line');
+    for (var i = 0; i < lines.length; i++) host.removeChild(lines[i]);
+  }
+
+  /* Fill the live PnL span of one position line. Only this span depends on the mark. */
+  function fillPositionPnl(line, p) {
+    var m = positionMarket(p);
+    var px = m ? marketPrice(m) : NaN;
+    var est = positionEstimate(p);
+    var span = line.querySelector('[data-role="pnl"]');
+    if (!span) return;
+    span.textContent = isFinite(px) ? fmtUsd(est.pnl, true) : '—';
+    span.className = est.pnl > 0 ? 'pos' : est.pnl < 0 ? 'neg' : '';
+    span.title = isFinite(px) && !est.flat
+      ? 'mark ' + fmtPrice(px, m ? m.szDecimals : null) + ' · payout ' + fmtUsd(est.payout) + (est.fee ? ' · fee ' + fmtUsd(est.fee) : '')
+      : '';
+  }
+
+  /* One .pos-line per open position: sym, side+lev, margin, entry, bust, pnl, [Close]. */
+  function positionLine(p) {
+    var m = positionMarket(p);
+    var sz = m ? m.szDecimals : null;
+    var line = el('div', 'pos-line');
+    line.setAttribute('data-id', String(p.id));
+    line.appendChild(el('span', 'sym', m ? m.symbol : '#' + p.instrumentId));
+    line.appendChild(el('span', 'faint xs', '#' + p.id));
+    line.appendChild(el('span', p.isLong ? 'pos' : 'neg', sideLev(p.isLong, p.leverage)));
+    var margin = el('span', null, fmtUsd(p.margin));
+    margin.title = 'margin · size ' + fmtUsd(p.margin * p.leverage);
+    line.appendChild(margin);
+    var entry = el('span', null, fmtPrice(p.entry, sz));
+    entry.setAttribute('data-role', 'entry'); entry.title = 'entry';
+    line.appendChild(entry);
+    var bust = el('span', 'neg', fmtPrice(px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage)), sz));
+    bust.setAttribute('data-role', 'bust'); bust.title = 'bust';
+    line.appendChild(bust);
+    var pnl = el('span');
+    pnl.setAttribute('data-role', 'pnl');
+    line.appendChild(pnl);
+    line.appendChild(el('span', 'grow'));
+    var btn = el('button', 'btn btn-sm btn-ghost', 'Close');
+    btn.type = 'button';
+    btn.setAttribute('data-id', String(p.id));
+    btn.disabled = state.busy;
+    btn.addEventListener('click', function () { submitClose(p); });
+    line.appendChild(btn);
+    fillPositionPnl(line, p);
+    return line;
+  }
+
   function renderPositions() {
-    var body = $('posBody');
+    var host = $('posLines');
     var empty = $('posEmpty');
-    if (!body) return;
+    if (!host) return;
     setText('posCount', acct.positions.length ? ' ' + acct.positions.length : '');
-    body.textContent = '';
+    clearLines(host);
     if (!wallet.account) { empty.textContent = 'Connect a wallet to see your positions.'; empty.removeAttribute('hidden'); return; }
     if (!hasExchange()) { empty.textContent = 'Exchange address not configured.'; empty.removeAttribute('hidden'); return; }
     if (!acct.loaded) { empty.textContent = 'Loading…'; empty.removeAttribute('hidden'); return; }
     if (!acct.positions.length) { empty.textContent = 'No open positions.'; empty.removeAttribute('hidden'); return; }
     empty.setAttribute('hidden', '');
-
-    acct.positions.forEach(function (p) {
-      var m = positionMarket(p);
-      var px = m ? marketPrice(m) : NaN;
-      var est = positionEstimate(p);
-      var tr = el('tr');
-      tr.setAttribute('data-id', String(p.id));
-      var market = el('td');
-      market.appendChild(el('span', null, m ? m.symbol : '#' + p.instrumentId));
-      market.appendChild(document.createTextNode(' '));
-      market.appendChild(el('span', 'faint xs', '#' + p.id));
-      tr.appendChild(market);
-      tr.appendChild(el('td', p.isLong ? 'pos' : 'neg', (p.isLong ? 'LONG' : 'SHORT') + ' x' + p.leverage));
-      tr.appendChild(el('td', 'right', fmtUsd(p.margin * p.leverage)));
-      tr.appendChild(el('td', 'right', fmtUsd(p.margin)));
-      var sz = m ? m.szDecimals : null;
-      tr.appendChild(el('td', 'right', fmtPrice(p.entry, sz)));
-      tr.appendChild(el('td', 'right', fmtPrice(px, sz)));
-      tr.appendChild(el('td', 'right neg', fmtPrice(px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage)), sz)));
-      var pnlTd = el('td', 'right ' + (est.pnl > 0 ? 'pos' : est.pnl < 0 ? 'neg' : ''), isFinite(px) ? fmtUsd(est.pnl, true) : '—');
-      if (isFinite(px) && !est.flat) pnlTd.title = 'Payout ' + fmtUsd(est.payout) + (est.fee ? ' · fee ' + fmtUsd(est.fee) : '');
-      tr.appendChild(pnlTd);
-      var act = el('td', 'actions');
-      var btn = el('button', 'btn btn-sm', 'Close');
-      btn.type = 'button';
-      btn.disabled = state.busy;
-      btn.addEventListener('click', function () { submitClose(p); });
-      act.appendChild(btn);
-      tr.appendChild(act);
-      body.appendChild(tr);
-    });
+    var frag = document.createDocumentFragment();
+    acct.positions.forEach(function (p) { frag.appendChild(positionLine(p)); });
+    host.appendChild(frag);
   }
 
-  /* Cheap per-tick update of the price-dependent cells without rebuilding rows. */
+  /* Cheap per-tick update of the price-dependent span without rebuilding lines. */
   function updatePositionPrices() {
-    var body = $('posBody');
-    if (!body || !acct.positions.length) return;
+    var host = $('posLines');
+    if (!host || !acct.positions.length) return;
     acct.positions.forEach(function (p) {
-      var tr = body.querySelector('tr[data-id="' + String(p.id) + '"]');
-      if (!tr) return;
-      var m = positionMarket(p);
-      var px = m ? marketPrice(m) : NaN;
-      var est = positionEstimate(p);
-      var cells = tr.children;
-      cells[5].textContent = fmtPrice(px, m ? m.szDecimals : null);
-      cells[7].textContent = isFinite(px) ? fmtUsd(est.pnl, true) : '—';
-      cells[7].className = 'right ' + (est.pnl > 0 ? 'pos' : est.pnl < 0 ? 'neg' : '');
+      var line = host.querySelector('.pos-line[data-id="' + String(p.id) + '"]');
+      if (line) fillPositionPnl(line, p);
     });
   }
 
@@ -1468,7 +1514,7 @@
   function setBusy(on) {
     state.busy = !!on;
     renderAction();
-    var closes = document.querySelectorAll('#posBody .btn');
+    var closes = document.querySelectorAll('#posLines .btn');
     for (var i = 0; i < closes.length; i++) closes[i].disabled = state.busy;
     ['depositSubmit', 'withdrawSubmit'].forEach(function (id) { var b = $(id); if (b) b.disabled = state.busy; });
   }
@@ -1688,7 +1734,7 @@
   /* ---- history (Exchange events via eth_getLogs) ------------------------------------ */
 
   function freshHistory() {
-    return { rows: [], seen: {}, openedMarket: {}, scannedFrom: null, scannedTo: null, loading: false, done: false, chunked: false, blockTs: {} };
+    return { rows: [], seen: {}, openedMarket: {}, openedSide: {}, scannedFrom: null, scannedTo: null, loading: false, done: false, chunked: false, blockTs: {} };
   }
 
   var hist = freshHistory();
@@ -1711,7 +1757,10 @@
       try { p = exIface.parseLog({ topics: Array.from(log.topics), data: log.data }); } catch (e) { p = null; }
       if (!p) return;
       hist.seen[key] = true;
-      if (p.name === 'PositionOpened') hist.openedMarket[String(p.args.positionId)] = Number(p.args.instrumentId);
+      if (p.name === 'PositionOpened') {
+        hist.openedMarket[String(p.args.positionId)] = Number(p.args.instrumentId);
+        hist.openedSide[String(p.args.positionId)] = sideLev(p.args.isLong, p.args.leverage);
+      }
       hist.rows.push({ name: p.name, args: p.args, block: Number(log.blockNumber), index: Number(log.index), tx: log.transactionHash });
     });
     hist.rows.sort(function (a, b) { return b.block - a.block || b.index - a.index; });
@@ -1771,85 +1820,105 @@
     return step();
   }
 
+  /* Structured fields for one history line. amount is already signed; signed=false shows it plain. */
   function describeRow(r) {
     var a = r.args;
-    var market = '—';
-    var details = '';
-    var label = r.name;
+    var d = { label: r.name.toLowerCase(), market: null, id: null, side: null, amount: null, signed: true, details: '' };
     function sym(instId) { var inst = state.byInstId[instId]; return inst && inst.market ? inst.market.symbol : '#' + instId; }
+    function pid() { d.id = String(a.positionId); var mi = hist.openedMarket[d.id]; d.market = mi != null ? sym(mi) : null; d.side = hist.openedSide[d.id] || null; }
     switch (r.name) {
       case 'Deposited':
-        label = 'Deposit';
-        details = '+' + fmtUsd(usd6ToNum(a.amountUsdc)) + (a.payer.toLowerCase() !== wallet.account.toLowerCase() ? ' from ' + shortAddr(a.payer) : '');
+        d.label = 'deposit';
+        d.amount = usd6ToNum(a.amountUsdc);
+        if (a.payer.toLowerCase() !== wallet.account.toLowerCase()) d.details = 'from ' + shortAddr(a.payer);
         break;
       case 'Withdrawn':
-        label = 'Withdraw';
-        details = '-' + fmtUsd(usd6ToNum(a.amountUsdc));
+        d.label = 'withdraw';
+        d.amount = -usd6ToNum(a.amountUsdc);
         break;
       case 'PositionOpened':
-        label = 'Open #' + a.positionId;
-        market = sym(Number(a.instrumentId));
-        details = (a.isLong ? 'LONG' : 'SHORT') + ' x' + a.leverage + ' · margin ' + fmtUsd(usd6ToNum(a.marginUsdc)) + ' · entry ' + fmtPrice(px18ToNum(a.entryPx18));
+        d.label = 'opened';
+        d.id = String(a.positionId);
+        d.market = sym(Number(a.instrumentId));
+        d.side = sideLev(a.isLong, a.leverage);
+        d.amount = usd6ToNum(a.marginUsdc); d.signed = false;
+        d.details = 'margin ' + fmtUsd(usd6ToNum(a.marginUsdc)) + ' · entry ' + fmtPrice(px18ToNum(a.entryPx18));
         break;
       case 'PositionClosed':
-        label = 'Close #' + a.positionId;
-        var mi = hist.openedMarket[String(a.positionId)];
-        market = mi != null ? sym(mi) : '—';
-        details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · PnL ' + fmtUsd(usd6ToNum(a.pnlUsdc), true) + ' · paid ' + fmtUsd(usd6ToNum(a.payoutUsdc));
-        if (a.queuedUsdc > 0n) details += ' · queued ' + fmtUsd(usd6ToNum(a.queuedUsdc));
-        if (a.feeUsdc > 0n) details += ' · fee ' + fmtUsd(usd6ToNum(a.feeUsdc));
-        if (a.confettiMinted > 0n) details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI';
+        d.label = 'closed';
+        pid();
+        d.amount = usd6ToNum(a.pnlUsdc);
+        d.details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · paid ' + fmtUsd(usd6ToNum(a.payoutUsdc));
+        if (a.queuedUsdc > 0n) d.details += ' · queued ' + fmtUsd(usd6ToNum(a.queuedUsdc));
+        if (a.feeUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6ToNum(a.feeUsdc));
+        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI';
         break;
       case 'PositionLiquidated':
-        label = 'Liquidated #' + a.positionId;
-        var li = hist.openedMarket[String(a.positionId)];
-        market = li != null ? sym(li) : '—';
-        details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · margin lost ' + fmtUsd(usd6ToNum(a.marginUsdc)) + ' · bounty ' + fmtUsd(usd6ToNum(a.bountyUsdc)) + ' to ' + shortAddr(a.liquidator);
-        if (a.confettiMinted > 0n) details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI';
+        d.label = 'liquidated';
+        pid();
+        d.amount = -usd6ToNum(a.marginUsdc);
+        d.details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · bounty ' + fmtUsd(usd6ToNum(a.bountyUsdc)) + ' to ' + shortAddr(a.liquidator);
+        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI';
         break;
       case 'QueueAppended':
-        label = 'Queued';
-        details = 'entry #' + a.index + ' · ' + fmtUsd(usd6ToNum(a.amountUsdc)) + ' owed';
+        d.label = 'queued';
+        d.amount = usd6ToNum(a.amountUsdc); d.signed = false;
+        d.details = 'entry #' + a.index + ' · owed';
         break;
       case 'QueuePaid':
-        label = 'Queue paid';
-        details = 'entry #' + a.index + ' · +' + fmtUsd(usd6ToNum(a.paidUsdc)) + ' · ' + fmtUsd(usd6ToNum(a.remainingUsdc)) + ' remaining';
+        d.label = 'queue paid';
+        d.amount = usd6ToNum(a.paidUsdc);
+        d.details = 'entry #' + a.index + ' · ' + fmtUsd(usd6ToNum(a.remainingUsdc)) + ' remaining';
         break;
     }
-    return { label: label, market: market, details: details };
+    return d;
+  }
+
+  function blockTitle(block) {
+    var ts = hist.blockTs[block];
+    return (ts ? fmtTime(ts) + ' · ' : '') + 'block ' + fmtInt(block);
+  }
+
+  /* One .pos-line per event: time, event, market, side+lev, signed amount, tx. */
+  function historyLine(r) {
+    var d = describeRow(r);
+    var line = el('div', 'pos-line');
+    if (d.details) line.title = d.details;
+    var time = el('span', 'faint', fmtClock(hist.blockTs[r.block]));
+    time.setAttribute('data-block', String(r.block));
+    time.title = blockTitle(r.block);
+    line.appendChild(time);
+    line.appendChild(el('span', null, d.label));
+    if (d.market) line.appendChild(el('span', 'sym', d.market));
+    if (d.id) line.appendChild(el('span', 'faint xs', '#' + d.id));
+    if (d.side) line.appendChild(el('span', d.side.charAt(0) === 'l' ? 'pos' : 'neg', d.side));
+    if (d.amount != null) {
+      var cls = d.signed ? (d.amount > 0 ? 'pos' : d.amount < 0 ? 'neg' : '') : '';
+      line.appendChild(el('span', cls || null, fmtUsd(d.amount, d.signed)));
+    }
+    line.appendChild(el('span', 'grow'));
+    var a = el('a', 'faint', shortAddr(r.tx));
+    a.href = explorer('tx', r.tx); a.target = '_blank'; a.rel = 'noopener'; a.title = r.tx;
+    line.appendChild(a);
+    return line;
   }
 
   function renderHistory() {
-    var body = $('histBody');
+    var host = $('histLines');
     var empty = $('histEmpty');
     var more = $('histMoreBtn');
     var range = $('histRange');
-    if (!body) return;
-    body.textContent = '';
+    if (!host) return;
+    clearLines(host);
     if (!wallet.account) { empty.textContent = 'Connect a wallet to load your history.'; empty.removeAttribute('hidden'); }
     else if (!hasExchange()) { empty.textContent = 'Exchange address not configured.'; empty.removeAttribute('hidden'); }
     else if (!hist.rows.length) { empty.textContent = hist.loading ? 'Scanning events…' : 'No events found in the scanned range.'; empty.removeAttribute('hidden'); }
     else empty.setAttribute('hidden', '');
 
-    hist.rows.forEach(function (r) {
-      var d = describeRow(r);
-      var tr = el('tr');
-      var time = el('td', null, fmtTime(hist.blockTs[r.block]));
-      time.setAttribute('data-block', String(r.block));
-      time.title = 'block ' + fmtInt(r.block);
-      tr.appendChild(time);
-      tr.appendChild(el('td', null, d.label));
-      tr.appendChild(el('td', null, d.market));
-      var det = el('td', null, d.details);
-      det.style.whiteSpace = 'normal';
-      tr.appendChild(det);
-      var txTd = el('td', 'right');
-      var a = el('a', null, shortAddr(r.tx));
-      a.href = explorer('tx', r.tx); a.target = '_blank'; a.rel = 'noopener';
-      txTd.appendChild(a);
-      tr.appendChild(txTd);
-      body.appendChild(tr);
-    });
+    var foot = host.querySelector('.hist-foot');
+    var frag = document.createDocumentFragment();
+    hist.rows.forEach(function (r) { frag.appendChild(historyLine(r)); });
+    if (foot) host.insertBefore(frag, foot); else host.appendChild(frag);
 
     if (more) {
       more.disabled = hist.loading || hist.done || !wallet.account || !hasExchange();
@@ -1879,8 +1948,8 @@
       read.provider.getBlock(b).then(function (blk) {
         if (blk) {
           hist.blockTs[b] = Number(blk.timestamp);
-          var cells = document.querySelectorAll('#histBody td[data-block="' + b + '"]');
-          for (var i = 0; i < cells.length; i++) cells[i].textContent = fmtTime(hist.blockTs[b]);
+          var cells = document.querySelectorAll('#histLines [data-block="' + b + '"]');
+          for (var i = 0; i < cells.length; i++) { cells[i].textContent = fmtClock(hist.blockTs[b]); cells[i].title = blockTitle(b); }
         }
       }).catch(function () {}).then(function () { tsInFlight--; next(); });
       next();
@@ -1913,6 +1982,8 @@
     setText('stQueueLen', house.queueLen != null ? fmtInt(house.queueLen - house.queueHead) + ' live · ' + fmtInt(house.queueLen) + ' ever' : '—');
     setText('stPaused', read.exchange ? (house.globalPaused ? 'yes' : 'no') : '—');
     setText('stBreaker', read.exchange ? (house.breakerTripped ? 'tripped · opens paused' : 'armed') : '—');
+    setText('stFee', read.exchange && house.feeRate != null ? feePctText() : '—');
+    setText('finePrint', 'No funding, no spread. Wins pay the impact haircut plus a ' + feePctText() + ' fee.');
     setText('stInstCount', house.instCount != null ? String(house.instCount) : '—');
 
     addrCell('stExchange', cfg.contracts && cfg.contracts.exchange);

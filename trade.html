@@ -86,8 +86,10 @@
     .tab .count { margin-left: 4px; font-family: var(--font-mono); color: var(--ink-faint); letter-spacing: 0; }
     .tab-panel[hidden] { display: none; }
     .empty { padding: 20px 12px; color: var(--ink-faint); font-size: var(--text-sm); text-align: center; }
-    .table td.actions { text-align: right; }
-    .table td.actions .btn { min-height: 24px; }
+    .pos-lines .pos-line { padding-left: 12px; padding-right: 12px; }
+    .pos-lines .pos-line:first-child, .pos-lines .empty[hidden] + .pos-line { border-top: 0; }
+    .pos-line .btn { min-height: 24px; }
+    .pos-line a { color: inherit; text-decoration-color: var(--rule); }
     .hist-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-top: 1px solid var(--rule); }
     .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 8px; }
     .status-grid .kv-val a { text-decoration-color: var(--rule); }
@@ -223,12 +225,12 @@
             <div>
               <div class="kv"><span class="kv-key">Order Value</span><span class="kv-val" id="orderValue">—</span></div>
               <div class="kv"><span class="kv-key">Bust Price</span><span class="kv-val neg" id="bustPrice">—</span></div>
-              <div class="kv"><span class="kv-key">Max Profit</span><span class="kv-val" id="maxProfit" title="Profit on one position is capped at the market's payout cap times its margin; anything above stays with the LP.">—</span></div>
+              <div class="kv"><span class="kv-key">Max Profit</span><span class="kv-val" id="maxProfit" title="Profit on one position is capped at the market's payout cap times its margin, shown here after the fee; anything above the cap stays with the LP.">—</span></div>
             </div>
 
             <button class="btn btn-lg btn-block btn-accent" id="actionBtn" type="submit">Connect wallet</button>
             <div class="hint" id="actionHint" aria-live="polite"></div>
-            <div class="fineprint" id="finePrint">No funding, no spread. Wins pay the impact haircut plus 2%.</div>
+            <div class="fineprint" id="finePrint">No funding, no spread. Wins pay the impact haircut plus a 5% fee.</div>
           </form>
         </div>
       </aside>
@@ -244,35 +246,18 @@
         </div>
 
         <div class="tab-panel" id="panelPositions" role="tabpanel" aria-labelledby="tabPositions">
-          <div class="table-wrap">
-            <table class="table" id="posTable">
-              <thead>
-                <tr>
-                  <th>Market</th><th>Side</th>
-                  <th class="right">Size</th><th class="right">Margin</th>
-                  <th class="right">Entry</th><th class="right">Mark</th><th class="right">Bust</th>
-                  <th class="right">PnL (est.)</th><th class="right"></th>
-                </tr>
-              </thead>
-              <tbody id="posBody"></tbody>
-            </table>
+          <div class="pos-lines" id="posLines">
+            <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
           </div>
-          <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
         </div>
 
         <div class="tab-panel" id="panelHistory" role="tabpanel" aria-labelledby="tabHistory" hidden>
-          <div class="table-wrap">
-            <table class="table" id="histTable">
-              <thead>
-                <tr><th>Time</th><th>Event</th><th>Market</th><th>Details</th><th class="right">Tx</th></tr>
-              </thead>
-              <tbody id="histBody"></tbody>
-            </table>
-          </div>
-          <div class="empty" id="histEmpty">Connect a wallet to load your history.</div>
-          <div class="hist-foot">
-            <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
-            <span class="faint xs" id="histRange"></span>
+          <div class="pos-lines" id="histLines">
+            <div class="empty" id="histEmpty">Connect a wallet to load your history.</div>
+            <div class="hist-foot">
+              <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
+              <span class="faint xs" id="histRange"></span>
+            </div>
           </div>
         </div>
 
@@ -288,6 +273,7 @@
               <h4>House</h4>
               <div class="kv"><span class="kv-key">LP balance</span><span class="kv-val" id="stLp">—</span></div>
               <div class="kv"><span class="kv-key">Fee pool</span><span class="kv-val" id="stFeePool">—</span></div>
+              <div class="kv"><span class="kv-key">Fee rate</span><span class="kv-val" id="stFee">—</span></div>
               <div class="kv"><span class="kv-key">Queued payouts</span><span class="kv-val" id="stQueued">—</span></div>
               <div class="kv"><span class="kv-key">Queue entries</span><span class="kv-val" id="stQueueLen">—</span></div>
               <div class="kv"><span class="kv-key">Opens paused</span><span class="kv-val" id="stPaused">—</span></div>
