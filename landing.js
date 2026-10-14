@@ -554,8 +554,30 @@
     } catch (e) { /* storage blocked */ }
   }
 
+  /* House market-activity bots (config.json "houseBots", disclosed in docs.html): left out of every public number.
+     This page has no live account data of its own; the helper is here so anything added to it that lists
+     traders drops theirs the same way trade.js does. Nothing is labelled on screen. */
+  var houseBots = { idx: {}, n: 0 };
+  function isHouseBot(a) { return typeof a === 'string' && !!houseBots.idx[a.toLowerCase()]; }
+  window.ConfettiHouseBots = window.ConfettiHouseBots || {
+    isBot: isHouseBot,
+    filter: function (rows, addrOf) { return houseBots.n ? rows.filter(function (r) { return !isHouseBot(addrOf(r)); }) : rows; },
+    count: function () { return houseBots.n; }
+  };
+  function loadHouseBots() {
+    try {
+      fetch('config.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+        var list = c && Array.isArray(c.houseBots) ? c.houseBots.slice(0, 20) : [];
+        list.forEach(function (a, i) {
+          if (typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a) && !houseBots.idx[a.toLowerCase()]) { houseBots.idx[a.toLowerCase()] = i + 1; houseBots.n++; }
+        });
+      }).catch(function () { /* decoration */ });
+    } catch (e) { /* no fetch */ }
+  }
+
   function init() {
     captureRef();
+    loadHouseBots();
     buildTape();
     initTheme();
     scatterConfetti();

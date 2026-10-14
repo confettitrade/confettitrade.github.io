@@ -22,6 +22,7 @@
     "referrals": "0x0879fe6298a6b987173b29693af4ade6d63c19da",
     "priceSource": "0xFaF573187824D176fc74d1de91a072eb6ffa8494"
   },
+  "houseBots": [],
   "deployBlock": 48404443,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,

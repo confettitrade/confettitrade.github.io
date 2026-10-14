@@ -21,6 +21,7 @@
     "referrals": "0x0000000000000000000000000000000000000000"
   },
 
+  "houseBots": [],
   "deployBlock": 0,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,

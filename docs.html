@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — docs</title>
   <meta name="description" content="What happened to Paper, what Confetti reads instead, and why it goes up.">
@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="paper.css">
+  <link rel="stylesheet" href="points.css">
   <script>
     /* Apply a saved night theme before first paint so the page never flashes cream. */
     try {
@@ -421,8 +422,15 @@
         <h2>Up</h2>
         <p>The house opens at zero and is built from losses. Each dollar lost mints 100 CONFETTI to the wallet that lost it, until the house has taken its first $250,000. After that the rate decays and does not climb back on its own (the owner can retune the curve within bounds). Staked CONFETTI collects every dollar the house holds above $500,000. The fee is 5% of what you win or lose. Refer someone and 15% of their fees are yours. The team mints 10% on top of every mint.</p>
         <p>The house pays wins from what it holds. When that is thin, a win is paid as a queued claim, first in first out, as losses refill the house. The Status tab on the trade page shows the balance and the queue.</p>
+        <p>The house runs market-activity bots of its own, from its own wallets with house money.</p>
+        <p>They are left out of volume, open interest, 24h stats and the leaderboard.</p>
         <p>Paper did $3.3 billion on one coin. There are ten here, and memes move.</p>
         <p><a class="btn btn-lg" href="trade.html">Trade</a></p>
+      </section>
+
+      <section id="points">
+        <h2>Points</h2>
+        <p>Everything you do here earns points: deposits, opens, closes, wins, losses, liquidations, staking CONFETTI, showing up each day, a streak, a first trade in a new market, volume milestones. Referrals pay the most: 40% of everything your referees earn, for good, 5,000 when each one makes a first trade, and a bonus at 1, 5, 20 and 100 referred traders. Your total sits in the header and ticks when something lands; the Points panel on the trade page shows where it comes from, your link and the top 50. The rules are in <a href="points-rules.json">points-rules.json</a>.</p>
       </section>
 
       <section id="bugs">
@@ -464,5 +472,6 @@
       });
     })();
   </script>
+  <script src="points.js" defer></script>
 </body>
 </html>

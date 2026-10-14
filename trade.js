@@ -433,6 +433,60 @@
     minDelay: 5, grace: 3, expiry: 60, maxJumpBps: null, stakerShareBps: null, referralShareBps: null
   };
 
+  /* ---- house market-activity bots ----------------------------------------------------
+     config.json "houseBots": the addresses of the house-run accounts (disclosed in docs.html). They look
+     like any other trader on screen and are left out of every public number: the open-interest
+     chips here and any volume, 24h stat, leaderboard or points ranking (ConfettiHouseBots.filter takes a
+     list of rows and drops theirs). The order form's headroom check keeps the contract's real open
+     interest, because the cap counts them. */
+  var hbots = { idx: {}, n: 0, oi: {}, loaded: false, busy: false, at: 0 };
+  var HBOT_EVERY_MS = 30000;
+
+  function initHouseBots(list) {
+    hbots.idx = {}; hbots.n = 0;
+    (Array.isArray(list) ? list : []).slice(0, 20).forEach(function (a, i) {
+      if (typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a) && !hbots.idx[a.toLowerCase()]) { hbots.idx[a.toLowerCase()] = i + 1; hbots.n++; }
+    });
+  }
+  function isHouseBot(a) { return !!(hbots && typeof a === 'string' && hbots.idx[a.toLowerCase()]); }
+  function excludeHouseBots(rows, addrOf) { return hbots.n ? rows.filter(function (r) { return !isHouseBot(addrOf(r)); }) : rows; }
+  window.ConfettiHouseBots = { isBot: isHouseBot, filter: excludeHouseBots, count: function () { return hbots.n; } };
+
+  /* Open interest as shown to the public: the contract's, minus the house bots' own positions.
+     Until their share has been read the chips show a dash rather than a number that includes them. */
+  function publicOi(sym, instId) {
+    var oi = house.oi[sym];
+    if (!oi || !hbots.n) return oi || null;
+    if (!hbots.loaded) return null;
+    var b = hbots.oi[instId];
+    return { long: Math.max(0, oi.long - (b ? b.long : 0)), short: Math.max(0, oi.short - (b ? b.short : 0)) };
+  }
+  function loadHouseBotOi() {
+    if (!hbots.n || hbots.busy || !read.exchange || Date.now() - hbots.at < HBOT_EVERY_MS) return Promise.resolve();
+    hbots.busy = true; hbots.at = Date.now();
+    var ex = read.exchange, next = {}, ok = true;
+    return Object.keys(hbots.idx).reduce(function (chain, a) {
+      return chain.then(function () {
+        return ex.positionIdsOf(a).then(function (ids) {
+          return Array.from(ids).reduce(function (q, id) {
+            return q.then(function () {
+              return ex.positions(id).then(function (p) {
+                if (!p || p.owner === ZERO) return;
+                var k = Number(p.instrumentId);
+                var o = next[k] || (next[k] = { long: 0, short: 0 });
+                o[p.isLong ? 'long' : 'short'] += usd6ToNum(p.marginUsdc) * Number(p.leverage);
+              });
+            });
+          }, Promise.resolve());
+        }).catch(function () { ok = false; });
+      });
+    }, Promise.resolve()).then(function () {
+      if (ok) { hbots.oi = next; hbots.loaded = true; }
+      hbots.busy = false;
+      if (ok) renderMarketHeader();
+    });
+  }
+
   /* Open requests this page is watching, by request id (string): the OpenRequest fields plus
      the block it was filed in (for the outcome lookup) and what the page is doing about it. */
   var pend = { opens: {}, timer: null, tick: null, inFlight: false, scanning: false, scan: { account: null, from: Infinity } };
@@ -740,7 +794,7 @@
       chg.className = 'market-change ' + (pct > 0 ? 'pos' : pct < 0 ? 'neg' : 'muted');
     }
     setText('chipVol', c && isFinite(c.vol24h) ? fmtUsdCompact(c.vol24h) : '—');
-    var oi = house.oi[m.symbol];
+    var oi = publicOi(m.symbol, m.instrumentId);
     setText('chipLongOi', oi ? fmtUsdCompact(oi.long) : (hasExchange() ? '—' : 'n/a'));
     setText('chipShortOi', oi ? fmtUsdCompact(oi.short) : (hasExchange() ? '—' : 'n/a'));
     var pill = $('pricePill');
@@ -1312,6 +1366,7 @@
       m.inst = inst;
       state.byInstId[id] = inst;
       house.oraclePxById[id] = r[2];
+      loadHouseBotOi();
       renderMarketHeader(); renderLeverage(); renderForm(); renderAction(); renderStatus(); renderAccount(); renderPositions();
     }).catch(function () { /* keep the last values */ });
   }
@@ -3153,6 +3208,7 @@
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};
+      initHouseBots(cfg.houseBots);
       var bad = pinConfig(cfg);
       start();
       if (bad.length) {
