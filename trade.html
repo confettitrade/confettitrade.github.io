@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — trade</title>
   <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no order book, no funding.">
@@ -81,6 +82,11 @@
     .hint { min-height: 1.4em; font-size: var(--text-xs); line-height: 1.4; color: var(--ink-faint); text-align: center; }
     .hint.is-err { color: var(--neg); }
     .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); text-align: center; }
+    /* One-time acceptance of the terms; shown until ticked, remembered in localStorage. */
+    .terms-gate { display: flex; align-items: center; justify-content: center; gap: 0.4em; cursor: pointer; }
+    .terms-gate input { margin: 0; }
+    .terms-gate a { color: inherit; }
+    .terms-gate[hidden] { display: none; }
 
     /* Bottom tabs */
     .tab .count { margin-left: 4px; font-family: var(--font-mono); color: var(--ink-faint); letter-spacing: 0; }
@@ -239,12 +245,17 @@
             <div>
               <div class="kv"><span class="kv-key">Order Value</span><span class="kv-val" id="orderValue">—</span></div>
               <div class="kv"><span class="kv-key">Bust Price</span><span class="kv-val neg" id="bustPrice">—</span></div>
-              <div class="kv"><span class="kv-key">Max Profit</span><span class="kv-val" id="maxProfit" title="Profit on one position is capped at the market's payout cap times its margin, shown here after the fee; anything above the cap stays with the LP.">—</span></div>
+              <div class="kv"><span class="kv-key">Max Profit</span><span class="kv-val" id="maxProfit" title="Profit on one position is capped at the market's payout cap times its margin, shown here after the fee; anything above the cap stays with the house.">—</span></div>
+              <div class="kv"><span class="kv-key">Kept after impact</span><span class="kv-val" id="keptShare" title="The share of a raw gain you keep after the impact haircut, on a 0.1% move and on a 1% move, before the fee.">—</span></div>
+              <div class="kv"><span class="kv-key">Payout cap</span><span class="kv-val" id="payoutCap" title="Profit on one position is capped at this many times its margin; anything above the cap is forfeited to the house.">—</span></div>
+              <div class="kv"><span class="kv-key">House balance</span><span class="kv-val" id="houseLp" title="What the house can pay from right now, and what is still owed to queued wins. Read from the exchange every 10 s.">—</span></div>
             </div>
 
-            <button class="btn btn-lg btn-block btn-accent" id="actionBtn" type="submit">Connect wallet</button>
+            <button class="btn btn-lg btn-block btn-accent" id="actionBtn" type="submit" disabled>Connect wallet</button>
+            <label class="terms-gate xs faint" id="termsGate" hidden><input type="checkbox" id="termsChk"> I have read the <a href="terms.html">terms</a></label>
             <div class="hint" id="actionHint" aria-live="polite"></div>
             <div class="fineprint" id="finePrint">Fills at the oracle price, a few seconds after you click. Wins pay the impact haircut plus a 5% fee.</div>
+            <div class="fineprint">A win the house cannot cover is paid as a queued claim, in order, as the house refills.</div>
           </form>
         </div>
       </aside>
@@ -351,7 +362,9 @@
       <span>HyperEVM (999)</span>
       <span class="spacer"></span>
       <a href="docs.html">docs</a>
-      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">x</a>
+      <a href="terms.html">terms</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
       <button class="btn btn-sm btn-ghost" id="themeToggle" type="button" aria-pressed="false">Night</button>
     </footer>
   </main>

@@ -49,6 +49,27 @@
   var REF_RE = /^[a-z0-9_]{3,16}$/;
   var SITE_URL = 'https://confetti.trade/';
 
+  /* The live deployment, pinned. config.json may restate these, but a config whose addresses
+     differ is refused (console error + status line) and these are used, so a hijacked config
+     cannot redirect a deposit. The RPC and info hosts are pinned the same way; the pages' CSP
+     allows exactly these hosts. */
+  var CONTRACTS = {
+    exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
+    usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
+    oracle: '0x7a5eff5e2288e53ed78de6cdc7f08c68ed4400cc',
+    confetti: '0x665c84fbf77629c8ba6bfe76d9fedd2d9a7b2b75',
+    tokenomics: '0xb9dc9c1271732067aed0068d81b118a638764c0a',
+    staking: '0x318535af817913fd33cd4088f2c56fc5ddcab50d',
+    referrals: '0x0879fe6298a6b987173b29693af4ade6d63c19da',
+    priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494'
+  };
+  var RPC_HOSTS = ['rpc.hyperliquid.xyz', 'hyperliquid.drpc.org', 'rpc.purroofgroup.com'];
+  var INFO_HOSTS = ['api.hyperliquid.xyz'];
+  var DEFAULT_RPC = 'https://rpc.hyperliquid.xyz/evm';
+  var DEFAULT_INFO = 'https://api.hyperliquid.xyz/info';
+  /* One-time acceptance of terms.html, kept in localStorage; the order button waits for it. */
+  var TERMS_KEY = 'confetti.terms';
+
   /* Fixed protocol constants (IExchange header). Config may restate them but cannot change the contract. */
   var MIN_MARGIN = 10;
   /* Bust move = the smaller of 95% of 1/leverage and 1/leverage - BUST_GAP_BPS (ImpactLib):
@@ -159,6 +180,38 @@
       });
     }
     return get('config.json').catch(function () { return get('config.example.json'); });
+  }
+
+  function hostOf(url) {
+    try { return new URL(String(url)).hostname.toLowerCase(); } catch (e) { return ''; }
+  }
+
+  function hostAllowed(url, hosts) {
+    var h = hostOf(url);
+    return !!h && hosts.indexOf(h) !== -1 && /^https:/i.test(String(url));
+  }
+
+  /* Pin the loaded config to the constants above: every contract address, the chain id and the
+     RPC / info hosts. Returns the fields that disagreed (empty for a clean config); the pinned
+     values are in force either way, so the deposit target never comes from the network. A zero
+     address (config.example.json) counts as unset, not as a disagreement. */
+  function pinConfig(c) {
+    var bad = [];
+    c.contracts = c.contracts || {};
+    Object.keys(CONTRACTS).forEach(function (k) {
+      var v = c.contracts[k];
+      var s = v == null ? '' : String(v).toLowerCase();
+      if (s && s !== ZERO && s !== CONTRACTS[k].toLowerCase()) bad.push('contracts.' + k + ' ' + v);
+      c.contracts[k] = CONTRACTS[k];
+    });
+    if (c.chainId != null && Number(c.chainId) !== CHAIN_ID) bad.push('chainId ' + c.chainId);
+    c.chainId = CHAIN_ID;
+    c.chainIdHex = CHAIN_HEX;
+    if (c.rpcUrl && !hostAllowed(c.rpcUrl, RPC_HOSTS)) { bad.push('rpcUrl ' + c.rpcUrl); c.rpcUrl = DEFAULT_RPC; }
+    if (!c.rpcUrl) c.rpcUrl = DEFAULT_RPC;
+    if (c.logRpcUrl && !hostAllowed(c.logRpcUrl, RPC_HOSTS)) { bad.push('logRpcUrl ' + c.logRpcUrl); c.logRpcUrl = null; }
+    if (c.hyperliquidInfoUrl && !hostAllowed(c.hyperliquidInfoUrl, INFO_HOSTS)) { bad.push('hyperliquidInfoUrl ' + c.hyperliquidInfoUrl); c.hyperliquidInfoUrl = DEFAULT_INFO; }
+    return bad;
   }
 
   function hasExchange() { return !!(cfg && cfg.contracts && isAddr(cfg.contracts.exchange)); }
@@ -389,6 +442,9 @@
   var ref = { code: lsGet('confetti.ref') || '', addr: null, locked: null, referrer: null, myCode: '', earned: null, loaded: false };
 
   var read = { provider: null, logProvider: null, exchange: null, referrals: null };
+
+  /* The terms tick for this visit (also read back from localStorage when storage works). */
+  var termsOk = false;
 
   /* ---- Hyperliquid info API ---------------------------------------------- */
 
@@ -937,6 +993,43 @@
     /* DESIGN 3b: the payout cap is shown before the user opens. */
     var capX = m && m.inst ? m.inst.payoutCapX : 0;
     setText('maxProfit', capX > 0 && isFinite(form.margin) && form.margin > 0 ? fmtUsd(form.margin * capX * (1 - feeRate())) + ' (x' + capX + ')' : '—');
+    /* What a winner keeps and loses: the impact haircut's kept share of a raw gain (on a 0.1%
+       and a 1% move, the live curve) and the payout cap; the house's balance sits beside them. */
+    var c = curveOf(m && m.inst ? m.inst : null);
+    var keptLo = impactScale(0.001, c), keptHi = impactScale(0.01, c);
+    setText('keptShare', m ? Math.round(keptLo * 100) + '% to ' + Math.round(keptHi * 100) + '% of a gain' : '—');
+    setText('payoutCap', capX > 0 ? 'x' + capX + ' margin, rest forfeited' : '—');
+    renderHouseLine();
+  }
+
+  /* House balance beside Max Profit: what the house can pay from right now (lpBalance) and what
+     queued wins are still owed (queuedTotal). Both come with the house status read every 10 s. */
+  function renderHouseLine() {
+    var cell = $('houseLp');
+    if (!cell) return;
+    if (house.lp == null) { cell.textContent = '—'; return; }
+    cell.textContent = fmtUsd(house.lp) + (house.queued > 0 ? ' · ' + fmtUsd(house.queued) + ' queued' : '');
+  }
+
+  /* The one-time terms acceptance: the line shows until ticked, the tick is remembered and the
+     order button stays disabled without it. */
+  function termsAccepted() { return termsOk || lsGet(TERMS_KEY) === '1'; }
+
+  function initTerms() {
+    var gate = $('termsGate');
+    var chk = $('termsChk');
+    termsOk = lsGet(TERMS_KEY) === '1';
+    if (!gate || !chk) return;
+    function render() { if (termsAccepted()) gate.setAttribute('hidden', ''); else gate.removeAttribute('hidden'); }
+    chk.checked = termsAccepted();
+    chk.addEventListener('change', function () {
+      if (!chk.checked) return;
+      termsOk = true;
+      lsSet(TERMS_KEY, '1');
+      render();
+      renderAction();
+    });
+    render();
   }
 
   function renderSide() {
@@ -1004,6 +1097,7 @@
       }
     }
     if (state.busy) { disabled = true; note = 'Confirm in your wallet…'; err = false; }
+    if (!termsAccepted()) disabled = true;
     btn.className = cls;
     btn.textContent = label;
     btn.disabled = disabled;
@@ -2742,6 +2836,7 @@
     setText('stFeePool', house.feePool != null ? fmtUsd(house.feePool) : '—');
     setText('stQueued', house.queued != null ? fmtUsd(house.queued) : '—');
     setText('stQueueLen', house.queueLen != null ? fmtInt(house.queueLen - house.queueHead) + ' live · ' + fmtInt(house.queueLen) + ' ever' : '—');
+    renderHouseLine();
     setText('stPaused', read.exchange ? (house.globalPaused ? 'yes' : 'no') : '—');
     setText('stBreaker', read.exchange ? (house.breakerTripped ? 'tripped · opens paused' : 'armed') : '—');
     setText('stFee', read.exchange && house.feeRate != null ? feePctText() : '—');
@@ -3012,6 +3107,7 @@
     initHeader();
     initMarketMenu();
     initForm();
+    initTerms();
     initTabs();
     initDialogs();
     initRefer();
@@ -3057,9 +3153,15 @@
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};
+      var bad = pinConfig(cfg);
       start();
+      if (bad.length) {
+        console.error('config.json does not match the pinned contracts; using the pinned values. Differences: ' + bad.join(', '));
+        toast('config.json does not match this site\'s pinned contracts (' + bad.join(', ') + '). Using the pinned addresses.', 'err', null, 0);
+      }
     }).catch(function (e) {
       cfg = { contracts: {}, markets: [] };
+      pinConfig(cfg);
       start();
       toast('Could not load config.json: ' + (e && e.message ? e.message : e) + '. Serve the site over http and copy config.example.json to config.json.', 'err', null, 0);
     });
