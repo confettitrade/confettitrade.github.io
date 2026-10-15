@@ -22,6 +22,7 @@
   },
 
   "houseBots": [],
+  "pointsRelay": "",
   "deployBlock": 0,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,

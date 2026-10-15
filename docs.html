@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="paper.css">
-  <link rel="stylesheet" href="points.css?v=ca1bb7c">
+  <link rel="stylesheet" href="points.css?v=c3ee29a">
   <script>
     /* Apply a saved night theme before first paint so the page never flashes cream. */
     try {
@@ -35,6 +35,8 @@
       color: var(--page);
     }
     .skip:focus { left: 8px; }
+
+    #relayAddr { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; word-break: break-all; }
 
     .header .container {
       display: flex;
@@ -430,7 +432,8 @@
 
       <section id="points">
         <h2>Points</h2>
-        <p>Everything you do here earns points: deposits, opens, closes, wins, losses, liquidations, staking CONFETTI, showing up each day, a streak, a first trade in a new market, volume milestones. Referrals pay the most: 40% of everything your referees earn, for good, 5,000 when each one makes a first trade, and a bonus at 1, 5, 20 and 100 referred traders. Your total sits in the header and ticks when something lands; the Points panel on the trade page shows where it comes from, your link and the top 50. The rules are in <a href="points-rules.json">points-rules.json</a>.</p>
+        <p>Everything you do here earns points: deposits, opens, closes, wins, losses, liquidations, staking CONFETTI, showing up each day, a streak, a first trade in a new market, volume milestones. Referrals pay the most: 40% of everything your referees earn, for good, 5,000 when each one makes a first trade, and a bonus at 1, 5, 20 and 100 referred traders. Your balance sits in the green bar at the top of every page, with what you earned today, and ticks when something lands; the Points panel on the trade page shows where it comes from, your link and the top 50. The rules are in <a href="points-rules.json">points-rules.json</a>.</p>
+        <p>Points move between wallets. Send in the bar takes an address and a whole number of points and calls the PointsRelay on HyperEVM, a contract with no owner and no storage that only emits the transfer as an event. The indexer reads those events in block order. A transfer counts when the sender's balance at that block (earned, minus sent, plus received) covers the amount. House wallets cannot send or receive. Anything else is ignored and listed under rejected in <a href="points.json">points.json</a> with its transaction hash. Referral shares, daily caps and streaks run on earned points only, so received points pay no one. The leaderboard ranks by balance. Relay: <span id="relayAddr">not deployed yet</span>.</p>
       </section>
 
       <section id="bugs">
@@ -472,6 +475,23 @@
       });
     })();
   </script>
-  <script src="points.js?v=ca1bb7c" defer></script>
+  <script>
+    (function () {
+      /* the relay address, once config.json names one */
+      var el = document.getElementById('relayAddr');
+      if (!el || !window.fetch) return;
+      fetch('config.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }).then(function (c) {
+        var a = (c.pointsRelay || '').trim();
+        if (!/^0x[0-9a-fA-F]{40}$/.test(a)) return;
+        var link = document.createElement('a');
+        link.href = (c.explorerUrl || 'https://hyperevmscan.io') + '/address/' + a + '#code';
+        link.target = '_blank'; link.rel = 'noopener';
+        link.textContent = a;
+        el.textContent = '';
+        el.appendChild(link);
+      }).catch(function () { /* leave the placeholder */ });
+    })();
+  </script>
+  <script src="points.js?v=c3ee29a" defer></script>
 </body>
 </html>

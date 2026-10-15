@@ -3108,6 +3108,17 @@
 
   function dismissToast(t) { if (t && t.parentNode) t.parentNode.removeChild(t); }
 
+  /* The Send control in the points bar (points.js) goes through this page's own wallet: the same connect, chain
+     switch and provider as the header Connect button. Other pages have no trade.js and use the injected wallet. */
+  window.ConfettiWallet = {
+    account: function () { return wallet.account; },
+    connect: function () { return connect(); },
+    ensureChain: function () {
+      return wallet.chainId === CHAIN_ID ? Promise.resolve() : switchChain().then(function () { return onChainChanged(); });
+    },
+    request: function (payload) { return (wallet.eth || getInjected()).request(payload); }
+  };
+
   function initTheme() {
     var btn = $('themeToggle');
     var root = document.documentElement;

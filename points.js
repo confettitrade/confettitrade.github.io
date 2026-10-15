@@ -3,7 +3,10 @@
  * points.json is the indexer's snapshot (authoritative totals and the engine state of every wallet at
  * block B). This file follows the chain from B itself (same RPCs as config.json), applies
  * points-rules.json to each new event, and so ticks within seconds; the next snapshot replaces it.
- * Read-only: it only calls eth_accounts, eth_blockNumber, eth_getLogs and eth_getBlockByNumber.
+ * Transfers (rules v2): the PointsRelay emits PointsTransfer(from, to, amount); the engine applies it in block order
+ * (valid only if the sender's balance covers it and neither wallet is a house bot). The Send panel in the header pill
+ * calls relay.transfer through the connected wallet; everything else here is read-only (eth_accounts, eth_blockNumber,
+ * eth_getLogs, eth_getBlockByNumber).
  */
 (function (root) {
   'use strict';
@@ -11,17 +14,29 @@
   var DAY = 86400;
   var ZERO = '0x0000000000000000000000000000000000000000';
   var NOSHARE = { refShare: 1, refBonus: 1, refLadder: 1, refFees: 1, referred: 1 };
+  var EPS = 1e-9;           // a balance within this of the amount covers it (the page shows floor(n + 1e-9))
+  var MAX_REJECTED = 1000;
+
+  /* what a wallet can spend or show: earned - sent + received */
+  function balance(w) { return w.t - (w.sn || 0) + (w.rc || 0); }
 
   /* ================================================================ engine */
 
   function newWallet() {
     return { t: 0, b: {}, hr: {}, d: -1, sk: 0, bk: 0, sm: [], vol: 0, vm: 0, mk: [], net: 0, wm: 0, fn: 0,
-      op: {}, cp: {}, stk: [0, 0], by: '', kids: [], act: 0, ld: 0, code: '', rf: 0, rp: 0 };
+      op: {}, cp: {}, stk: [0, 0], by: '', kids: [], act: 0, ld: 0, code: '', rf: 0, rp: 0, sn: 0, rc: 0 };
   }
 
-  function Engine(rules, wallets) {
+  /* house: an array of lowercase addresses or an {address: 1} map; rejected: the snapshot's list (or none) */
+  function Engine(rules, wallets, house, rejected) {
     this.r = rules;
     this.W = wallets || {};
+    this.house = {};
+    var self = this;
+    if (Array.isArray(house)) house.forEach(function (a) { self.house[String(a).toLowerCase()] = 1; });
+    else if (house) this.house = house;
+    this.rej = rejected || [];
+    this.lastWhy = '';
   }
 
   Engine.prototype.w = function (a) {
@@ -104,6 +119,31 @@
       if (this.W[a].stk[0] > 0) this.accrue(a, t, out);
     }
     return out;
+  };
+
+  /* A PointsTransfer from the relay. Valid: a whole amount >= 1, two different non-house wallets, and the sender's
+     balance at this point (staking accrued to this block's time) covers it. Returns '' or the rejection reason. */
+  Engine.prototype.transfer = function (ev, out) {
+    var a = ev.a, to = ev.to, amt = ev.v, t = ev.t;
+    var min = Math.max(1, Math.floor((this.r.transfer && this.r.transfer.min) || 1));
+    var why = '';
+    if (!(typeof amt === 'number' && isFinite(amt) && amt === Math.floor(amt)) || amt < min) why = 'amount';
+    else if (a === to || to === ZERO) why = 'recipient';
+    else if (this.house[a] || this.house[to]) why = 'house';
+    else {
+      this.accrue(a, t, out);
+      if (balance(this.w(a)) + EPS < amt) why = 'balance';
+    }
+    if (why) {
+      this.rej.push({ hash: ev.tx || '', reason: why, from: a, to: to, amount: amt, block: ev.b });
+      if (this.rej.length > MAX_REJECTED) this.rej.splice(0, this.rej.length - MAX_REJECTED);
+      return why;
+    }
+    var s = this.w(a), r = this.w(to);
+    s.sn = (s.sn || 0) + amt;
+    r.rc = (r.rc || 0) + amt;
+    out.push([to, 'transfer', amt]);
+    return '';
   };
 
   Engine.prototype.apply = function (ev) {
@@ -194,11 +234,13 @@
       this.accrue(a, t, out);
       var s = this.w(a).stk;
       s[0] = Math.max(0, s[0] - ev.v);
+    } else if (k === 'xfer') {
+      this.lastWhy = this.transfer(ev, out);
     }
     return out;
   };
 
-  var api = { Engine: Engine, newWallet: newWallet };
+  var api = { Engine: Engine, newWallet: newWallet, balance: balance };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof document === 'undefined') return;
   root.ConfettiPointsEngine = api;
@@ -215,7 +257,8 @@
     '0x0a721ab4682ceb61c7e4d264ef879fc419a6d764b136e7d96ef54b2053c75673': 'paid',
     '0x5f7165288eef601591cf549e15ff19ef9060b7f71b9c115be946fa1fe7ebf68a': 'refset',
     '0x9e71bc8eea02a63969f509818f2dafb9254532904319f9dbda79b67bd34a5f3d': 'stake',
-    '0x0f5bb82176feb1b5e747e28471aa92156a04d9f3ab9f45f28e2d704232b93f75': 'unstake'
+    '0x0f5bb82176feb1b5e747e28471aa92156a04d9f3ab9f45f28e2d704232b93f75': 'unstake',
+    '0x7854bf0fa996684a07445d1f0eef8519c916412e98160206439c9c82fa566a69': 'xfer'
   };
   var TOPIC_LIST = Object.keys(TOPICS);
   var ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -223,7 +266,10 @@
   var POLL_MS = 2500;
   var BASE_URL = 'https://confetti.trade/?ref=';
 
+  var CHAIN_HEX = '0x3e7';
+  var TRANSFER_SELECTOR = '0xa9059cbb';   // transfer(address,uint256)
   var S = {
+    relay: '', house: {}, sendBusy: false, todayShown: undefined,
     cfg: null, rules: null, snap: null, eng: null,
     snapBlock: 0, cursor: 0, headTs: 0, headSeenAt: 0, live: false,
     me: '', view: '', forced: '',
@@ -303,6 +349,10 @@
     else if (k === 'paid') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
     else if (k === 'refset') { ev.a = taddr(lg.topics[1]); ev.r = taddr(lg.topics[2]); }
     else if (k === 'stake' || k === 'unstake') { ev.a = taddr(lg.topics[1]); ev.v = Number(word(d, 0)) / 1e18; }
+    else if (k === 'xfer') {
+      if (!S.relay || String(lg.address || '').toLowerCase() !== S.relay) return null;   // only the configured relay counts
+      ev.a = taddr(lg.topics[1]); ev.to = taddr(lg.topics[2]); ev.v = Number(word(d, 0)); ev.tx = lg.transactionHash || '';
+    }
     return ev;
   }
 
@@ -317,6 +367,7 @@
   function fetchLogs(from, to) {
     var c = S.cfg.contracts;
     var addrs = [c.exchange, c.referrals, c.staking].map(function (x) { return x.toLowerCase(); });
+    if (S.relay) addrs.push(S.relay);
     var all = [];
     function step(start) {
       if (start > to) return Promise.resolve(all);
@@ -341,7 +392,7 @@
     return getJson('points.json?t=' + Math.floor(Date.now() / 30000)).then(function (snap) {
       if (!first && S.snap && snap.generatedTs <= S.snap.generatedTs) return;
       S.snap = snap;
-      S.eng = new Engine(S.rules, snap.wallets);
+      S.eng = new Engine(S.rules, snap.wallets, S.house, snap.rejected);
       S.snapBlock = snap.block;
       S.cursor = snap.block;
       S.headTs = snap.blockTime; S.headSeenAt = Date.now();
@@ -374,7 +425,7 @@
         evs.forEach(function (e) {
           e.t = S.ts[e.b];
           var awards = S.eng.apply(e);
-          if (announce) onAwards(awards, e);
+          if (announce) { onAwards(awards, e); if (e.k === 'xfer') onTransfer(e, S.eng.lastWhy); }
         });
         S.cursor = head;
         S.live = true;
@@ -415,8 +466,22 @@
     setTimeout(function () { el.classList.add('is-out'); setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 400); }, 5200);
   }
 
+  var WHY = {
+    balance: 'balance did not cover it',
+    house: 'house wallets cannot send or receive',
+    amount: 'whole points, 1 or more',
+    recipient: 'bad recipient'
+  };
+
+  function onTransfer(ev, why) {
+    if (!S.view || ev.a !== S.view) return;   // the receiver's toast is the 'Received' award
+    if (why) toast('Transfer rejected', WHY[why] || why);
+    else toast('-' + fmt(ev.v) + ' points', 'sent to ' + short(ev.to));
+    renderSend();
+  }
+
   function updateDelta() {
-    var els = [$('ptsPillDelta'), $('ptsDeltaBig')];
+    var els = [$('ptsDeltaBig')];
     els.forEach(function (el) {
       if (!el) return;
       el.textContent = S.deltaPending >= 1 ? '+' + fmt(S.deltaPending) : '';
@@ -437,7 +502,21 @@
     return dt > 0 ? w.stk[0] / 1000 * S.rules.staking.perThousandConfettiPerDay * dt / DAY : 0;
   }
 
-  function totalFor(w) { return w ? w.t + pendingStake(w) : 0; }
+  function totalFor(w) { return w ? balance(w) + pendingStake(w) : 0; }
+
+  /* earned since 00:00 UTC (the day the daily caps run on), from the hourly buckets plus staking accrued since */
+  function todayOf(w) {
+    if (!w) return 0;
+    var now = chainNow(), day0 = Math.floor(now / DAY) * DAY, h0 = day0 / 3600, s = 0;
+    for (var h in w.hr) { if (parseInt(h, 10) >= h0) s += w.hr[h]; }
+    if (w.stk[0] > 0) {
+      var from = Math.max(w.stk[1], day0);
+      if (now > from) s += w.stk[0] / 1000 * S.rules.staking.perThousandConfettiPerDay * (now - from) / DAY;
+    }
+    return s;
+  }
+
+  function isHouse(a) { return !!(S.house[a] || (S.snap && S.snap.wallets[a] && S.snap.wallets[a].house)); }
 
   function perHour(w) {
     if (!w) return 0;
@@ -450,24 +529,24 @@
   function rankOf(a) {
     if (!S.eng) return { rk: 0, of: 0 };
     var W = S.eng.W;
-    var house = (S.snap.wallets[a] && S.snap.wallets[a].house) || 0;
+    var house = isHouse(a);
     var rk = 0, n = 0;
-    var mine = W[a] ? W[a].t : 0;
+    var mine = W[a] ? balance(W[a]) : 0;
     for (var k in W) {
-      var x = W[k];
-      if (x.t <= 0 || (S.snap.wallets[k] && S.snap.wallets[k].house)) continue;
+      var x = W[k], bx = balance(x);
+      if (bx <= 1e-6 || isHouse(k)) continue;
       n += 1;
-      if (x.t > mine || (x.t === mine && k < a)) rk += 1;
+      if (bx > mine || (bx === mine && k < a)) rk += 1;
     }
-    return { rk: house || mine <= 0 ? 0 : rk + 1, of: n };
+    return { rk: house || mine <= 1e-6 ? 0 : rk + 1, of: n };
   }
 
   function board() {
     var W = S.eng.W, rows = [];
     for (var k in W) {
-      var x = W[k];
-      if (x.t <= 0 || (S.snap.wallets[k] && S.snap.wallets[k].house)) continue;
-      rows.push({ a: k, t: x.t, kids: x.kids.length, act: x.act });
+      var x = W[k], bx = balance(x);
+      if (bx <= 1e-6 || isHouse(k)) continue;
+      rows.push({ a: k, t: bx, earned: x.t, kids: x.kids.length, act: x.act });
     }
     rows.sort(function (p, q) { return q.t - p.t || (p.a < q.a ? -1 : 1); });
     return rows;
@@ -538,6 +617,7 @@
   /* ---- pill ------------------------------------------------------------------------------ */
 
   function mountPill() {
+    if ($('ptsPill')) return;   // boot retries after a failed load: never a second bar
     /* The points bar: full width, green, bold, the first thing on every page (owner: "put it in green at the top of the
        screen more bold. people gotta know about this"). Never floats over content. */
     var bar = document.createElement('a');
@@ -552,9 +632,216 @@
       '<span class="pts-bar-cta">[ Earn ]</span>';
     document.body.insertBefore(bar, document.body.firstChild);
     document.documentElement.classList.add('has-pts-bar');
+    var send = document.createElement('button');
+    send.type = 'button';
+    send.id = 'ptsSendBtn';
+    send.className = 'pts-bar-send';
+    send.textContent = '[ Send ]';
+    send.hidden = true;                         // shown once a relay address is configured
+    send.setAttribute('aria-haspopup', 'dialog');
+    send.setAttribute('aria-expanded', 'false');
+    bar.appendChild(send);
+    send.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggleSend(); });
     bar.addEventListener('click', function (e) {
       var p = $('pointsPanel');
       if (p) { e.preventDefault(); p.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); }
+    });
+  }
+
+  /* ---- send: relay.transfer through the connected wallet ----------------------------------------- */
+
+  function relayOf() {
+    var r = (S.rules && S.rules.relay) || (S.cfg && S.cfg.pointsRelay) || '';
+    return ADDR_RE.test(String(r).trim()) ? String(r).trim().toLowerCase() : '';
+  }
+
+  function houseOf(cfg) {
+    var m = {};
+    (function walk(v) {
+      if (typeof v === 'string') { if (ADDR_RE.test(v.trim())) m[v.trim().toLowerCase()] = 1; }
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') Object.keys(v).forEach(function (k) { walk(v[k]); });
+    })(cfg && cfg.houseBots);
+    return m;
+  }
+
+  function configureSend() {
+    var btn = $('ptsSendBtn'), bar = $('ptsPill');
+    if (btn) btn.hidden = !S.relay;
+    if (bar) bar.classList.toggle('has-send', !!S.relay);
+    if (!S.relay) closeSend();
+  }
+
+  function pad32(hex) { return ('0000000000000000000000000000000000000000000000000000000000000000' + hex).slice(-64); }
+  function transferData(to, amount) { return TRANSFER_SELECTOR + pad32(to.slice(2).toLowerCase()) + pad32(BigInt(amount).toString(16)); }
+
+  function sendPanel() {
+    var p = $('ptsSend');
+    if (p) return p;
+    p = document.createElement('div');
+    p.id = 'ptsSend';
+    p.className = 'pts-send';
+    p.hidden = true;
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-label', 'Send points');
+    p.innerHTML =
+      '<div class="pts-send-head"><b>Send points</b><button type="button" class="pts-send-x" id="ptsSendX" aria-label="Close">\u00d7</button></div>' +
+      '<label class="pts-send-f"><span>To</span><input class="input" id="ptsTo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0x\u2026"></label>' +
+      '<label class="pts-send-f"><span>Amount</span><span class="pts-send-amt"><input class="input" id="ptsAmt" type="text" inputmode="numeric" autocomplete="off" placeholder="0"><button type="button" class="btn btn-sm" id="ptsMax">Max</button></span></label>' +
+      '<div class="pts-send-note" id="ptsSendNote"></div>' +
+      '<button type="button" class="btn btn-long btn-block" id="ptsSendGo">Send</button>' +
+      '<div class="pts-send-out" id="ptsSendOut" aria-live="polite"></div>';
+    document.body.appendChild(p);
+    $('ptsSendX').addEventListener('click', closeSend);
+    $('ptsMax').addEventListener('click', function () {
+      var w = myW();
+      $('ptsAmt').value = String(Math.max(0, Math.floor(totalFor(w) + 1e-9)));
+    });
+    $('ptsSendGo').addEventListener('click', doSend);
+    p.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); doSend(); } });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSend(); });
+    document.addEventListener('click', function (e) {
+      var panel = $('ptsSend');
+      if (!panel || panel.hidden) return;
+      var t = e.target;
+      if (panel.contains(t) || (t.closest && t.closest('#ptsSendBtn'))) return;
+      closeSend();
+    });
+    return p;
+  }
+
+  function placeSend() {
+    var p = $('ptsSend'), bar = $('ptsPill');
+    if (!p || !bar) return;
+    p.style.top = Math.round(bar.getBoundingClientRect().bottom + 6) + 'px';
+  }
+
+  function toggleSend() {
+    var p = sendPanel();
+    if (p.hidden) openSend(); else closeSend();
+  }
+
+  function openSend() {
+    var p = sendPanel();
+    p.hidden = false;
+    placeSend();
+    var b = $('ptsSendBtn'); if (b) b.setAttribute('aria-expanded', 'true');
+    renderSend();
+    var to = $('ptsTo'); if (to && !to.value) to.focus();
+  }
+
+  function closeSend() {
+    var p = $('ptsSend');
+    if (p) p.hidden = true;
+    var b = $('ptsSendBtn'); if (b) b.setAttribute('aria-expanded', 'false');
+  }
+
+  function sendOut(html, kind) {
+    var o = $('ptsSendOut');
+    if (!o) return;
+    o.className = 'pts-send-out' + (kind ? ' is-' + kind : '');
+    o.innerHTML = html;
+  }
+
+  /* what the sender can spend, and their rejected transfers (so a refused one is explained, not silent) */
+  function renderSend() {
+    var n = $('ptsSendNote');
+    if (!n || !S.eng) return;
+    var w = myW(), html;
+    if (!S.view) html = 'Connect a wallet to send. Whole points only; the balance must cover it.';
+    else {
+      html = 'You have <b>' + fmt(totalFor(w)) + '</b> points. Whole points only.';
+      var mine = (S.eng.rej || []).filter(function (r) { return r.from === S.view; }).slice(-2);
+      mine.forEach(function (r) { html += '<br><span class="pts-send-rej">Rejected: ' + fmt(r.amount) + ' to ' + esc(short(r.to)) + ' (' + esc(WHY[r.reason] || r.reason) + ')</span>'; });
+    }
+    n.innerHTML = html;
+    placeSend();
+  }
+
+  function isRevert(e) { return e && (e.code === 3 || /revert/i.test(String(e.message || ''))); }
+
+  function switchChainStandalone(eth) {
+    var c = S.cfg || {};
+    return eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] }).catch(function (err) {
+      var code = err && (err.code != null ? err.code : (err.data && err.data.originalError && err.data.originalError.code));
+      var msg = String((err && err.message) || '');
+      if (!(code === 4902 || code === -32603 || /4902|unrecognized|not added|unknown chain/i.test(msg))) throw err;
+      return eth.request({ method: 'wallet_addEthereumChain', params: [{
+        chainId: CHAIN_HEX, chainName: c.chainName || 'HyperEVM', rpcUrls: [c.rpcUrl],
+        nativeCurrency: c.nativeCurrency || { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
+        blockExplorerUrls: c.explorerUrl ? [c.explorerUrl] : [] }] });
+    }).then(function () { return eth.request({ method: 'eth_chainId' }); }).then(function (hex) {
+      if (parseInt(hex, 16) !== 999) throw new Error('Switch the wallet to HyperEVM (999) first.');
+    });
+  }
+
+  /* On the trade page this goes through trade.js's own wallet (window.ConfettiWallet: the same connect, chain switch and
+     provider as the header Connect button); on the other pages it talks to the injected wallet directly. */
+  function walletFlow() {
+    var W = window.ConfettiWallet;
+    if (W) {
+      return Promise.resolve(W.account() ? null : W.connect()).then(function () {
+        if (!W.account()) throw new Error('Connect a wallet first.');
+        return W.ensureChain();
+      }).then(function () { return { request: function (r) { return W.request(r); }, from: W.account() }; });
+    }
+    var eth = injected();
+    if (!eth || typeof eth.request !== 'function') return Promise.reject(new Error('No wallet found. Open this page in a wallet browser or install a wallet extension.'));
+    var from;
+    return eth.request({ method: 'eth_requestAccounts' }).then(function (acc) {
+      if (!acc || !acc[0]) throw new Error('No account returned by the wallet.');
+      from = acc[0];
+      return eth.request({ method: 'eth_chainId' });
+    }).then(function (hex) {
+      if (parseInt(hex, 16) !== 999) return switchChainStandalone(eth);
+    }).then(function () { return { request: function (r) { return eth.request(r); }, from: from }; });
+  }
+
+  function errText(e) {
+    if (e && (e.code === 4001 || /user (rejected|denied)/i.test(String(e.message || '')))) return 'Cancelled in the wallet.';
+    var m = String((e && (e.shortMessage || e.message)) || e || 'Failed.').replace(/^execution reverted:?\s*/i, 'Reverted: ');
+    return m.length > 180 ? m.slice(0, 180) + '\u2026' : m;
+  }
+
+  function doSend() {
+    if (S.sendBusy) return;
+    if (!S.relay) { sendOut('Transfers are not open yet.', 'err'); return; }
+    var to = String($('ptsTo').value || '').trim().toLowerCase();
+    var raw = String($('ptsAmt').value || '').replace(/[,\s]/g, '');
+    if (!ADDR_RE.test(to)) { sendOut('Enter the recipient as a 0x address.', 'err'); return; }
+    if (!/^[0-9]+$/.test(raw) || Number(raw) < 1) { sendOut('Whole points only, 1 or more.', 'err'); return; }
+    if (Number(raw) > Number.MAX_SAFE_INTEGER) { sendOut('That amount is too large.', 'err'); return; }
+    var amount = Number(raw);
+    if (S.house[to]) { sendOut('House wallets cannot receive points.', 'err'); return; }
+    S.sendBusy = true;
+    var go = $('ptsSendGo'); if (go) go.disabled = true;
+    sendOut('Confirm in your wallet\u2026', 'wait');
+    var wf;
+    walletFlow().then(function (w) {
+      wf = w;
+      var from = String(w.from).toLowerCase();
+      setMe(from);
+      if (from === to) throw new Error('Send to another address.');
+      if (S.house[from]) throw new Error('House wallets cannot send points.');
+      var have = Math.floor(totalFor(S.eng ? S.eng.W[from] : null) + 1e-9);
+      if (amount > have) throw new Error('You have ' + fmt(have) + ' points.');
+      var data = transferData(to, amount);
+      return w.request({ method: 'eth_call', params: [{ from: w.from, to: S.relay, data: data }, 'latest'] }).then(null, function (e) {
+        if (isRevert(e)) throw new Error('Reverted: bad transfer');
+        return null;   // a wallet that cannot eth_call: let the send itself decide
+      }).then(function () {
+        return w.request({ method: 'eth_sendTransaction', params: [{ from: w.from, to: S.relay, data: data }] });
+      });
+    }).then(function (hash) {
+      var base = (S.cfg && S.cfg.explorerUrl) || 'https://hyperevmscan.io';
+      sendOut('Sent <a href="' + esc(base + '/tx/' + hash) + '" target="_blank" rel="noopener">' + esc(String(hash).slice(0, 10) + '\u2026' + String(hash).slice(-6)) + '</a>. Balance updates within 5 minutes.', 'ok');
+      $('ptsAmt').value = '';
+    }).catch(function (e) {
+      sendOut(esc(errText(e)), 'err');
+    }).then(function () {
+      S.sendBusy = false;
+      var g = $('ptsSendGo'); if (g) g.disabled = false;
+      renderSend();
     });
   }
 
@@ -581,6 +868,7 @@
       ['New market', f(r.firstMarket.flat) + ' for the first trade in each'],
       ['Volume', r.volume.milestones.map(function (x) { return f(x.pts) + ' at $' + f(x.at); }).join(', ')]
     ];
+    if (S.relay) rows.push(['Transfers', 'Send whole points to any wallet with Send in the bar. The balance must cover it. Referral shares and daily caps count earned points only. House wallets cannot send or receive.']);
     return rows.map(function (x) {
       return '<li' + (x[2] ? ' class="is-top"' : '') + '><b>' + esc(x[0]) + (x[2] ? ' <i>pays the most</i>' : '') + '</b><span>' + esc(x[1]) + '</span></li>';
     }).join('');
@@ -658,6 +946,11 @@
       var alive = w && w.d >= Math.floor(chainNow() / DAY) - 1;
       html += '<div class="pts-kv"><span>Streak</span><b>' + (alive ? sk : 0) + ' day' + ((alive ? sk : 0) === 1 ? '' : 's') + '</b></div>' +
         '<div class="pts-kv"><span>Best streak</span><b>' + (w ? w.bk : 0) + '</b></div>';
+      if (w && ((w.rc || 0) > 0 || (w.sn || 0) > 0)) {
+        html += '<div class="pts-kv"><span>Earned</span><b>' + fmt(w.t + pend) + '</b></div>' +
+          '<div class="pts-kv"><span>Received</span><b>+' + fmt(w.rc || 0) + '</b></div>' +
+          '<div class="pts-kv"><span>Sent</span><b>-' + fmt(w.sn || 0) + '</b></div>';
+      }
       if (w && w.stk[0] > 0) {
         html += '<div class="pts-kv"><span>Staked</span><b>' + fmt(w.stk[0]) + ' CONFETTI</b></div>' +
           '<div class="pts-kv"><span>Staking earns</span><b id="ptsStkRate"></b></div>';
@@ -724,6 +1017,18 @@
     }
     var pill = $('ptsPill');
     if (pill) pill.classList.toggle('is-idle', !S.view);
+    var dl = $('ptsPillDelta');
+    if (dl) {
+      var td = S.view ? Math.floor(todayOf(w)) : 0;
+      var txt = td >= 1 ? '+' + fmt(td) : '';
+      if (dl.textContent !== txt) {
+        var up = S.todayShown !== undefined && td > S.todayShown;
+        dl.textContent = txt;
+        if (up) { dl.classList.remove('is-pop'); void dl.offsetWidth; dl.classList.add('is-pop'); }
+      }
+      S.todayShown = td;
+      dl.title = 'earned today (UTC)';
+    }
     if (S.panelOn) {
       var big = $('ptsBig');
       if (big) big.textContent = S.view ? fmt(S.shown) : fmt(networkTotal());
@@ -769,6 +1074,9 @@
     Promise.all([getJson('config.json'), getJson('points-rules.json?t=' + Math.floor(Date.now() / 60000))]).then(function (r) {
       S.cfg = r[0]; S.rules = r[1];
       S.chunk = Math.min(1000, S.cfg.logChunkBlocks || 1000);
+      S.relay = relayOf();
+      S.house = houseOf(S.cfg);
+      configureSend();
       return loadSnapshot(true);
     }).then(function () {
       pollAccount(); watchWallet();

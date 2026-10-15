@@ -159,3 +159,54 @@ html.has-pts-bar .points-panel { scroll-margin-top: calc(var(--header-h) + var(-
 @media (max-width: 640px) {
   html.has-pts-bar { --pts-bar-h: 40px; }
 }
+
+/* ---- Send: the control in the bar, and its panel (shown only when a relay address is configured) ---------- */
+.pts-bar .pts-bar-send {
+  -webkit-appearance: none; appearance: none; flex: none; cursor: pointer; margin: 0; border-radius: 0;
+  font-family: var(--font-mono); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1;
+  color: var(--pos); border: 1px solid var(--pos); padding: 7px 12px; background: transparent;
+}
+.pts-bar .pts-bar-send[hidden] { display: none; }
+.pts-bar .pts-bar-send:hover, .pts-bar .pts-bar-send[aria-expanded="true"] { background: var(--pos); color: var(--pts-bar-bg, #e6f0e8); }
+.pts-bar .pts-bar-send:focus-visible { outline: 2px solid var(--pos); outline-offset: 2px; }
+
+.pts-send {
+  position: fixed; top: 52px; right: 22px; z-index: 70; box-sizing: border-box;
+  width: min(380px, calc(100vw - 24px)); padding: 14px;
+  background: var(--raised); color: var(--ink); border: 1px solid var(--ink); box-shadow: 5px 5px 0 var(--sunken);
+  font-family: var(--font-ui); font-size: var(--text-sm); line-height: 1.45;
+}
+.pts-send[hidden] { display: none; }
+.pts-send-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.pts-send-head b { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 700; color: var(--pos); }
+.pts-send-x { -webkit-appearance: none; appearance: none; background: transparent; border: 0; color: var(--ink-muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.pts-send-f { display: block; margin-bottom: 10px; }
+.pts-send-f > span:first-child { display: block; margin-bottom: 4px; font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); }
+.pts-send-f .input { width: 100%; box-sizing: border-box; min-height: 34px; font-family: var(--font-mono); font-size: var(--text-sm); }
+.pts-send-amt { display: flex; gap: 8px; align-items: stretch; }
+.pts-send-amt .input { flex: 1 1 auto; min-width: 0; }
+.pts-send-note { margin: 0 0 10px; color: var(--ink-muted); }
+.pts-send-note b { color: var(--ink); font-family: var(--font-mono); font-weight: 600; }
+.pts-send-rej { color: var(--neg); font-size: var(--text-xs); }
+.pts-send-out { margin-top: 10px; min-height: 1.4em; overflow-wrap: anywhere; }
+.pts-send-out:empty { display: none; }
+.pts-send-out.is-err { color: var(--neg); }
+.pts-send-out.is-ok { color: var(--pos); font-weight: 600; }
+.pts-send-out.is-wait { color: var(--ink-muted); }
+.pts-send-out a { color: inherit; }
+@media (max-width: 640px) {
+  .pts-bar .pts-bar-send { font-size: 11px; padding: 6px 9px; }
+  .pts-bar.has-send .pts-bar-cta { display: none; }
+  .pts-bar.has-send .pts-bar-send { margin-left: auto; }
+  .pts-send { right: 12px; left: 12px; width: auto; top: 46px; }
+}
+@media (max-width: 420px) {
+  .pts-bar.has-send .pts-pill-delta { display: none; }
+}
+
+/* ---- landing: one green, bold line under the hero (the bar's palette) ------------------------------------- */
+.pts-banner { padding: 14px 0; background: #e6f0e8; border-top: 1px solid var(--pos); border-bottom: 2px solid var(--pos); }
+.pts-banner p { margin: 0; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: clamp(18px, 2.4vw, 26px); line-height: 1.3; letter-spacing: 0.01em; color: var(--pos); }
+.pts-banner a { color: inherit; text-decoration: none; }
+.pts-banner a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+html[data-theme="night"] .pts-banner { background: #16261d; }
