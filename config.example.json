@@ -59,6 +59,8 @@
 
     { "symbol": "TRUMP",    "coin": "TRUMP",    "hlAssetIndex": 174, "szDecimals": 1, "tier": "B", "maxLeverage": 250, "launch": true },
     { "symbol": "PEPE",     "coin": "kPEPE",    "hlAssetIndex": 15,  "szDecimals": 0, "tier": "B", "maxLeverage": 250, "launch": true },
+    { "symbol": "BTC",      "coin": "BTC",      "hlAssetIndex": 0,   "szDecimals": 5, "tier": "A", "maxLeverage": 1000, "launch": true },
+    { "symbol": "ETH",      "coin": "ETH",      "hlAssetIndex": 1,   "szDecimals": 4, "tier": "A", "maxLeverage": 1000, "launch": true },
     { "symbol": "SHIB",     "coin": "kSHIB",    "hlAssetIndex": 38,  "szDecimals": 0, "tier": "B", "maxLeverage": 250, "launch": false },
     { "symbol": "PNUT",     "coin": "PNUT",     "hlAssetIndex": 153, "szDecimals": 1, "tier": "B", "maxLeverage": 250, "launch": false },
     { "symbol": "POPCAT",   "coin": "POPCAT",   "hlAssetIndex": 128, "szDecimals": 0, "tier": "B", "maxLeverage": 250, "launch": false },

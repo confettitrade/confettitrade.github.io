@@ -154,6 +154,24 @@
       "launch": true
     },
     {
+      "symbol": "BTC",
+      "coin": "BTC",
+      "hlAssetIndex": 0,
+      "szDecimals": 5,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "launch": true
+    },
+    {
+      "symbol": "ETH",
+      "coin": "ETH",
+      "hlAssetIndex": 1,
+      "szDecimals": 4,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "launch": true
+    },
+    {
       "symbol": "SHIB",
       "coin": "kSHIB",
       "hlAssetIndex": 38,

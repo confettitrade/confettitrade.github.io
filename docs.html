@@ -414,7 +414,7 @@
 
       <section id="fix">
         <h2>What Confetti reads instead</h2>
-        <p>Every fill here is the HyperCore oracle price, the validator median of external venues; the book settles nothing. You ask, and a keeper fills you a few seconds later at the print the oracle shows then. If no keeper comes, anyone may fill you at the worse of the two prints until the request expires, so the page asks your wallet to fill it the moment the keeper window closes. Leverage is set per coin: up to 1000x on DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE, up to 250x on TRUMP and PEPE.</p>
+        <p>Every fill here is the HyperCore oracle price, the validator median of external venues; the book settles nothing. You ask, and a keeper fills you a few seconds later at the print the oracle shows then. If no keeper comes, anyone may fill you at the worse of the two prints until the request expires, so the page asks your wallet to fill it the moment the keeper window closes. Leverage is set per coin: up to 1000x on BTC, ETH, DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE, up to 250x on TRUMP and PEPE.</p>
         <p>A position carries at most $25,000 of notional ($10,000 on the 250x coins), pays out at most 50 times its margin, and anyone can liquidate it past its bust price for 0.5% of the margin. If the house loses a tenth of itself in an hour, opens pause until a human clears it; the contracts cannot be upgraded.</p>
         <p>The fill keeper is run by the house. It fills inside its window, 5 to 8 seconds after you ask, at the oracle print it sees then; which print inside those 3 seconds is its call, worth about one oracle step. After the window anyone may fill you at the worse of the two prints until the request expires at 60 seconds, and the page offers your own wallet first. Late fills are logged.</p>
         <p>The price path is three hops. The Exchange asks the PriceOracle for the HyperCore oracle price, the PriceOracle asks the PrecompilePriceSource, and that reads the oracle precompile at 0x0807, the validator median of external venues. The source is fixed in the PriceOracle at deploy and has no setter; the precompile addresses are constants. The oracle's owner can set a market's display clamp between 5 and 100 bps, nothing on the settlement path. The Exchange's owner can add markets, set leverage, the fee from 0 to 5%, the fill windows, the caps and the impact curve within bounds, pause and resume opens, name keepers, and retire a market at the live print, or at a stated price once its feed is dead. A position keeps the deadband, cap and fee it was opened with. Nobody can change a live price, touch a balance or upgrade the code.</p>
@@ -426,7 +426,7 @@
         <p>The house pays wins from what it holds. When that is thin, a win is paid as a queued claim, first in first out, as losses refill the house. The Status tab on the trade page shows the balance and the queue.</p>
         <p>The house runs market-activity bots of its own, from its own wallets with house money.</p>
         <p>They are left out of volume, open interest, 24h stats and the leaderboard.</p>
-        <p>Paper did $3.3 billion on one coin. There are ten here, and memes move.</p>
+        <p>Paper did $3.3 billion on one coin. There are twelve here, and memes move.</p>
         <p><a class="btn btn-lg" href="trade.html">Trade</a></p>
       </section>
 

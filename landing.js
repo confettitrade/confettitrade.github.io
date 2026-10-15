@@ -9,7 +9,7 @@
   'use strict';
 
   var INFO_URL = 'https://api.hyperliquid.xyz/info';
-  var TAPE_COINS = ['DOGE', 'FARTCOIN', 'kPEPE', 'WIF', 'PENGU', 'TRUMP', 'SPX', 'kBONK', 'MELANIA', 'POPCAT'];
+  var TAPE_COINS = ['BTC', 'ETH', 'DOGE', 'FARTCOIN', 'kPEPE', 'WIF', 'PENGU', 'TRUMP', 'SPX', 'kBONK', 'MELANIA', 'POPCAT'];
   var CHART_COIN = 'DOGE';
   var TAPE_EVERY_MS = 5000;
   var CANDLES_EVERY_MS = 60000;
