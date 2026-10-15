@@ -545,11 +545,11 @@
     bar.id = 'ptsPill';
     bar.href = $('pointsPanel') ? '#pointsPanel' : 'trade.html#pointsPanel';
     bar.setAttribute('aria-label', 'Points');
-    bar.innerHTML = '<span class="pts-bar-label">POINTS</span>' +
+    bar.innerHTML = '<span class="pts-bar-label">Points</span>' +
       '<span class="pts-pill-val" id="ptsPillVal">\u2014</span>' +
       '<span class="pts-pill-delta" id="ptsPillDelta" aria-live="polite"></span>' +
       '<span class="pts-bar-note">Every trade, deposit and referral earns. Referrals pay the most.</span>' +
-      '<span class="pts-bar-cta">Earn \u2192</span>';
+      '<span class="pts-bar-cta">[ Earn ]</span>';
     document.body.insertBefore(bar, document.body.firstChild);
     document.documentElement.classList.add('has-pts-bar');
     bar.addEventListener('click', function (e) {

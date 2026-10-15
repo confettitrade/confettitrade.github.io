@@ -120,27 +120,34 @@
   .pts-bb i { transition: none; }
 }
 
-/* ---- the points bar: green, bold, top of every page ------------------------------------- */
+/* ---- the points bar: the paper palette's green, bold, top of every page ------------------ */
 .pts-bar, .pts-bar:hover {
   position: sticky; top: 0; z-index: 60;
-  display: flex; align-items: center; gap: 14px; flex-wrap: nowrap;
-  width: 100%; min-height: 44px; padding: 0 18px; box-sizing: border-box;
-  background: #16a34a; color: #ffffff; border: 0; border-bottom: 2px solid #0f7a37;
-  font-family: var(--font-ui); font-weight: 800; font-size: 18px; letter-spacing: 0.02em; line-height: 1;
+  display: flex; align-items: center; gap: 16px; flex-wrap: nowrap;
+  width: 100%; min-height: 44px; padding: 0 22px; box-sizing: border-box;
+  background: var(--pts-bar-bg, #e6f0e8); color: var(--pos);
+  border-top: 1px solid var(--pos); border-bottom: 2px solid var(--pos);
+  font-family: var(--font-ui); font-weight: 700; font-size: 14px; line-height: 1;
   text-decoration: none; white-space: nowrap; overflow: hidden;
 }
-.pts-bar .pts-bar-label { font-weight: 900; letter-spacing: 0.14em; font-size: 15px; }
-.pts-bar .pts-pill-val { font-family: var(--font-mono); font-weight: 800; font-size: 22px; color: #ffffff; min-width: 1ch; }
-.pts-bar.is-idle .pts-pill-val { color: #ffffff; font-family: var(--font-ui); font-weight: 900; }
-.pts-bar .pts-pill-delta { color: #d9ffe6; font-size: 15px; font-weight: 700; }
-.pts-bar .pts-bar-note { font-weight: 600; font-size: 14px; opacity: 0.95; overflow: hidden; text-overflow: ellipsis; }
-.pts-bar .pts-bar-cta { margin-left: auto; font-weight: 900; font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase; border: 2px solid rgba(255,255,255,0.9); padding: 6px 12px; }
-.pts-bar:hover .pts-bar-cta { background: #ffffff; color: #0f7a37; }
+.pts-bar .pts-bar-label { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 0.01em; color: var(--pos); }
+.pts-bar .pts-pill-val { font-family: var(--font-mono); font-weight: 700; font-size: 20px; color: var(--ink); min-width: 1ch; font-variant-numeric: tabular-nums; }
+.pts-bar.is-idle .pts-pill-val { color: var(--pos); font-family: var(--font-display); font-weight: 700; font-size: 20px; }
+.pts-bar .pts-pill-delta { color: var(--pos); font-family: var(--font-mono); font-size: 14px; font-weight: 700; }
+.pts-bar .pts-bar-note { font-weight: 600; font-size: 13px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; padding-left: 10px; border-left: 1px solid var(--rule); }
+.pts-bar .pts-bar-cta {
+  margin-left: auto; font-family: var(--font-mono); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--pos); border: 1px solid var(--pos); padding: 7px 12px; background: transparent;
+}
+.pts-bar:hover .pts-bar-cta { background: var(--pos); color: var(--pts-bar-bg, #e6f0e8); }
+@media (prefers-color-scheme: dark) { .pts-bar, .pts-bar:hover { --pts-bar-bg: #16261d; } }
+html[data-theme="night"] .pts-bar, html[data-theme="night"] .pts-bar:hover, html.night .pts-bar, html.night .pts-bar:hover { --pts-bar-bg: #16261d; }
 @media (max-width: 640px) {
-  .pts-bar { gap: 10px; padding: 0 12px; min-height: 40px; font-size: 16px; }
-  .pts-bar .pts-pill-val { font-size: 19px; }
+  .pts-bar { gap: 10px; padding: 0 12px; min-height: 40px; }
+  .pts-bar .pts-bar-label { font-size: 19px; }
+  .pts-bar .pts-pill-val, .pts-bar.is-idle .pts-pill-val { font-size: 17px; }
   .pts-bar .pts-bar-note { display: none; }
-  .pts-bar .pts-bar-cta { font-size: 13px; padding: 5px 9px; }
+  .pts-bar .pts-bar-cta { font-size: 11px; padding: 6px 9px; }
 }
 
 /* ---- under the bar: the page headers and sticky columns stick below it, not behind it -------------------------- */
