@@ -16,7 +16,6 @@
 .pts-pill-delta:empty, .pts-delta:empty { display: none; }
 .pts-pill-delta.is-pop, .pts-delta.is-pop { animation: pts-pop 0.5s ease-out; }
 @keyframes pts-pop { 0% { transform: translateY(5px) scale(1.15); opacity: 0; } 100% { transform: none; opacity: 1; } }
-.pts-pill-float { position: fixed; top: 12px; right: 12px; z-index: 40; box-shadow: 3px 3px 0 var(--sunken); min-height: 32px; }
 .header-actions .pts-pill, .header-tools .pts-pill { margin-right: 2px; }
 .pts-pill-top { margin-left: auto; }
 
@@ -115,9 +114,31 @@
   .pts-board { max-height: 340px; }
   .pts-rules li { grid-template-columns: 70px minmax(0, 1fr); }
   .pts-toasts { top: calc(var(--header-h) + 8px); bottom: auto; left: var(--gutter); width: auto; right: var(--gutter); }
-  .pts-pill-float { top: 8px; right: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pts-pill-delta.is-pop, .pts-delta.is-pop, .pts-toast, .pts-dot { animation: none; }
   .pts-bb i { transition: none; }
+}
+
+/* ---- the points bar: green, bold, top of every page ------------------------------------- */
+.pts-bar, .pts-bar:hover {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; gap: 14px; flex-wrap: nowrap;
+  width: 100%; min-height: 44px; padding: 0 18px; box-sizing: border-box;
+  background: #16a34a; color: #ffffff; border: 0; border-bottom: 2px solid #0f7a37;
+  font-family: var(--font-ui); font-weight: 800; font-size: 18px; letter-spacing: 0.02em; line-height: 1;
+  text-decoration: none; white-space: nowrap; overflow: hidden;
+}
+.pts-bar .pts-bar-label { font-weight: 900; letter-spacing: 0.14em; font-size: 15px; }
+.pts-bar .pts-pill-val { font-family: var(--font-mono); font-weight: 800; font-size: 22px; color: #ffffff; min-width: 1ch; }
+.pts-bar.is-idle .pts-pill-val { color: #ffffff; font-family: var(--font-ui); font-weight: 900; }
+.pts-bar .pts-pill-delta { color: #d9ffe6; font-size: 15px; font-weight: 700; }
+.pts-bar .pts-bar-note { font-weight: 600; font-size: 14px; opacity: 0.95; overflow: hidden; text-overflow: ellipsis; }
+.pts-bar .pts-bar-cta { margin-left: auto; font-weight: 900; font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase; border: 2px solid rgba(255,255,255,0.9); padding: 6px 12px; }
+.pts-bar:hover .pts-bar-cta { background: #ffffff; color: #0f7a37; }
+@media (max-width: 640px) {
+  .pts-bar { gap: 10px; padding: 0 12px; min-height: 40px; font-size: 16px; }
+  .pts-bar .pts-pill-val { font-size: 19px; }
+  .pts-bar .pts-bar-note { display: none; }
+  .pts-bar .pts-bar-cta { font-size: 13px; padding: 5px 9px; }
 }

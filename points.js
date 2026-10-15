@@ -538,34 +538,21 @@
   /* ---- pill ------------------------------------------------------------------------------ */
 
   function mountPill() {
-    var pill = document.createElement('a');
-    pill.className = 'pts-pill';
-    pill.id = 'ptsPill';
-    pill.href = $('pointsPanel') ? '#pointsPanel' : 'trade.html#pointsPanel';
-    pill.setAttribute('aria-label', 'Points');
-    pill.innerHTML = '<span class="pts-pill-label">Points</span><span class="pts-pill-val" id="ptsPillVal">—</span><span class="pts-pill-delta" id="ptsPillDelta" aria-live="polite"></span>';
-    var host = document.querySelector('.header-actions') || document.querySelector('.header-tools');
-    var bar = document.querySelector('.header-actions') ? document.querySelector('header.header') : null;
-    var mq = window.matchMedia ? window.matchMedia('(max-width: 640px)') : null;
-    function place() {
-      if (!host) return;
-      /* on a phone the actions row is full: the pill rides on the wordmark row instead */
-      if (bar && mq && mq.matches && bar.querySelector('.wordmark')) {
-        bar.insertBefore(pill, bar.querySelector('.wordmark').nextSibling);
-        pill.classList.add('pts-pill-top');
-      } else {
-        host.insertBefore(pill, host.firstChild);
-        pill.classList.remove('pts-pill-top');
-      }
-    }
-    if (host) {
-      place();
-      if (mq && mq.addEventListener) mq.addEventListener('change', place);
-    } else {
-      pill.classList.add('pts-pill-float');
-      document.body.appendChild(pill);
-    }
-    pill.addEventListener('click', function (e) {
+    /* The points bar: full width, green, bold, the first thing on every page (owner: "put it in green at the top of the
+       screen more bold. people gotta know about this"). Never floats over content. */
+    var bar = document.createElement('a');
+    bar.className = 'pts-pill pts-bar';
+    bar.id = 'ptsPill';
+    bar.href = $('pointsPanel') ? '#pointsPanel' : 'trade.html#pointsPanel';
+    bar.setAttribute('aria-label', 'Points');
+    bar.innerHTML = '<span class="pts-bar-label">POINTS</span>' +
+      '<span class="pts-pill-val" id="ptsPillVal">\u2014</span>' +
+      '<span class="pts-pill-delta" id="ptsPillDelta" aria-live="polite"></span>' +
+      '<span class="pts-bar-note">Every trade, deposit and referral earns. Referrals pay the most.</span>' +
+      '<span class="pts-bar-cta">Earn \u2192</span>';
+    document.body.insertBefore(bar, document.body.firstChild);
+    document.documentElement.classList.add('has-pts-bar');
+    bar.addEventListener('click', function (e) {
       var p = $('pointsPanel');
       if (p) { e.preventDefault(); p.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); }
     });
