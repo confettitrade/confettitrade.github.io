@@ -142,3 +142,13 @@
   .pts-bar .pts-bar-note { display: none; }
   .pts-bar .pts-bar-cta { font-size: 13px; padding: 5px 9px; }
 }
+
+/* ---- under the bar: the page headers and sticky columns stick below it, not behind it -------------------------- */
+html.has-pts-bar { --pts-bar-h: 44px; }
+html.has-pts-bar .header { top: var(--pts-bar-h); }
+html.has-pts-bar .trade-side { top: calc(var(--header-h) + var(--gap) + var(--pts-bar-h)); }
+html.has-pts-bar .toc { top: calc(var(--header-h) + 20px + var(--pts-bar-h)); }
+html.has-pts-bar .points-panel { scroll-margin-top: calc(var(--header-h) + var(--pts-bar-h) + 8px); }
+@media (max-width: 640px) {
+  html.has-pts-bar { --pts-bar-h: 40px; }
+}
