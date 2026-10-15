@@ -1711,3 +1711,49 @@ pre {
 .pos-lines .pos-line { overflow: visible; min-width: max-content; }
 .pos-lines .empty { padding: 12px 0; color: var(--ink-faint); font-size: var(--text-sm); }
 @media (max-width: 480px) { .pos-line { gap: 10px; font-size: var(--text-xs); } }
+/* --------------------------------------------------------------------------
+   Refinements 2026-10-15 (with Söhne). The paper look stays; these tighten it.
+   -------------------------------------------------------------------------- */
+
+/* type: Söhne runs a touch wide, so labels sit at 500 with a little tracking, numbers always tabular */
+body { font-weight: 400; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.nav a, .tab, .seg-item, .btn, .chip-label, .table th, .kv-key, .panel-head { font-family: var(--font-ui); }
+.nav a { font-weight: 500; letter-spacing: 0.08em; font-size: 12px; }
+.nav a[aria-current="page"] { font-weight: 600; text-decoration-thickness: 2px; }
+.btn { font-weight: 500; letter-spacing: 0.08em; min-height: 36px; }
+.btn::before, .btn::after { color: var(--ink-faint); }
+.btn:hover::before, .btn:hover::after { color: inherit; }
+.chip { background: var(--raised); border-color: var(--rule-strong); min-height: 26px; padding: 0 9px; gap: 7px; }
+.chip-label { font-size: 10.5px; letter-spacing: 0.1em; font-weight: 500; }
+.chip-value { font-weight: 500; font-variant-numeric: tabular-nums; }
+.kv-key { font-weight: 400; }
+.kv-val { font-weight: 500; }
+.table th { font-size: 10.5px; letter-spacing: 0.1em; }
+.table td { font-weight: 400; }
+.input, .select { font-weight: 500; }
+.input-group .input { min-height: 40px; font-size: var(--text-lg); }
+.seg-item { font-weight: 600; min-height: 36px; }
+.tab { font-weight: 500; }
+.tab[aria-selected="true"], .tab.is-active { font-weight: 600; border-bottom-color: var(--accent); }
+.panel-head { font-weight: 500; letter-spacing: 0.08em; }
+
+/* the wordmark: a hair tighter so the block sits on the baseline like a cursor */
+.wordmark { letter-spacing: -0.01em; }
+
+/* ticker tape: fade the ends so the loop never shows a cut */
+.ticker { -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+
+/* focus and selection in the paper palette */
+:focus-visible { outline: none; box-shadow: var(--focus); }
+::selection { background: var(--accent-soft); color: var(--ink); }
+
+/* the landing: the trade button is the one to press */
+.hero-actions .btn:first-child { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.hero-actions .btn:first-child::before, .hero-actions .btn:first-child::after { color: var(--page); }
+.hero-actions .btn:first-child:hover { background: var(--accent); border-color: var(--accent); }
+
+/* phones: nothing may push the page sideways */
+@media (max-width: 640px) {
+  html, body { overflow-x: hidden; }
+  .header { flex-wrap: wrap; height: auto; min-height: var(--header-h); padding-top: 6px; padding-bottom: 6px; }
+}
