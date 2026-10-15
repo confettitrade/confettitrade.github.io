@@ -1,12 +1,7 @@
 {
-  "version": 2,
-  "updated": "2026-10-15",
+  "version": 1,
+  "updated": "2026-10-14",
   "note": "Points are recomputed from chain history whenever this file's version changes. Copy to site/points-rules.json (the indexer does).",
-  "relay": "",
-  "relayBlock": 0,
-  "transfer": {
-    "min": 1
-  },
   "minMarginUsdc": 10,
   "minHoldBlocks": 30,
   "dailyCaps": {
@@ -171,7 +166,6 @@
     "streak": "Streaks",
     "market": "New markets",
     "volume": "Volume milestones",
-    "code": "Referral code",
-    "transfer": "Received"
+    "code": "Referral code"
   }
 }
