@@ -68,17 +68,17 @@
      pages' CSP allows exactly these hosts. */
   /* ---- BEGIN PINNED CONTRACTS (ops/write_config.py) ---- */
   var CONTRACTS = {
-    exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
+    exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
-    oracle: '0x7a5eff5e2288e53ed78de6cdc7f08c68ed4400cc',
-    confetti: '0x665c84fbf77629c8ba6bfe76d9fedd2d9a7b2b75',
-    tokenomics: '0xb9dc9c1271732067aed0068d81b118a638764c0a',
-    staking: '0x318535af817913fd33cd4088f2c56fc5ddcab50d',
-    referrals: '0x0879fe6298a6b987173b29693af4ade6d63c19da',
+    oracle: '0x6c68f03d3b17ceed7955c13a3373cc186cdf9d1f',
+    confetti: '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2',
+    tokenomics: '0xcfd4d15d4c7b4a60e8a008e23cc9fa5eba1784be',
+    staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
+    referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b',
     priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494',
-    marketRules: '',
-    sessionRouter: '',
-    depositFactory: '',
+    marketRules: '0x51cbb4d222d50536785013e2afc27b5a13d53a45',
+    sessionRouter: '0x42e2e55d7ea4cb4956e2f702bda59e15d8ce05fd',
+    depositFactory: '0xc6b54a4aac8180ca51bbbd394e4fb6a79f60dc97',
     v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2'
   };
   /* ---- END PINNED CONTRACTS ---- */
@@ -2943,10 +2943,10 @@
       var pnl = usd6ToNum(a.pnlUsdc);
       var msg = 'Closed #' + pid + ' at ' + fmtPrice(px18ToNum(a.exitPx18)) + ': PnL ' + fmtUsd(pnl, true) + ', paid ' + fmtUsd(usd6ToNum(a.payoutUsdc));
       if (a.queuedUsdc > 0n) msg += ', queued ' + fmtUsd(usd6ToNum(a.queuedUsdc));
-      if (a.confettiMinted > 0n) msg += ', ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI minted';
+      if (a.confettiMinted > 0n) msg += ', ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI minted';
       toast(msg + '.', pnl >= 0 ? 'ok' : 'err', link);
     } else if (liq) {
-      toast('Liquidated #' + pid + ' at ' + fmtPrice(px18ToNum(liq.args.exitPx18)) + ': margin ' + fmtUsd(usd6ToNum(liq.args.marginUsdc)) + ' gone' + (liq.args.confettiMinted > 0n ? ', ' + fmtInt(tokenToNum(liq.args.confettiMinted)) + ' CONFETTI minted' : '') + '.', 'err', link);
+      toast('Liquidated #' + pid + ' at ' + fmtPrice(px18ToNum(liq.args.exitPx18)) + ': margin ' + fmtUsd(usd6ToNum(liq.args.marginUsdc)) + ' gone' + (liq.args.confettiMinted > 0n ? ', ' + fmtInt(tokenToNum(liq.args.confettiMinted)) + ' FETTI minted' : '') + '.', 'err', link);
     } else if (cancelled) {
       toast('Close request on #' + pid + ' ' + reasonText(cancelled.args.reason) + '; the position stays open.', 'err', link);
     } else {
@@ -3389,14 +3389,14 @@
         d.details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · paid ' + fmtUsd(usd6ToNum(a.payoutUsdc));
         if (a.queuedUsdc > 0n) d.details += ' · queued ' + fmtUsd(usd6ToNum(a.queuedUsdc));
         if (a.feeUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6ToNum(a.feeUsdc));
-        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI';
+        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI';
         break;
       case 'PositionLiquidated':
         d.label = 'liquidated';
         pid();
         d.amount = -usd6ToNum(a.marginUsdc);
         d.details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · bounty ' + fmtUsd(usd6ToNum(a.bountyUsdc)) + ' to ' + shortAddr(a.liquidator);
-        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' CONFETTI';
+        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI';
         break;
       case 'QueueAppended':
         d.label = 'queued';

@@ -863,7 +863,7 @@
       ['Loss', f(r.loss.flat) + ' plus ' + f(r.loss.perUsdc) + ' per USDC lost'],
       ['Liquidated', f(r.liquidation.flat) + ' plus ' + f(r.liquidation.perUsdc) + ' per USDC of margin; ' + f(r.liquidation.liquidatorFlat) + ' for liquidating someone'],
       ['Deposit', f(r.deposit.perUsdc) + ' per USDC of new money'],
-      ['Stake', f(r.staking.perThousandConfettiPerDay) + ' per 1,000 CONFETTI a day'],
+      ['Stake', f(r.staking.perThousandConfettiPerDay) + ' per 1,000 FETTI a day'],
       ['Each day', f(r.daily.flat) + ' plus ' + f(r.streak.perDay) + ' per streak day (to ' + r.streak.maxDays + '); streak bonuses at ' + r.streak.milestones.map(function (x) { return x.at; }).join(', ')],
       ['New market', f(r.firstMarket.flat) + ' for the first trade in each'],
       ['Volume', r.volume.milestones.map(function (x) { return f(x.pts) + ' at $' + f(x.at); }).join(', ')]
@@ -936,7 +936,7 @@
       var pend = pendingStake(w);
       srcs.sort(function (x, y) { return (SRC_ORDER.indexOf(x) < 0 ? 99 : SRC_ORDER.indexOf(x)) - (SRC_ORDER.indexOf(y) < 0 ? 99 : SRC_ORDER.indexOf(y)); });
       html = '<h3>Where it comes from</h3>';
-      if (!srcs.length) html += '<div class="pts-empty">No points yet. Deposit, open a position or stake CONFETTI and they start.</div>';
+      if (!srcs.length) html += '<div class="pts-empty">No points yet. Deposit, open a position or stake FETTI and they start.</div>';
       html += '<ul class="pts-bars">' + srcs.map(function (s) {
         var v = b[s] + (s === 'staking' ? pend : 0);
         var top = s.indexOf('ref') === 0;
@@ -952,7 +952,7 @@
           '<div class="pts-kv"><span>Sent</span><b>-' + fmt(w.sn || 0) + '</b></div>';
       }
       if (w && w.stk[0] > 0) {
-        html += '<div class="pts-kv"><span>Staked</span><b>' + fmt(w.stk[0]) + ' CONFETTI</b></div>' +
+        html += '<div class="pts-kv"><span>Staked</span><b>' + fmt(w.stk[0]) + ' FETTI</b></div>' +
           '<div class="pts-kv"><span>Staking earns</span><b id="ptsStkRate"></b></div>';
       }
     }
