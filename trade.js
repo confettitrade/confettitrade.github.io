@@ -1067,7 +1067,9 @@
 
   /* The one-time terms acceptance: the line shows until ticked, the tick is remembered and the
      order button stays disabled without it. */
-  function termsAccepted() { return termsOk || lsGet(TERMS_KEY) === '1'; }
+  /* (2026-10-16, the owner: "get rid of the agree checkbox before connect wallet is active. just make the link automatically
+     active") no tick needed: Connect and the order button are active from the start; terms.html stays linked in the footer. */
+  function termsAccepted() { return true; }
 
   function initTerms() {
     var gate = $('termsGate');
