@@ -1819,6 +1819,17 @@ body { font-weight: 400; -webkit-font-smoothing: antialiased; text-rendering: op
 .act .btn { flex: none; }
 .act-block { margin-top: 10px; }
 .act-block .hint { text-align: left; margin-top: 6px; }
+/* Confetti tab: FETTI / HYPE swap box (pool lines left, the form right; stacked when narrow) */
+.swap-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 10px calc(var(--gap) * 2); align-items: start; }
+.swap-body > div { min-width: 0; }
+.swap-body .kv-val { overflow-wrap: anywhere; }
+.swap-body .act { margin-bottom: 4px; }
+.swap-body .hint { text-align: left; margin-top: 6px; }
+.swap-slip { flex: none; width: 92px; }
+.swap-slip .input { min-height: 28px; padding: 0 6px; text-align: right; font-size: var(--text-sm); }
+.swap-slip .unit { padding: 0 8px; }
+.tabs-page .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
+.tabs-page .fineprint a { color: inherit; text-decoration-color: var(--rule); }
 @media (max-width: 480px) {
   .tab-title h1 { font-size: var(--text-xl); }
   .act { flex-wrap: wrap; }

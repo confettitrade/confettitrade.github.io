@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="paper.css?v=v3tabs">
+  <link rel="stylesheet" href="paper.css?v=swap1">
   <link rel="stylesheet" href="points.css?v=c3ee29a">
   <script>
     /* Apply a saved night theme before first paint so the page never flashes cream. */
@@ -91,6 +91,35 @@
       </section>
     </div>
 
+    <section class="panel tab-section" id="swapBox" aria-label="Trade FETTI" hidden>
+      <div class="panel-head"><span>FETTI / HYPE</span></div>
+      <div class="panel-body swap-body">
+        <div>
+          <div class="kv"><span class="kv-key">Price</span><span class="kv-val" id="swPrice">—</span></div>
+          <div class="kv"><span class="kv-key">Pool</span><span class="kv-val" id="swDepth">—</span></div>
+          <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="swBal">—</span></div>
+          <div class="kv"><label class="kv-key" for="swSlip">Slippage</label><span class="input-group swap-slip"><input class="input" id="swSlip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><span class="unit">%</span></span></div>
+        </div>
+        <div>
+          <div class="seg" role="group" aria-label="Buy or sell">
+            <button class="seg-item seg-long" id="swBuy" type="button" aria-pressed="true">Buy</button>
+            <button class="seg-item seg-short" id="swSell" type="button" aria-pressed="false">Sell</button>
+          </div>
+          <div class="act">
+            <div class="input-group">
+              <input class="input" id="swAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false" aria-label="Amount">
+              <span class="unit" id="swUnit">HYPE</span>
+            </div>
+            <button class="btn btn-sm btn-primary" id="swBtn" type="button" disabled>Buy</button>
+          </div>
+          <div class="kv"><span class="kv-key">You get</span><span class="kv-val" id="swOut">—</span></div>
+          <div class="kv"><span class="kv-key">Min received</span><span class="kv-val" id="swMin">—</span></div>
+          <div class="hint" id="swHint" aria-live="polite"></div>
+          <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. <span id="swFee">0.3%</span> pool fee, nothing to the house. <a href="https://app.hyperswap.exchange/#/swap?outputCurrency=0x995B36d7e33680fc6Fa1Db6fA4dc8e475B5233A2" target="_blank" rel="noopener">pool</a></div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel tab-section" aria-label="Reward pushes">
       <div class="panel-head"><span>Pushes</span><span class="count" id="cfPushCount"></span></div>
       <div class="pos-lines" id="cfPushes">
@@ -113,7 +142,7 @@
   <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="tabs.js?v=v3pins" defer></script>
+  <script src="tabs.js?v=swap1" defer></script>
   <script src="points.js?v=c3ee29a" defer></script>
 </body>
 </html>

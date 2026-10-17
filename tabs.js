@@ -5,11 +5,13 @@
    pinned (CONTRACTS, as in trade.js) and checked against the Exchange's own getters
    over a plain RPC, Exchange events over eth_getLogs, and the points engine
    (points.js) for the points board. The only transactions are the Confetti
-   page's approve / stake / unstake / claim on the Staking contract and the v2
+   page's approve / stake / unstake / claim on the Staking contract, its FETTI buy / sell on
+   HyperSwap V2's FETTI / WHYPE pool (router and pair pinned in SWAP), and the v2
    page's requestClose / executeClose / cancelClose / cancelOpen / withdraw on the v2 Exchange
    (config contracts.v2Exchange), sent from the user's wallet. No build step. ABI fragments
    are copied from the compiled ABIs in contracts/out (Exchange, Staking, Confetti,
-   Tokenomics); the v2 Exchange's from ops/abi/ExchangeV2.json.
+   Tokenomics); the v2 Exchange's from ops/abi/ExchangeV2.json; HyperSwap's from its
+   deployed contracts (no artifact; ops/check_site_abi.js lists them as external).
    ========================================================================== */
 (function () {
   'use strict';
@@ -39,6 +41,19 @@
     v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2'
   };
   /* ---- END PINNED CONTRACTS ---- */
+  /* HyperSwap V2's FETTI / WHYPE pool for the Confetti page's buy / sell box. External contracts,
+     not deploy outputs: ops/write_config.py does not rewrite this block (it carries config.json
+     "swap" across a redeploy) and ops/check_site_pins.js checks it against config.json "swap".
+     Verified on chain 2026-10-17: router.factory() 0x7244…1C48 = pair.factory(), router.WETH() =
+     WHYPE, pair token0 WHYPE / token1 FETTI. The page re-reads these and keeps the box hidden on
+     any difference. Only tabs.js carries it; trade.js has no swap. */
+  /* ---- BEGIN PINNED SWAP (HyperSwap V2, external) ---- */
+  var SWAP = {
+    router: '0xb4a9c4e6ea8e2191d2fa5b380452a634fb21240a',
+    pair: '0x9cD9b6514f28325c8F18F1c5aBe311D5c737D930',
+    whype: '0x5555555555555555555555555555555555555555'
+  };
+  /* ---- END PINNED SWAP ---- */
   var USDC = CONTRACTS.usdc;
   var EX_GETTERS = ['usdc', 'confetti', 'tokenomics', 'staking', 'oracle', 'referrals'];
   /* the EX_GETTERS addresses the Confetti page sends transactions to (approve, stake, unstake, claim) */
@@ -49,6 +64,9 @@
   var DEFAULT_INFO = 'https://api.hyperliquid.xyz/info';
 
   var EVERY_MS = { portfolio: 10000, house: 10000, confetti: 15000, leaderboard: 60000, v2: 5000 };
+  var SWAP_EVERY_MS = 10000;   /* the swap box: pool, HYPE mid, balances and quote */
+  var SWAP_DEADLINE_S = 600;   /* a swap's router deadline past the chain clock */
+  var SLIP_MIN = 0.1, SLIP_MAX = 10, SLIP_DEFAULT = 1;   /* swap slippage, percent */
   var V2_EVERY_MS = 30000;     /* Portfolio's read of the v2 balances behind its v2 link */
   var KEEPER_EVERY_MS = 30000;
   var HBOT_EVERY_MS = 60000;
@@ -100,6 +118,12 @@
   function fmtTok(n) {
     if (n == null || !isFinite(n)) return '—';
     return n >= 1000 ? fmtInt(Math.floor(n)) : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+
+  /* HYPE amounts: four decimals from 1, six below. */
+  function fmtHype(n) {
+    if (n == null || !isFinite(n)) return '—';
+    return n >= 1000 ? fmtInt(n) : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 4 : 6 });
   }
 
   function fmtPct(x) {
@@ -162,6 +186,22 @@
     return get('config.json').catch(function () { return get('config.example.json'); });
   }
 
+  /* Hyperliquid info API (config hyperliquidInfoUrl, pinned to INFO_HOSTS), as in trade.js. */
+  function postInfo(body, timeoutMs) {
+    if (typeof fetch !== 'function') return Promise.reject(new Error('fetch unavailable'));
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeoutMs || 6000) : null;
+    return fetch((cfg && cfg.hyperliquidInfoUrl) || DEFAULT_INFO, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) {
+      if (!res.ok) throw new Error('info ' + res.status);
+      return res.json();
+    }).finally(function () { clearTimeout(timer); });
+  }
+
   function hostAllowed(url, hosts) {
     var h = '';
     try { h = new URL(String(url)).hostname.toLowerCase(); } catch (e) { h = ''; }
@@ -194,6 +234,18 @@
     if (!c.rpcUrl) c.rpcUrl = DEFAULT_RPC;
     if (c.logRpcUrl && !hostAllowed(c.logRpcUrl, RPC_HOSTS)) { bad.push('logRpcUrl ' + c.logRpcUrl); c.logRpcUrl = null; }
     if (c.hyperliquidInfoUrl && !hostAllowed(c.hyperliquidInfoUrl, INFO_HOSTS)) { bad.push('hyperliquidInfoUrl ' + c.hyperliquidInfoUrl); c.hyperliquidInfoUrl = DEFAULT_INFO; }
+    /* config "swap" with a pair turns the swap box on; its addresses are the SWAP pins. */
+    if (c.swap && typeof c.swap === 'object' && addrOrNull(c.swap.pair)) {
+      Object.keys(c.swap).forEach(function (k) {
+        var a = addrOrNull(c.swap[k]);
+        var s = c.swap[k] == null ? '' : String(c.swap[k]).trim();
+        var pin = Object.prototype.hasOwnProperty.call(SWAP, k) ? SWAP[k] : '';
+        if ((a || (s && s.toLowerCase() !== ZERO)) && !sameAddr(a, pin)) bad.push('swap.' + k + ' ' + s);
+      });
+      c.swap = addrOrNull(SWAP.router) && addrOrNull(SWAP.pair) && addrOrNull(SWAP.whype) ? { router: SWAP.router, pair: SWAP.pair, whype: SWAP.whype } : null;
+    } else {
+      c.swap = null;
+    }
     return bad;
   }
 
@@ -296,6 +348,26 @@
 
   var TOKENOMICS_ABI = [
     'function currentRateE18() view returns (uint256)'
+  ];
+
+  /* HyperSwap V2 (SWAP pins), from the deployed router and pair: a Camelot-style fork, so the
+     native-coin swaps are the ...SupportingFeeOnTransferTokens ones with a referrer (zero here:
+     no fee share to anyone) and return nothing; plain swapExactETHForTokens is not deployed.
+     getReserves returns each token's fee in FEE_DENOMINATOR parts (300 / 100000 = 0.3%). */
+  var SWAP_ROUTER_ABI = [
+    'function factory() view returns (address)',
+    'function WETH() view returns (address)',
+    'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)',
+    'function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, address referrer, uint256 deadline) payable',
+    'function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, address referrer, uint256 deadline)'
+  ];
+
+  var SWAP_PAIR_ABI = [
+    'function factory() view returns (address)',
+    'function token0() view returns (address)',
+    'function token1() view returns (address)',
+    'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint16 token0FeePercent, uint16 token1FeePercent)',
+    'function FEE_DENOMINATOR() view returns (uint256)'
   ];
 
   /* The v2 Exchange (config contracts.v2Exchange): what the v2 page needs to close out and withdraw,
@@ -654,6 +726,12 @@
     CloseAlreadyPending: function () { return 'Close already requested.'; }
   };
 
+  /* Error(string) reverts worth a plain line (HyperSwap's router reverts with strings). */
+  var REVERT_TEXT = [
+    [/INSUFFICIENT_OUTPUT_AMOUNT/, 'Price moved, raise slippage or try again.'],
+    [/Router: EXPIRED/, 'Deadline passed, try again.']
+  ];
+
   function walkError(err, fn) {
     var e = err, n = 0;
     while (e && n++ < 8) {
@@ -667,24 +745,25 @@
     if (!err) return 'Unknown error.';
     if (typeof err === 'string') return err;
     if (walkError(err, function (e) { return e.code === 4001 || e.code === 'ACTION_REJECTED' || /user (rejected|denied|cancel)/i.test(String(e.message || '')); })) return 'Rejected in wallet.';
-    var data = null;
+    var data = null, text = null;
     walkError(err, function (e) { if (typeof e.data === 'string' && /^0x[0-9a-f]{8}/i.test(e.data)) { data = e.data; return true; } return false; });
     if (data) {
       var ifs = [stIface, cfIface, exIface, v2Iface];
       for (var i = 0; i < ifs.length; i++) {
         try {
           var p = ifs[i] && ifs[i].parseError(data);
+          if (p && p.name === 'Error') { text = 'Reverted: ' + String(p.args[0]); break; }
           if (p) return FRIENDLY[p.name] ? FRIENDLY[p.name](p.args) : 'Reverted: ' + p.name + '.';
         } catch (e) { /* not this contract's */ }
       }
     }
-    var text = null;
-    walkError(err, function (e) {
+    if (!text) walkError(err, function (e) {
       if (e.reason && typeof e.reason === 'string') { text = e.reason; return true; }
       if (e.shortMessage) { text = e.shortMessage; return true; }
       return false;
     });
     if (!text) text = String(err.message || err);
+    for (var j = 0; j < REVERT_TEXT.length; j++) if (REVERT_TEXT[j][0].test(text)) return REVERT_TEXT[j][1];
     text = text.replace(/\s*\(.*action=.*$/s, '').replace(/^execution reverted:?\s*/i, 'Reverted: ');
     if (/insufficient funds/i.test(text)) return 'Not enough HYPE for gas.';
     return text.length > 220 ? text.slice(0, 220) + '…' : text;
@@ -1323,6 +1402,7 @@
         hint.classList.toggle('is-err', !!(note && note.err));
         hint.textContent = note ? note.text : !wallet.account ? 'Connect a wallet to stake.' : wallet.chainId !== CHAIN_ID ? 'Switch the wallet to HyperEVM (999).' : 'Claims land in your exchange balance.';
       }
+      swapForms();
     }
 
     function render() {
@@ -1350,6 +1430,7 @@
       setText('cfPushCount', c.pushes.length ? String(c.pushes.length) : '');
       fillLines($('cfPushes'), c.pushes.slice(0, BOARD_ROWS).map(pushLine), c.scannedTo != null ? 'No pushes yet.' : 'Scanning events…');
       renderForms();
+      renderSwap();
     }
 
     function refresh() {
@@ -1422,6 +1503,197 @@
       });
     }
 
+    /* ---- FETTI / HYPE on HyperSwap V2: shown when config has "swap"; every target is a pin ---- */
+
+    var sw = { on: false, router: null, pair: null, whypeIs0: true, feeDen: 0n, pool: null, hypeUsd: null, me: null,
+      mode: 'buy', quote: null, seq: 0, note: null, inFlight: false };
+
+    /* Router and pair against the SWAP pins and the pinned FETTI; the box stays hidden until they agree. */
+    function swapVerify() {
+      var E = window.ethers, s = cfg.swap, fetti = cfg.contracts.confetti;
+      var router = new E.Contract(s.router, SWAP_ROUTER_ABI, read.provider);
+      var pair = new E.Contract(s.pair, SWAP_PAIR_ABI, read.provider);
+      return Promise.all([router.WETH(), router.factory(), pair.factory(), pair.token0(), pair.token1(), pair.FEE_DENOMINATOR()]).then(function (r) {
+        var w0 = sameAddr(r[3], s.whype) && sameAddr(r[4], fetti);
+        var w1 = sameAddr(r[4], s.whype) && sameAddr(r[3], fetti);
+        if (!sameAddr(r[0], s.whype) || !sameAddr(r[1], r[2]) || !(w0 || w1) || !(BigInt(r[5]) > 0n)) {
+          console.error('swap: router ' + s.router + ' / pair ' + s.pair + ' do not match WHYPE ' + s.whype + ' and FETTI ' + fetti + '; the swap box is off.');
+          cfg.swap = null;
+          return;
+        }
+        sw.router = router; sw.pair = pair; sw.whypeIs0 = w0; sw.feeDen = BigInt(r[5]); sw.on = true;
+      });
+    }
+
+    function swapReadPool() {
+      return sw.pair.getReserves().then(function (r) {
+        var a = BigInt(r[0]), b = BigInt(r[1]), fa = BigInt(r[2]), fb = BigInt(r[3]);
+        sw.pool = sw.whypeIs0 ? { hype: a, fetti: b, feeHype: fa, feeFetti: fb } : { hype: b, fetti: a, feeHype: fb, feeFetti: fa };
+      });
+    }
+
+    function swapReadMid() {
+      return postInfo({ type: 'allMids' }, 5000).then(function (m) {
+        var v = m && Number(m.HYPE);
+        if (v > 0) sw.hypeUsd = v;
+      });
+    }
+
+    function swapReadMe() {
+      var a = wallet.account;
+      if (!a) { sw.me = null; return Promise.resolve(); }
+      return Promise.all([read.confetti.balanceOf(a), read.provider.getBalance(a)]).then(function (r) {
+        if (wallet.account === a) sw.me = { fetti: BigInt(r[0]), hype: BigInt(r[1]) };
+      });
+    }
+
+    /* The pair's own math (constant product, the input token's fee): the quote when the router's
+       getAmountsOut cannot be read. */
+    function reserveOut(amt, buy) {
+      var p = sw.pool, rin = buy ? p.hype : p.fetti, rout = buy ? p.fetti : p.hype;
+      var x = amt * (sw.feeDen - (buy ? p.feeHype : p.feeFetti));
+      return rin > 0n && rout > 0n ? x * rout / (rin * sw.feeDen + x) : 0n;
+    }
+
+    function swapPath(buy) { return buy ? [cfg.swap.whype, cfg.contracts.confetti] : [cfg.contracts.confetti, cfg.swap.whype]; }
+
+    function swapQuote() {
+      var seq = ++sw.seq, buy = sw.mode === 'buy', amt = parseAmount('swAmount');
+      if (amt == null || !sw.pool) { sw.quote = null; renderSwap(); return Promise.resolve(); }
+      return sw.router.getAmountsOut(amt, swapPath(buy)).then(function (a) { return BigInt(a[a.length - 1]); }, function () { return reserveOut(amt, buy); }).then(function (out) {
+        if (seq !== sw.seq) return;
+        sw.quote = { mode: buy ? 'buy' : 'sell', amt: amt, out: out };
+        renderSwap();
+      });
+    }
+
+    /* Slippage in basis points, or null outside SLIP_MIN..SLIP_MAX percent. */
+    function slipBps() {
+      var v = Number(String(($('swSlip') && $('swSlip').value) || '').trim());
+      return isFinite(v) && v >= SLIP_MIN && v <= SLIP_MAX ? Math.round(v * 100) : null;
+    }
+
+    function minOut(out, bps) { return out * BigInt(10000 - bps) / 10000n; }
+
+    function renderSwap() {
+      var box = $('swapBox');
+      if (!box) return;
+      box.hidden = !sw.on;
+      if (!sw.on) return;
+      var p = sw.pool, buy = sw.mode === 'buy';
+      if (p && p.fetti > 0n) {
+        var px = tok18(p.hype) / tok18(p.fetti);
+        valCell('swPrice', fmtPrice(px) + ' HYPE' + (sw.hypeUsd ? ' · $' + fmtPrice(px * sw.hypeUsd) : ''), '', sw.hypeUsd ? 'HYPE $' + fmtPrice(sw.hypeUsd) + ', Hyperliquid mid' : '');
+        valCell('swDepth', fmtTok(tok18(p.fetti)) + ' FETTI · ' + fmtHype(tok18(p.hype)) + ' HYPE');
+        setText('swFee', +(Number(buy ? p.feeHype : p.feeFetti) / Number(sw.feeDen) * 100).toFixed(3) + '%');
+      }
+      valCell('swBal', sw.me ? fmtTok(tok18(sw.me.fetti)) + ' FETTI · ' + fmtHype(tok18(sw.me.hype)) + ' HYPE' : '—');
+      [['swBuy', buy], ['swSell', !buy]].forEach(function (b) { var n = $(b[0]); if (n) n.setAttribute('aria-pressed', b[1] ? 'true' : 'false'); });
+      setText('swUnit', buy ? 'HYPE' : 'FETTI');
+      setText('swBtn', buy ? 'Buy' : 'Sell');
+      var q = sw.quote && sw.quote.mode === sw.mode ? sw.quote : null, bps = slipBps();
+      var unit = buy ? ' FETTI' : ' HYPE', fmt = buy ? fmtTok : fmtHype;
+      if (q && p) {
+        var fee = Number(buy ? p.feeHype : p.feeFetti) / Number(sw.feeDen);
+        var rin = tok18(buy ? p.hype : p.fetti), rout = tok18(buy ? p.fetti : p.hype);
+        var mid = rin > 0 ? tok18(q.amt) * (1 - fee) * rout / rin : 0;
+        var impact = mid > 0 ? Math.max(0, 1 - tok18(q.out) / mid) : null;
+        valCell('swOut', '~' + fmt(tok18(q.out)) + unit + ' · ' + fmtPct(impact) + ' impact');
+        valCell('swMin', bps != null ? fmt(tok18(minOut(q.out, bps))) + unit : '—');
+      } else {
+        valCell('swOut', '—');
+        valCell('swMin', '—');
+      }
+      swapForms();
+    }
+
+    function swapForms() {
+      var btn = $('swBtn');
+      if (!btn || !sw.on) return;
+      var ready = !!(wallet.account && wallet.signer && wallet.chainId === CHAIN_ID && sw.me);
+      var bps = slipBps();
+      btn.disabled = c.busy || !ready || bps == null || !(sw.quote && sw.quote.mode === sw.mode && sw.quote.out > 0n);
+      ['swBuy', 'swSell'].forEach(function (id) { var n = $(id); if (n) n.disabled = c.busy; });
+      var hint = $('swHint');
+      if (hint && !c.busy) {
+        var note = sw.note && Date.now() - sw.note.at < NOTE_MS ? sw.note : null;
+        hint.classList.toggle('is-err', note ? note.err : bps == null);
+        hint.textContent = note ? note.text : bps == null ? 'Slippage ' + SLIP_MIN + ' to ' + SLIP_MAX + '%.' :
+          !wallet.account ? 'Connect a wallet to trade.' : wallet.chainId !== CHAIN_ID ? 'Switch the wallet to HyperEVM (999).' : '';
+      }
+    }
+
+    function swSay(text, err) {
+      sw.note = { text: text, err: !!err, at: Date.now() };
+      var n = $('swHint');
+      if (n) { n.textContent = text; n.classList.toggle('is-err', !!err); }
+    }
+
+    function swapRefresh() {
+      if (!cfg.swap || sw.inFlight || document.hidden) return Promise.resolve();
+      sw.inFlight = true;
+      return (sw.on ? Promise.resolve() : swapVerify()).then(function () {
+        if (!sw.on) return;
+        return Promise.all([swapReadPool(), swapReadMid().catch(none), swapReadMe().catch(none)]).then(swapQuote);
+      }).catch(function () { /* retried on the next tick */ }).then(function () { sw.inFlight = false; renderSwap(); });
+    }
+
+    function swapMode(mode) {
+      if (c.busy || sw.mode === mode) return;
+      sw.mode = mode; sw.quote = null; sw.seq++;
+      $('swAmount').value = '';
+      renderSwap();
+    }
+
+    /* Buy: HYPE in as value. Sell: approve FETTI to the router when the allowance is short, then swap.
+       amountOutMin is the shown quote less the slippage; the deadline runs off the chain clock. */
+    function swap() {
+      var buy = sw.mode === 'buy', amt = parseAmount('swAmount'), bps = slipBps(), q = sw.quote;
+      if (amt == null) { swSay('Enter an amount.', true); return; }
+      if (sw.me && amt > (buy ? sw.me.hype : sw.me.fetti)) { swSay('More than your wallet holds.', true); return; }
+      if (bps == null) { swSay('Slippage ' + SLIP_MIN + ' to ' + SLIP_MAX + '%.', true); return; }
+      if (!q || q.mode !== sw.mode || q.amt !== amt || !(q.out > 0n)) { swSay('Quoting, try again.', true); swapQuote().catch(none); return; }
+      try { requireSigner(); } catch (e) { swSay(e.message, true); return; }
+      var E = window.ethers, me = wallet.account, s = cfg.swap, fetti = cfg.contracts.confetti;
+      var min = minOut(q.out, bps), deadline = Math.floor(chainNow()) + SWAP_DEADLINE_S;
+      var router = new E.Contract(s.router, SWAP_ROUTER_ABI, wallet.signer);
+      var desc = buy ? 'Buy FETTI' : 'Sell FETTI';
+      c.busy = true; renderForms();
+      swSay(desc + '…');
+      var job = buy
+        ? sendTx(desc, router.swapExactETHForTokensSupportingFeeOnTransferTokens, [min, swapPath(true), me, ZERO, deadline, { value: amt }])
+        : read.confetti.allowance(me, s.router).then(function (al) {
+          var cf = new E.Contract(fetti, CONFETTI_ABI, wallet.signer);
+          return BigInt(al) >= amt ? null : sendTx('Approve FETTI', cf.approve, [s.router, amt]);
+        }).then(function () {
+          return sendTx(desc, router.swapExactTokensForETHSupportingFeeOnTransferTokens, [amt, min, swapPath(false), me, ZERO, deadline]);
+        });
+      job.then(function () {
+        c.busy = false;
+        $('swAmount').value = ''; sw.quote = null;
+        swSay('Done.');
+        return Promise.all([refresh(), swapRefresh()]);
+      }).catch(function (e) {
+        c.busy = false;
+        swSay(describeError(e), true);
+        renderForms();
+      });
+    }
+
+    function swapInit() {
+      if (!cfg.swap) return;
+      var timer = null;
+      $('swSlip').value = String(SLIP_DEFAULT);
+      $('swBuy').addEventListener('click', function () { swapMode('buy'); });
+      $('swSell').addEventListener('click', function () { swapMode('sell'); });
+      $('swBtn').addEventListener('click', swap);
+      $('swAmount').addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { swapQuote().catch(none); }, 250); });
+      $('swSlip').addEventListener('input', renderSwap);
+      swapRefresh();
+      setInterval(swapRefresh, SWAP_EVERY_MS);
+      document.addEventListener('visibilitychange', swapRefresh);
+    }
+
     function init() {
       var bind = function (id, fn) { var b = $(id); if (b) b.addEventListener('click', fn); };
       bind('stakeBtn', stake);
@@ -1430,9 +1702,15 @@
       bind('stakeMax', function () { if (c.me) $('stakeAmount').value = fmtRaw(c.me.walletRaw); });
       bind('unstakeMax', function () { if (c.me) $('unstakeAmount').value = fmtRaw(c.me.stakedRaw); });
       render();
+      swapInit();
     }
 
-    function onAccount() { c.me = null; render(); readMe().catch(none).then(render); }
+    function onAccount() {
+      c.me = null; sw.me = null; sw.note = null;
+      render();
+      readMe().catch(none).then(render);
+      swapReadMe().catch(none).then(renderSwap);
+    }
 
     return { init: init, refresh: refresh, onAccount: onAccount, every: EVERY_MS.confetti };
   })();
