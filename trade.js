@@ -2636,6 +2636,61 @@
     }
   }
 
+  /* ---- confetti's own 24h volume (the owner 2026-10-17: "second box"): the notional of every position opened on the
+     exchange in the last 24 hours (margin x leverage, every market, the house bots included), from the PositionOpened
+     logs. The 24 h boundary block is found from block timestamps; later refreshes only read the new blocks. ---- */
+  var CONF_VOL_EVERY_MS = 60000;
+  var cvol = { entries: [], scannedTo: null, busy: false };
+
+  function confVolBoundary(prov, latest) {
+    return prov.getBlock(latest).then(function (top) {
+      var topTs = Number(top.timestamp), target = topTs - 86400;
+      var floor = Number(cfg.deployBlock) || 0;
+      function refine(b, k) {
+        b = Math.max(floor, b);
+        return prov.getBlock(b).then(function (blk) {
+          var late = Number(blk.timestamp) - target;                     /* seconds this block is after the boundary */
+          var rate = (topTs - Number(blk.timestamp)) / Math.max(1, latest - b) || 1; /* seconds per block */
+          var nb = Math.max(floor, Math.round(b - late / rate));
+          if (k <= 0 || Math.abs(nb - b) < 30) return nb;
+          return refine(nb, k - 1);
+        });
+      }
+      return refine(latest - 88000, 3);
+    });
+  }
+
+  function refreshConfVol() {
+    if (cvol.busy || document.hidden || !read.logProvider || !exIface || !hasExchange()) return;
+    var prov = read.logProvider;
+    var topic = exIface.getEvent('PositionOpened').topicHash;
+    var chunk = Math.max(1000, Number(cfg.logChunkBlocks) || 20000);
+    cvol.busy = true;
+    prov.getBlockNumber().then(function (latest) {
+      return confVolBoundary(prov, latest).then(function (from24) {
+        var start = cvol.scannedTo != null ? Math.max(cvol.scannedTo + 1, from24) : from24;
+        function step(from) {
+          if (from > latest) return Promise.resolve();
+          var to = Math.min(latest, from + chunk - 1);
+          return prov.getLogs({ address: cfg.contracts.exchange, fromBlock: from, toBlock: to, topics: [topic] }).then(function (logs) {
+            logs.forEach(function (log) {
+              var p = null;
+              try { p = exIface.parseLog({ topics: Array.from(log.topics), data: log.data }); } catch (e) { p = null; }
+              if (p) cvol.entries.push({ b: Number(log.blockNumber), n: usd6ToNum(p.args.marginUsdc) * Number(p.args.leverage) });
+            });
+            return step(to + 1);
+          });
+        }
+        return step(start).then(function () {
+          cvol.scannedTo = latest;
+          cvol.entries = cvol.entries.filter(function (e) { return e.b >= from24; });
+          var sum = cvol.entries.reduce(function (s, e) { return s + (isFinite(e.n) ? e.n : 0); }, 0);
+          setText('chipConfVol', fmtUsdCompact(sum));
+        });
+      });
+    }).catch(function () { /* keep the last number; the next minute tries again */ }).then(function () { cvol.busy = false; });
+  }
+
   /* ---- history (Exchange events via eth_getLogs) ------------------------------------ */
 
   function freshHistory() {
@@ -3210,6 +3265,8 @@
         refreshHouse();
         refreshMarketChain();
         if (!hasExchange()) toast('No exchange address in config: showing live prices only.', null, null, 9000);
+        refreshConfVol();
+        setInterval(refreshConfVol, CONF_VOL_EVERY_MS);
         setInterval(tickChain, CHAIN_EVERY_MS);
         setInterval(function () { if (!document.hidden) loadInstruments(); }, INSTRUMENTS_EVERY_MS);
         setTimeout(tryAutoConnect, 50);
