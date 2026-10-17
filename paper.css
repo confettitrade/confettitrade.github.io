@@ -52,7 +52,8 @@
   --dot-size: 14px;
 
   /* type */
-  --font-display: "Tinos", "Times New Roman", Times, serif;
+  --font-display: "Soehne", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-brand: "Tinos", "Times New Roman", Times, serif;   /* the confetti_ wordmark only */
   --font-ui: "Soehne", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Soehne Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
@@ -263,7 +264,7 @@ pre {
   display: inline-flex;
   align-items: baseline;
   gap: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-brand);
   font-weight: 400;
   font-size: var(--text-xl);
   letter-spacing: -0.01em;
