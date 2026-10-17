@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="paper.css?v=soehne3">
-  <link rel="stylesheet" href="points.css?v=soehne3">
+  <link rel="stylesheet" href="paper.css?v=v3tabs">
+  <link rel="stylesheet" href="points.css?v=c3ee29a">
   <script>
     /* Apply a saved night theme before first paint so the page never flashes cream. */
     try {
@@ -21,7 +21,7 @@
     } catch (e) { /* storage blocked: stay on paper */ }
   </script>
   <style>
-    /* terms.html only. Tokens and components come from paper.css?v=soehne3. */
+    /* terms.html only. Tokens and components come from paper.css?v=v3tabs. */
     .header .container { display: flex; align-items: center; gap: var(--gap); width: 100%; }
     .header .nav { flex: none; }
     .header-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
@@ -82,7 +82,7 @@
 
       <section id="house">
         <h2>The house is the counterparty</h2>
-        <p>Every position is against the house pool, which starts at zero and is built from losses. There is no order book and no other trader on the other side. The house earns the fee, keeps what the payout cap forfeits, and its operator runs the fill keeper. Your gain is the house's loss, and the other way round.</p>
+        <p>Every position is against the house pool, which is built from losses and from seed the operator puts in and may take back after a week's posted notice. There is no order book and no other trader on the other side. The house earns the fee, keeps what the payout cap forfeits, and its operator runs the fill keeper. Your gain is the house's loss, and the other way round.</p>
       </section>
 
       <section id="pricing">
@@ -98,7 +98,7 @@
 
       <section id="caps">
         <h2>Impact haircut and payout cap</h2>
-        <p>A win is paid after a deadband and an impact haircut. At launch you keep about 74% of a raw gain on a 0.1% move and about 88% on a 1% move, before the fee. Profit on one position is capped at 50 times its margin; the cap is per market, owner-set between 10x and 200x, and stamped on the position when it opens. Anything above the cap is forfeited to the house. Losses have no haircut and stop at your margin.</p>
+        <p>A win is paid after a deadband and an impact haircut. At launch you keep about 74% of a raw gain on a 0.1% move and about 88% on a 1% move, before the fee. Profit on one position is capped at 200 times its margin; the cap is per market, owner-set between 10x and 200x, and stamped on the position when it opens. Anything above the cap is forfeited to the house. Losses have no haircut and stop at your margin.</p>
       </section>
 
       <section id="queue">

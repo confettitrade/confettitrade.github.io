@@ -1,6 +1,6 @@
 /* ==========================================================================
    confetti_  —  landing.js
-   Drives index.html: the ticker tape (Hyperliquid allMids every 5 s), the
+   Drives landing.html: the ticker tape (Hyperliquid allMids every 5 s), the
    preview card's canvas chart (DOGE 1m candles, last 60), the preview's
    fake order form, the falling confetti and the night-theme toggle.
    No build step, no dependencies. Every network call fails soft.
@@ -400,7 +400,7 @@
 
   /* ---- preview order form (fake, but the numbers are honest) ------------- */
 
-  var form = { side: 'long', margin: 100, lev: 250, price: NaN, available: 1140.18 };
+  var form = { side: 'long', margin: 100, lev: 1000, price: NaN, available: 1140.18 };
 
   function levFromSlider(v) { return Math.max(1, Math.min(1000, Math.round(Math.pow(1000, v / 1000)))); }
   function sliderFromLev(l) { return Math.round((1000 * Math.log(l)) / Math.log(1000)); }

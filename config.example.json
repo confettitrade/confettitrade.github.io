@@ -18,12 +18,18 @@
     "confetti": "0x0000000000000000000000000000000000000000",
     "tokenomics": "0x0000000000000000000000000000000000000000",
     "staking": "0x0000000000000000000000000000000000000000",
-    "referrals": "0x0000000000000000000000000000000000000000"
+    "referrals": "0x0000000000000000000000000000000000000000",
+    "priceSource": "0xFaF573187824D176fc74d1de91a072eb6ffa8494",
+    "marketRules": "0x0000000000000000000000000000000000000000",
+    "sessionRouter": "0x0000000000000000000000000000000000000000",
+    "depositFactory": "0x0000000000000000000000000000000000000000",
+    "v2Exchange": "0x257d667a52b282ac0b4c001fd437522bf6b9cbe2"
   },
 
   "houseBots": [],
   "pointsRelay": "",
   "deployBlock": 0,
+  "v2DeployBlock": 48404443,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,
 
@@ -42,25 +48,25 @@
   },
 
   "tiers": {
-    "A": { "code": 0, "maxLeverage": 1000, "deadbandBps": 1, "clampBps": 10, "oiCapPerSideUsd": 250000 },
-    "B": { "code": 1, "maxLeverage": 250, "deadbandBps": 3, "clampBps": 25, "oiCapPerSideUsd": 100000 },
-    "C": { "code": 2, "maxLeverage": 50, "deadbandBps": 10, "clampBps": 50, "oiCapPerSideUsd": 25000 }
+    "A": { "code": 0, "maxLeverage": 1000, "deadbandBps": 1, "clampBps": 5 },
+    "B": { "code": 1, "maxLeverage": 250, "deadbandBps": 3, "clampBps": 25 },
+    "C": { "code": 2, "maxLeverage": 50, "deadbandBps": 10, "clampBps": 50 }
   },
 
   "markets": [
-    { "symbol": "DOGE",     "coin": "DOGE",     "hlAssetIndex": 12,  "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "FARTCOIN", "coin": "FARTCOIN", "hlAssetIndex": 165, "szDecimals": 1, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "VIRTUAL",  "coin": "VIRTUAL",  "hlAssetIndex": 162, "szDecimals": 1, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "WIF",      "coin": "WIF",      "hlAssetIndex": 98,  "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "MELANIA",  "coin": "MELANIA",  "hlAssetIndex": 175, "szDecimals": 1, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "FLOKI",    "coin": "kFLOKI",   "hlAssetIndex": 119, "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "PENGU",    "coin": "PENGU",    "hlAssetIndex": 163, "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "PEOPLE",   "coin": "PEOPLE",   "hlAssetIndex": 100, "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "launch": true },
+    { "symbol": "DOGE",     "coin": "DOGE",     "hlAssetIndex": 12,  "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 10000000, "launch": true },
+    { "symbol": "FARTCOIN", "coin": "FARTCOIN", "hlAssetIndex": 165, "szDecimals": 1, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 150000, "launch": true },
+    { "symbol": "VIRTUAL",  "coin": "VIRTUAL",  "hlAssetIndex": 162, "szDecimals": 1, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 1000000, "launch": true },
+    { "symbol": "WIF",      "coin": "WIF",      "hlAssetIndex": 98,  "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 500000, "launch": true },
+    { "symbol": "MELANIA",  "coin": "MELANIA",  "hlAssetIndex": 175, "szDecimals": 1, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 150000, "launch": true },
+    { "symbol": "FLOKI",    "coin": "kFLOKI",   "hlAssetIndex": 119, "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 150000, "launch": true },
+    { "symbol": "PENGU",    "coin": "PENGU",    "hlAssetIndex": 163, "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 2000000, "launch": true },
+    { "symbol": "PEOPLE",   "coin": "PEOPLE",   "hlAssetIndex": 100, "szDecimals": 0, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 150000, "launch": true },
 
-    { "symbol": "TRUMP",    "coin": "TRUMP",    "hlAssetIndex": 174, "szDecimals": 1, "tier": "B", "maxLeverage": 250, "launch": true },
-    { "symbol": "PEPE",     "coin": "kPEPE",    "hlAssetIndex": 15,  "szDecimals": 0, "tier": "B", "maxLeverage": 250, "launch": true },
-    { "symbol": "BTC",      "coin": "BTC",      "hlAssetIndex": 0,   "szDecimals": 5, "tier": "A", "maxLeverage": 1000, "launch": true },
-    { "symbol": "ETH",      "coin": "ETH",      "hlAssetIndex": 1,   "szDecimals": 4, "tier": "A", "maxLeverage": 1000, "launch": true },
+    { "symbol": "TRUMP",    "coin": "TRUMP",    "hlAssetIndex": 174, "szDecimals": 1, "tier": "B", "maxLeverage": 250, "oiCapPerSideUsd": 500000, "launch": true },
+    { "symbol": "PEPE",     "coin": "kPEPE",    "hlAssetIndex": 15,  "szDecimals": 0, "tier": "B", "maxLeverage": 250, "oiCapPerSideUsd": 500000, "launch": true },
+    { "symbol": "BTC",      "coin": "BTC",      "hlAssetIndex": 0,   "szDecimals": 5, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 10000000, "launch": true },
+    { "symbol": "ETH",      "coin": "ETH",      "hlAssetIndex": 1,   "szDecimals": 4, "tier": "A", "maxLeverage": 1000, "oiCapPerSideUsd": 10000000, "launch": true },
     { "symbol": "SHIB",     "coin": "kSHIB",    "hlAssetIndex": 38,  "szDecimals": 0, "tier": "B", "maxLeverage": 250, "launch": false },
     { "symbol": "PNUT",     "coin": "PNUT",     "hlAssetIndex": 153, "szDecimals": 1, "tier": "B", "maxLeverage": 250, "launch": false },
     { "symbol": "POPCAT",   "coin": "POPCAT",   "hlAssetIndex": 128, "szDecimals": 0, "tier": "B", "maxLeverage": 250, "launch": false },

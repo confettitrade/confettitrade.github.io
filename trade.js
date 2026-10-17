@@ -12,9 +12,15 @@
    countdown, watches for the keeper, and after the keeper window offers an
    executeOpen / executeClose from the user's own wallet (the fallback fill:
    the worse of p0 and p1 for the trader). After expiry it offers a cancel.
+   One-click trading (v3): with a live SessionRouter session the browser's
+   session key files requests, cancels and fallback fills with no wallet
+   popup; anything it may not do (or a dead session) goes to the wallet.
+   Deposits from Hyperliquid (v3): the Deposit dialog shows the trader's
+   DepositProxyFactory address and sweeps it.
    No build step. Config comes from config.json (falls back to
    config.example.json). Contract ABI fragments are written by hand from
-   contracts/src/interfaces/IExchange.sol and IReferrals.sol.
+   contracts/src and cross-checked against contracts/out
+   (ops/check_site_abi.js).
    ========================================================================== */
 (function () {
   'use strict';
@@ -26,6 +32,7 @@
   var CANDLES_EVERY_MS = 60000;
   var CHAIN_EVERY_MS = 10000;
   var INSTRUMENTS_EVERY_MS = 300000;
+  var V2_EVERY_MS = 30000;
   var CANDLE_COUNT = 300;
   /* While a request is pending the page polls it every second and redraws the countdown
      four times a second; outcomes are read from the logs for up to this many tries. */
@@ -41,7 +48,8 @@
   var THEME_KEY = 'confetti.theme';
   var LS = {
     market: 'confetti.trade.market', side: 'confetti.trade.side', lev: 'confetti.trade.lev.', tab: 'confetti.trade.tab',
-    ref: 'confetti.ref', pending: 'confetti.trade.pending.', autoFill: 'confetti.trade.autofill'
+    ref: 'confetti.ref', pending: 'confetti.trade.pending.', autoFill: 'confetti.trade.autofill',
+    session: 'confetti.trade.session.', sweep: 'confetti.trade.sweep.'
   };
   var TZ_OFFSET_S = new Date().getTimezoneOffset() * 60;
   var ZERO = '0x0000000000000000000000000000000000000000';
@@ -49,10 +57,16 @@
   var REF_RE = /^[a-z0-9_]{3,16}$/;
   var SITE_URL = 'https://confetti.trade/';
 
-  /* The live deployment, pinned. config.json may restate these, but a config whose addresses
-     differ is refused (console error + status line) and these are used, so a hijacked config
-     cannot redirect a deposit. The RPC and info hosts are pinned the same way; the pages' CSP
-     allows exactly these hosts. */
+  /* The deployment, pinned. config.json may restate these, but a config whose addresses differ is
+     refused (console error + status line) and these are used, so a hijacked config cannot
+     redirect a deposit; an empty pin is off (config.json cannot fill it in). ops/write_config.py
+     rewrites the block between the markers from the deploy broadcast when it writes
+     site/config.json, and ops/check_site_pins.js checks that the two agree. Once the exchange is
+     readable its own getters (CHECKED) are compared with the pins: one that disagrees is reported
+     and never becomes a transaction target. USDC is Circle's native token on HyperEVM: an exchange
+     on any other token gets no deposit. The RPC and info hosts are pinned the same way; the
+     pages' CSP allows exactly these hosts. */
+  /* ---- BEGIN PINNED CONTRACTS (ops/write_config.py) ---- */
   var CONTRACTS = {
     exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
@@ -61,8 +75,17 @@
     tokenomics: '0xb9dc9c1271732067aed0068d81b118a638764c0a',
     staking: '0x318535af817913fd33cd4088f2c56fc5ddcab50d',
     referrals: '0x0879fe6298a6b987173b29693af4ade6d63c19da',
-    priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494'
+    priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494',
+    marketRules: '',
+    sessionRouter: '',
+    depositFactory: '',
+    v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2'
   };
+  /* ---- END PINNED CONTRACTS ---- */
+  var USDC = CONTRACTS.usdc;
+  var CHECKED = ['usdc', 'oracle', 'confetti', 'tokenomics', 'staking', 'referrals', 'sessionRouter', 'marketRules'];
+  /* the CHECKED addresses this page sends transactions to (usdc has its own refusal: usdcBad) */
+  var TX_TARGETS = { referrals: 'Refer', sessionRouter: 'One-click' };
   var RPC_HOSTS = ['rpc.hyperliquid.xyz', 'hyperliquid.drpc.org', 'rpc.purroofgroup.com'];
   var INFO_HOSTS = ['api.hyperliquid.xyz'];
   var DEFAULT_RPC = 'https://rpc.hyperliquid.xyz/evm';
@@ -81,6 +104,24 @@
      so an open position's preview uses its own stamped terms (positions() returns them); the
      order form uses the live feeBps() once refreshHouse has read it, and the 5% cap until then. */
   var DEFAULT_FEE_RATE = 0.05;
+
+  /* One-click trading (SessionRouter). The wallet sends this much HYPE with authorize; the router
+     forwards it to the session key for gas. Below SESSION_MIN_GAS the key is treated as dry and the
+     wallet signs again. A session never outlives MAX_SESSION (30 days, the router's limit). */
+  var SESSION_GAS_HYPE = '0.01';
+  var SESSION_MIN_GAS = 1000000000000000n; /* 0.001 HYPE: a few requests at a few gwei */
+  var SESSION_MAX_S = 30 * 86400;
+  /* Router errors that mean "this session cannot act": the call goes to the wallet instead. */
+  var SESSION_ERRORS = { NoSession: true, SessionExpired: true, MarginAboveSessionCap: true };
+
+  /* HyperCore deposits (DepositProxy): read precompiles and the proxy's own thresholds. Core USDC
+     has 8 decimals, perp withdrawable 6. The proxy keeps 0.05 USDC on Core spot for the bridge
+     fee and bridges only 1 USDC or more above it; perp moves to spot from 1 USDC. */
+  var SPOT_BALANCE_PRECOMPILE = '0x0000000000000000000000000000000000000801';
+  var WITHDRAWABLE_PRECOMPILE = '0x0000000000000000000000000000000000000803';
+  var CORE_FEE_RESERVE_WEI = 5000000n;
+  var MIN_BRIDGE_WEI = 100000000n;
+  var MIN_PERP_USD = 1000000n;
 
   /* ---- tiny helpers ------------------------------------------------------- */
 
@@ -193,17 +234,19 @@
 
   /* Pin the loaded config to the constants above: every contract address, the chain id and the
      RPC / info hosts. Returns the fields that disagreed (empty for a clean config); the pinned
-     values are in force either way, so the deposit target never comes from the network. A zero
-     address (config.example.json) counts as unset, not as a disagreement. */
+     values are in force either way, so a transaction target never comes from the network. A zero
+     address (config.example.json) counts as unset, not as a disagreement; an address under a name
+     with no pin is a disagreement. */
   function pinConfig(c) {
     var bad = [];
-    c.contracts = c.contracts || {};
-    Object.keys(CONTRACTS).forEach(function (k) {
-      var v = c.contracts[k];
-      var s = v == null ? '' : String(v).toLowerCase();
-      if (s && s !== ZERO && s !== CONTRACTS[k].toLowerCase()) bad.push('contracts.' + k + ' ' + v);
-      c.contracts[k] = CONTRACTS[k];
+    var src = c.contracts && typeof c.contracts === 'object' ? c.contracts : {};
+    Object.keys(src).forEach(function (k) {
+      var s = src[k] == null ? '' : String(src[k]);
+      var pin = Object.prototype.hasOwnProperty.call(CONTRACTS, k) ? CONTRACTS[k] : '';
+      if (s && s.toLowerCase() !== ZERO && s.toLowerCase() !== pin.toLowerCase()) bad.push('contracts.' + k + ' ' + s);
     });
+    c.contracts = {};
+    Object.keys(CONTRACTS).forEach(function (k) { if (CONTRACTS[k]) c.contracts[k] = CONTRACTS[k]; });
     if (c.chainId != null && Number(c.chainId) !== CHAIN_ID) bad.push('chainId ' + c.chainId);
     c.chainId = CHAIN_ID;
     c.chainIdHex = CHAIN_HEX;
@@ -281,6 +324,9 @@
     'function pauseGuardian() view returns (address)',
     'function marketKeeper() view returns (address)',
     'function feeRecipient() view returns (address)',
+    /* v3: the session router (trusted forwarder) and the market-rules module; revert on v2 */
+    'function sessionRouter() view returns (address)',
+    'function marketRules() view returns (address)',
     /* events */
     'event Deposited(address indexed user, address indexed payer, uint256 amountUsdc)',
     'event Withdrawn(address indexed user, uint256 amountUsdc)',
@@ -349,6 +395,7 @@
     'error CloseAlreadyPending()',
     'error PriceJumped()',
     'error EntryBusted()',
+    'error MigrationPending()',
     /* errors: PriceOracle, bubble up through request / execute */
     'error FeedUnavailable(uint32 instrumentId)',
     'error ZeroPrice(uint32 instrumentId)',
@@ -394,8 +441,61 @@
     'error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)'
   ];
 
+  /* SessionRouter.sol (v3): created by the Exchange; its address comes from exchange.sessionRouter(). */
+  var ROUTER_ABI = [
+    'function authorize(address sessionKey, uint64 expiry, uint128 maxMarginPerTrade, address referrer, bytes keySig) payable',
+    'function authorizationDigest(address trader, address sessionKey, uint64 expiry, uint128 maxMarginPerTrade, address referrer) view returns (bytes32)',
+    'function revoke()',
+    'function requestOpen(uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage) returns (uint256 requestId)',
+    'function requestClose(uint256 positionId)',
+    'function cancelOpen(uint256 requestId)',
+    'function cancelClose(uint256 positionId)',
+    'function sessionOf(address trader) view returns (tuple(address key, uint64 expiry, uint128 maxMarginPerTrade, address referrer))',
+    'function traderOf(address sessionKey) view returns (address)',
+    'function MAX_SESSION() view returns (uint64)',
+    'function exchange() view returns (address)',
+    'event SessionAuthorized(address indexed trader, address indexed sessionKey, uint64 expiry, uint128 maxMarginPerTrade, address referrer, uint256 gasFundedWei)',
+    'event SessionRevoked(address indexed trader, address indexed sessionKey)',
+    'error ZeroAddress()',
+    'error BadExpiry(uint64 expiry)',
+    'error ZeroMarginCap()',
+    'error KeyInUse(address sessionKey)',
+    'error GasForwardFailed()',
+    'error BadKeySignature()',
+    'error NoSession()',
+    'error SessionExpired(uint64 expiry)',
+    'error MarginAboveSessionCap(uint128 marginUsdc, uint128 maxMarginPerTrade)',
+    'error NotYours()'
+  ];
+
+  /* DepositProxyFactory.sol (v3): config contracts.depositFactory, used only if it names this exchange. */
+  var FACTORY_ABI = [
+    'function proxyOf(address trader) view returns (address)',
+    'function sweep(address trader) returns (uint256 depositedUsdc, uint64 bridgedWei, uint64 perpToSpotWei)',
+    'function exchange() view returns (address)',
+    'function usdc() view returns (address)',
+    'event ProxyDeployed(address indexed trader, address indexed proxy)',
+    'error ZeroAddress()'
+  ];
+
+  /* DepositProxy.sol: the Swept event in a sweep receipt and the errors a sweep can bubble. */
+  var PROXY_ABI = [
+    'event Swept(uint256 depositedUsdc, uint64 bridgedWei, uint64 perpToSpotWei)',
+    'error NotTrader()'
+  ];
+
+  /* The v2 Exchange (config contracts.v2Exchange): the three balances behind the Status tab's
+     link to v2.html. Checked by ops/check_site_abi.js against ops/abi/ExchangeV2.json, not the v3 build. */
+  var V2_EXCHANGE_ABI = [
+    'function balanceOf(address user) view returns (uint256 availableUsdc)',
+    'function marginInUse(address user) view returns (uint256 usdc)',
+    'function pendingOf(address user) view returns (uint256 usdc)'
+  ];
+
   var exIface = null; /* ethers.Interface for EXCHANGE_ABI */
   var refIface = null; /* ethers.Interface for REFERRALS_ABI */
+  var routerIface = null; /* ROUTER_ABI */
+  var proxyIface = null; /* PROXY_ABI */
 
   /* ---- state --------------------------------------------------------------- */
 
@@ -421,8 +521,8 @@
   var acct = { loaded: false, available: 0, marginInUse: 0, pending: 0, positions: [], closeReqs: {}, walletUsdc: 0, allowance: 0 };
 
   var house = {
-    addrs: {}, lp: null, feePool: null, queued: null, queueLen: null, queueHead: null,
-    globalPaused: false, breakerTripped: false, instCount: null, block: null, blockAt: 0, oi: {},
+    addrs: {}, unpinned: {}, lp: null, feePool: null, queued: null, queueLen: null, queueHead: null,
+    globalPaused: false, breakerTripped: false, breakerBps: null, instCount: null, block: null, blockAt: 0, oi: {},
     /* latest block timestamp and when it was read, for the request countdowns (chainNow) */
     chainTs: null, chainTsAt: 0,
     /* per instrument id: the on-chain HyperCore oracle price (execPrice), refreshed with the
@@ -495,7 +595,25 @@
      account's own code / earnings and whether its referrer is already locked on chain. */
   var ref = { code: lsGet('confetti.ref') || '', addr: null, locked: null, referrer: null, myCode: '', earned: null, loaded: false };
 
-  var read = { provider: null, logProvider: null, exchange: null, referrals: null };
+  var read = { provider: null, logProvider: null, exchange: null, referrals: null, router: null, factory: null, v2: null };
+
+  /* The Status tab's v2 link: shown for the connected account while the v2 Exchange still holds its
+     balance, margin or a pending open request (a pending close keeps its position's margin in use). */
+  var v2link = { account: null, at: 0, show: false };
+
+  /* One-click session of the connected account. key: ethers.Wallet from localStorage (or null);
+     onchain: router.sessionOf(account) { key, expiry, cap } once read; gasWei: the key's HYPE. */
+  var sess = { key: null, onchain: null, gasWei: null, loaded: false };
+
+  /* Deposit from Hyperliquid: the account's proxy and what waits on it. spotFreeWei: Core spot USDC
+     (total - hold, 8 dec), perp6: Core perp withdrawable, evm6: HyperEVM USDC on the proxy; null when
+     unreadable. */
+  var hl = { account: null, proxy: null, spotFreeWei: null, perp6: null, evm6: null };
+
+  /* The fill keeper's last-fill age (keeper.js), shown in the Status tab; read every 30 s. */
+  var keeper = null;
+  var keeperAt = 0;
+  var KEEPER_EVERY_MS = 30000;
 
   /* The terms tick for this visit (also read back from localStorage when storage works). */
   var termsOk = false;
@@ -1150,9 +1268,14 @@
         var px = openPriceFor(m);
         var bust = bustPriceNum(px, form.side === 'long', form.lev);
         note = 'Busts on a ' + bustMovePct(form.lev).toFixed(3) + '% move' + (isFinite(bust) ? ' (' + fmtPrice(bust, m.szDecimals) + ')' : '') + '. Fills in about ' + (house.minDelay + 1) + ' s.';
+        if (sessionLive()) {
+          if (!sessionRefOk(referrerArg())) note += ' Your first fill sets your referrer: the wallet signs this one.';
+          else if (numToUsd6(form.margin) > sess.onchain.cap6) note += ' Over the one-click cap: the wallet signs.';
+          else note += ' No popup.';
+        }
       }
     }
-    if (state.busy) { disabled = true; note = 'Confirm in your wallet…'; err = false; }
+    if (state.busy) { disabled = true; note = state.viaSession ? 'Sending…' : 'Confirm in your wallet…'; err = false; }
     if (!termsAccepted()) disabled = true;
     btn.className = cls;
     btn.textContent = label;
@@ -1256,11 +1379,14 @@
     var E = window.ethers;
     exIface = new E.Interface(EXCHANGE_ABI);
     refIface = new E.Interface(REFERRALS_ABI);
+    routerIface = new E.Interface(ROUTER_ABI);
+    proxyIface = new E.Interface(PROXY_ABI);
     read.provider = makeProvider(cfg.rpcUrl);
     read.logProvider = cfg.logRpcUrl && cfg.logRpcUrl !== cfg.rpcUrl ? makeProvider(cfg.logRpcUrl) : read.provider;
     if (hasExchange()) read.exchange = new E.Contract(cfg.contracts.exchange, EXCHANGE_ABI, read.provider);
     var refAddr = cfg.contracts && cfg.contracts.referrals;
     if (isAddr(refAddr)) read.referrals = new E.Contract(refAddr, REFERRALS_ABI, read.provider);
+    if (isAddr(cfg.contracts && cfg.contracts.v2Exchange)) read.v2 = new E.Contract(cfg.contracts.v2Exchange, V2_EXCHANGE_ABI, read.provider);
   }
 
   function normInst(r, id) {
@@ -1322,7 +1448,7 @@
       ex.breakerTripped().catch(function () { return false; }),
       ex.feeBps().catch(none),
       ex.minDelay().catch(none), ex.grace().catch(none), ex.expiry().catch(none),
-      ex.maxJumpBps().catch(none), ex.stakerFeeShareBps().catch(none)
+      ex.maxJumpBps().catch(none), ex.stakerFeeShareBps().catch(none), ex.breakerBps().catch(none)
     ]).then(function (r) {
       house.lp = usd6ToNum(r[0]); house.feePool = usd6ToNum(r[1]); house.queued = usd6ToNum(r[2]);
       house.queueLen = Number(r[3]); house.queueHead = Number(r[4]); house.globalPaused = !!r[5];
@@ -1333,20 +1459,62 @@
       if (r[11] != null) house.expiry = Number(r[11]);
       if (r[12] != null) house.maxJumpBps = Number(r[12]);
       if (r[13] != null) house.stakerShareBps = Number(r[13]);
+      if (r[14] != null) house.breakerBps = Number(r[14]);
       renderStatus(); renderAction();
     }).catch(function () { /* transient RPC trouble: keep the last values */ });
   }
 
+  /* The exchange's own addresses, checked against the pins. One that disagrees is reported
+     (console error; a status line when transactions to it go off) and never becomes a transaction
+     target: Refer goes off for referrals, one-click for the router; reads follow the exchange's
+     referrals. The router is used only when its pin and exchange.sessionRouter() agree (v2 has
+     none: the call reverts and one-click stays off). An exchange that does not settle in native
+     USDC gets no deposit (requireSigner refuses). */
   function loadHouseAddresses() {
     var ex = read.exchange;
     if (!ex) return Promise.resolve();
-    var names = ['usdc', 'oracle', 'confetti', 'tokenomics', 'staking', 'referrals', 'owner', 'feeRecipient', 'pauseGuardian', 'marketKeeper'];
+    var E = window.ethers;
+    var names = CHECKED.concat(['owner', 'feeRecipient', 'pauseGuardian', 'marketKeeper']);
     return Promise.all(names.map(function (n) { return ex[n]().catch(function () { return null; }); })).then(function (vals) {
       names.forEach(function (n, i) { if (vals[i]) house.addrs[n] = vals[i]; });
+      var off = [];
+      CHECKED.forEach(function (n) {
+        var pin = cfg.contracts[n], theirs = house.addrs[n];
+        if (n === 'usdc' || !isAddr(theirs) || (isAddr(pin) && pin.toLowerCase() === theirs.toLowerCase())) return;
+        house.unpinned[n] = true;
+        console.error('exchange.' + n + '() ' + theirs + ' is not the pinned ' + (pin || 'none') + (TX_TARGETS[n] ? '; ' + TX_TARGETS[n] + ' is off.' : '.'));
+        if (TX_TARGETS[n]) off.push(TX_TARGETS[n]);
+      });
+      if (off.length) toast('The exchange does not match this site\'s pinned contracts. ' + off.join(' and ') + ' off.', 'err', null, 0);
+      if (isAddr(house.addrs.usdc) && house.addrs.usdc.toLowerCase() !== USDC.toLowerCase()) {
+        house.usdcBad = true;
+        console.error('exchange.usdc() ' + house.addrs.usdc + ' is not native USDC ' + USDC + '; deposits and trades are off.');
+        toast('This exchange does not settle in native USDC. Deposits and trades are off.', 'err', null, 0);
+      }
       if (isAddr(house.addrs.referrals) && (!read.referrals || read.referrals.target.toLowerCase() !== house.addrs.referrals.toLowerCase())) {
-        read.referrals = new window.ethers.Contract(house.addrs.referrals, REFERRALS_ABI, read.provider);
+        read.referrals = new E.Contract(house.addrs.referrals, REFERRALS_ABI, read.provider);
+      }
+      if (isAddr(cfg.contracts.sessionRouter) && isAddr(house.addrs.sessionRouter) && !house.unpinned.sessionRouter) {
+        read.router = new E.Contract(cfg.contracts.sessionRouter, ROUTER_ABI, read.provider);
       }
       renderStatus();
+      return loadFactory();
+    });
+  }
+
+  /* The deposit factory from config, kept only if it deposits into this exchange in native USDC. */
+  function loadFactory() {
+    var a = cfg.contracts.depositFactory;
+    if (!isAddr(a) || !read.exchange) return Promise.resolve();
+    var f = new window.ethers.Contract(a, FACTORY_ABI, read.provider);
+    return Promise.all([f.exchange(), f.usdc()]).then(function (r) {
+      if (String(r[0]).toLowerCase() === cfg.contracts.exchange.toLowerCase() && String(r[1]).toLowerCase() === USDC.toLowerCase()) {
+        read.factory = f;
+      } else {
+        console.error('config.json contracts.depositFactory ' + a + ' deposits into ' + r[0] + ', not this exchange; Hyperliquid deposits are off.');
+      }
+    }).catch(function () { /* unreadable: the Hyperliquid section stays a dash */ }).then(function () {
+      renderStatus(); renderDepositModal();
     });
   }
 
@@ -1375,7 +1543,28 @@
 
   function usdcAddress() { return house.addrs.usdc || (cfg.contracts && cfg.contracts.usdc); }
 
+  /* Three reads on the v2 Exchange, at most every V2_EVERY_MS per account, for the Status tab's v2 link. */
+  function refreshV2Link() {
+    var a = wallet.account;
+    if (!a || !read.v2) { v2link.show = false; renderV2Link(); return Promise.resolve(); }
+    if (v2link.account === a && Date.now() - v2link.at < V2_EVERY_MS) return Promise.resolve();
+    if (v2link.account !== a) v2link.show = false;
+    v2link.account = a; v2link.at = Date.now();
+    var ex = read.v2;
+    return Promise.all([ex.balanceOf(a), ex.marginInUse(a), ex.pendingOf(a)]).then(function (r) {
+      if (wallet.account !== a) return;
+      v2link.show = r[0] > 0n || r[1] > 0n || r[2] > 0n;
+      renderV2Link();
+    }, function () { v2link.at = 0; });
+  }
+
+  function renderV2Link() {
+    var l = $('stV2');
+    if (l) l.hidden = !(v2link.show && wallet.account && wallet.account === v2link.account);
+  }
+
   function refreshAccount() {
+    refreshV2Link();
     if (!wallet.account || !read.exchange) return Promise.resolve();
     var ex = read.exchange;
     var a = wallet.account;
@@ -1522,21 +1711,29 @@
   /* The three request windows, measured on the chain clock from the request timestamp:
        wait     before minDelay, and the keeper-only grace window after it: nobody but a keeper
                 can fill; the page shows a countdown to the end of the keeper window
-       fallback after minDelay + grace until expiry: anyone may fill, at the worse of the
-                request-time and fill-time oracle prints, and the trader cannot cancel. That is
-                an option held by the public against the trader (whoever fills picks the print),
-                so the page asks the wallet to fill at once (autoFill) and offers a Fill button
-       expired  after expiry: only a cancel (refund) is possible; the page offers it */
+       fallback from minDelay + grace + CANCEL_PAD_S until expiry - FILL_END_S: anyone may fill, at the worse
+                of the request-time and fill-time oracle prints, and the trader cannot cancel.
+                That is an option held by the public against the trader (whoever fills picks the
+                print), so the page asks the wallet to fill at once (autoFill) and offers a Fill
+                button. A fill past expiry reverts RequestExpired, so the page stops offering it
+                FILL_END_S before, for inclusion, and shows the gap as waiting ('expiring').
+                Tight settings never lose the window: start = min(that, expiry - 1),
+                end = min(expiry, max(start + 1, expiry - FILL_END_S))
+       expired  after expiry + CANCEL_PAD_S: only a cancel (refund) is possible; the page offers it */
+  var FILL_END_S = 2, CANCEL_PAD_S = 1;
+  function fillFrom() { return Math.min(house.minDelay + house.grace + CANCEL_PAD_S, house.expiry - 1); }
+  function fillEnd() { return Math.min(house.expiry, Math.max(fillFrom() + 1, house.expiry - FILL_END_S)); }
   function requestPhase(requestedAt) {
-    var e = chainNow() - requestedAt;
-    if (e < house.minDelay + house.grace) return { phase: 'wait', left: house.minDelay + house.grace - e };
-    if (e <= house.expiry) return { phase: 'fallback', left: house.expiry - e };
+    var e = chainNow() - requestedAt, from = fillFrom(), end = fillEnd(), to = house.expiry + CANCEL_PAD_S;
+    if (e < from) return { phase: 'wait', left: from - e };
+    if (e <= end) return { phase: 'fallback', left: end - e };
+    if (e <= to) return { phase: 'wait', left: to - e, expiring: true };
     return { phase: 'expired', left: 0 };
   }
 
   /* Status text and button for a pending request, by phase. */
   function requestStatusText(ph, verb) {
-    if (ph.phase === 'wait') return verb + '… ' + Math.max(1, Math.ceil(ph.left)) + 's';
+    if (ph.phase === 'wait') return (ph.expiring ? 'expiring' : verb) + '… ' + Math.max(1, Math.ceil(ph.left)) + 's';
     if (ph.phase === 'fallback') return 'anyone can fill · ' + Math.max(0, Math.floor(ph.left)) + 's';
     return 'expired';
   }
@@ -1555,12 +1752,21 @@
     return v == null ? true : v === '1';
   }
 
+  /* A custom error from any contract the page talks to (exchange, referrals, router, proxy), or null. */
+  function parseAnyError(data) {
+    var ifaces = [exIface, refIface, routerIface, proxyIface];
+    for (var i = 0; i < ifaces.length; i++) {
+      if (!ifaces[i]) continue;
+      try { var p = ifaces[i].parseError(data); if (p) return p; } catch (e) { /* not this one */ }
+    }
+    return null;
+  }
+
   /* The contract error name behind a failed transaction, or null. */
   function revertName(err) {
-    try {
-      var data = revertData(err);
-      if (data && exIface) { var p = exIface.parseError(data); if (p) return p.name; }
-    } catch (e) { /* not ours */ }
+    var data = revertData(err);
+    var p = data ? parseAnyError(data) : null;
+    if (p) return p.name;
     try { if (err && err.revert && err.revert.name) return err.revert.name; } catch (e) { /* ignore */ }
     return null;
   }
@@ -1572,22 +1778,23 @@
      into the window so the transaction cannot land inside the keeper window; one wallet
      transaction at a time. Runs on the countdown tick while anything is pending. */
   function autoFill() {
-    if (state.busy || !autoFillEnabled() || !wallet.account || !wallet.signer || wallet.chainId !== CHAIN_ID) return;
-    var from = house.minDelay + house.grace + 1;
+    if (state.busy || !autoFillEnabled() || !wallet.account) return;
+    if (!sessionLive() && (!wallet.signer || wallet.chainId !== CHAIN_ID)) return;
+    var from = fillFrom(), end = fillEnd();
     var now = chainNow();
     var opens = pendingOpenList();
     for (var i = 0; i < opens.length; i++) {
       var r = opens[i];
       if (r.busy || r.prompted || r.requestedAt == null) continue;
       var e = now - r.requestedAt;
-      if (e >= from && e <= house.expiry) { r.prompted = true; executeOpenNow(r); return; }
+      if (e >= from && e <= end) { r.prompted = true; executeOpenNow(r); return; }
     }
     var pids = Object.keys(acct.closeReqs);
     for (var j = 0; j < pids.length; j++) {
       var cr = acct.closeReqs[pids[j]];
       if (cr.busy || cr.prompted || cr.requestedAt == null) continue;
       var e2 = now - cr.requestedAt;
-      if (e2 < from || e2 > house.expiry) continue;
+      if (e2 < from || e2 > end) continue;
       var p = null;
       for (var k = 0; k < acct.positions.length; k++) {
         if (String(acct.positions[k].id) === pids[j]) { p = acct.positions[k]; break; }
@@ -1855,7 +2062,7 @@
         renderWallet(); renderAction(); renderStatus(); renderPositions(); renderRefer();
         if (wallet.chainId !== CHAIN_ID) toast('Wallet is on chain ' + wallet.chainId + '. Switch to HyperEVM (999) to trade.', 'err');
         restorePendingOpens();
-        return Promise.all([refreshAccount(), refreshWalletUsdc(), loadHistory(true), loadReferral()]);
+        return Promise.all([refreshAccount(), refreshWalletUsdc(), loadHistory(true), loadReferral(), refreshSession()]);
       });
     }
     renderWallet(); renderAction(); renderStatus();
@@ -1892,8 +2099,10 @@
     acct.loaded = false; acct.available = 0; acct.marginInUse = 0; acct.pending = 0; acct.positions = []; acct.closeReqs = {}; acct.walletUsdc = 0; acct.allowance = 0;
     pend.opens = {};
     ref.addr = null; ref.locked = null; ref.referrer = null; ref.myCode = ''; ref.earned = null; ref.loaded = false;
+    sess.key = null; sess.onchain = null; sess.gasWei = null; sess.loaded = false;
+    hl.account = null; hl.proxy = null; hl.spotFreeWei = null; hl.perp6 = null; hl.evm6 = null;
     hist = freshHistory();
-    renderAccount(); renderPositions(); renderHistory(); renderRefer();
+    renderAccount(); renderPositions(); renderHistory(); renderRefer(); renderSession(); renderDepositModal();
   }
 
   function disconnect() {
@@ -1977,6 +2186,7 @@
     CloseAlreadyPending: function () { return 'A close is already pending on this position.'; },
     PriceJumped: function () { return 'The oracle jumped too far since the request.'; },
     EntryBusted: function () { return 'The fill would already be past its bust price; the request is refunded.'; },
+    MigrationPending: function () { return 'Opens start after the v2 migration.'; },
     FeedUnavailable: function (a) { return 'Price feed unavailable for market #' + a[0] + '. Try again in a moment.'; },
     ZeroPrice: function (a) { return 'Price feed returned zero for market #' + a[0] + '.'; },
     ClampOutOfBounds: function (a) { return 'Clamp ' + a[0] + ' bps is out of bounds.'; },
@@ -1988,7 +2198,17 @@
     ReentrancyGuardReentrantCall: function () { return 'Reentrant call blocked.'; },
     SafeERC20FailedOperation: function () { return 'USDC transfer failed.'; },
     ERC20InsufficientAllowance: function (a) { return 'USDC allowance too low: approved ' + fmtUsd(usd6ToNum(a[1])) + ', needed ' + fmtUsd(usd6ToNum(a[2])) + '.'; },
-    ERC20InsufficientBalance: function (a) { return 'Wallet USDC too low: balance ' + fmtUsd(usd6ToNum(a[1])) + ', needed ' + fmtUsd(usd6ToNum(a[2])) + '.'; }
+    ERC20InsufficientBalance: function (a) { return 'Wallet USDC too low: balance ' + fmtUsd(usd6ToNum(a[1])) + ', needed ' + fmtUsd(usd6ToNum(a[2])) + '.'; },
+    BadExpiry: function () { return 'Session length out of range (up to 30 days).'; },
+    ZeroMarginCap: function () { return 'Set a cap per trade.'; },
+    KeyInUse: function () { return 'That session key serves another wallet.'; },
+    GasForwardFailed: function () { return 'Could not send gas to the session key.'; },
+    BadKeySignature: function () { return 'The session key\'s signature did not match.'; },
+    NoSession: function () { return 'No one-click session.'; },
+    SessionExpired: function () { return 'The one-click session expired.'; },
+    MarginAboveSessionCap: function (a) { return 'Margin ' + fmtUsd(usd6ToNum(a[0])) + ' is above the session cap ' + fmtUsd(usd6ToNum(a[1])) + '.'; },
+    NotYours: function () { return 'Not your request.'; },
+    NotTrader: function () { return 'Only the trader may do that.'; }
   };
 
   function friendly(name, args) {
@@ -2016,12 +2236,8 @@
 
   function decodeRevert(data) {
     var E = window.ethers;
-    if (exIface) {
-      try { var p = exIface.parseError(data); if (p) return friendly(p.name, p.args); } catch (e) { /* not ours */ }
-    }
-    if (refIface) {
-      try { var q = refIface.parseError(data); if (q) return friendly(q.name, q.args); } catch (e) { /* not ours */ }
-    }
+    var p = parseAnyError(data);
+    if (p) return friendly(p.name, p.args);
     try {
       if (data.slice(0, 10) === '0x08c379a0') {
         return 'Reverted: ' + E.AbiCoder.defaultAbiCoder().decode(['string'], '0x' + data.slice(10))[0];
@@ -2059,17 +2275,20 @@
     if (!wallet.account || !wallet.signer) throw new Error('Connect a wallet first.');
     if (wallet.chainId !== CHAIN_ID) throw new Error('Switch the wallet to HyperEVM (999) first.');
     if (!hasExchange()) throw new Error('Exchange address not configured.');
+    if (house.usdcBad) throw new Error('This exchange does not settle in native USDC.');
   }
 
   function exchangeWrite() { return new window.ethers.Contract(cfg.contracts.exchange, EXCHANGE_ABI, wallet.signer); }
-  function usdcWrite() { return new window.ethers.Contract(usdcAddress(), ERC20_ABI, wallet.signer); }
+  function usdcWrite() { return new window.ethers.Contract(USDC, ERC20_ABI, wallet.signer); }
 
   function setBusy(on) {
     state.busy = !!on;
+    if (!on) state.viaSession = false;
     renderAction();
     var closes = document.querySelectorAll('#posLines .btn');
     for (var i = 0; i < closes.length; i++) closes[i].disabled = state.busy;
-    ['depositSubmit', 'withdrawSubmit'].forEach(function (id) { var b = $(id); if (b) b.disabled = state.busy; });
+    ['depositSubmit', 'withdrawSubmit', 'sessionSubmit'].forEach(function (id) { var b = $(id); if (b) b.disabled = state.busy; });
+    renderSession(); renderDepositModal();
   }
 
   function txLink(hash) { return { href: explorer('tx', hash), label: shortAddr(hash) }; }
@@ -2113,19 +2332,247 @@
     return ref.addr;
   }
 
+  /* ---- one-click (SessionRouter session key) ------------------------------------------
+     The key is a plain private key in localStorage under the account; the router binds it to
+     the account with authorize (wallet, once, with SESSION_GAS_HYPE for the key's gas). The key
+     can only file and cancel the account's requests and fill them after the keeper window; it
+     can never deposit, withdraw, transfer or register a code (SessionRouter). */
+
+  function sessionStoreKey() { return wallet.account ? LS.session + wallet.account.toLowerCase() : null; }
+
+  /* The account's key from localStorage as an ethers.Wallet on the read provider (cached by key). */
+  function loadSessionKey() {
+    var k = sessionStoreKey();
+    var pk = k ? lsGet(k) : null;
+    if (!pk || !window.ethers || !read.provider) { sess.key = null; return; }
+    if (sess.key && sess.key.privateKey === pk) return;
+    try { sess.key = new window.ethers.Wallet(pk, read.provider); } catch (e) { sess.key = null; }
+  }
+
+  function dropSessionKey() {
+    var k = sessionStoreKey();
+    if (k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
+    sess.key = null; sess.gasWei = null;
+  }
+
+  function fmtHype(wei) { return wei == null ? '—' : (Number(wei) / 1e18).toFixed(4); }
+
+  /* Live: the router's session for this account is this browser's key, it has more than a minute
+     left on the chain clock, and the key holds gas. */
+  function sessionLive() {
+    var s = sess.onchain;
+    return !!(read.router && sess.key && s && s.key.toLowerCase() === sess.key.address.toLowerCase() &&
+      s.expiry > chainNow() + 60 && sess.gasWei != null && sess.gasWei >= SESSION_MIN_GAS);
+  }
+
+  function refreshSession() {
+    if (!read.router || !wallet.account) { sess.onchain = null; sess.loaded = false; renderSession(); return Promise.resolve(); }
+    var a = wallet.account;
+    loadSessionKey();
+    var key = sess.key;
+    return Promise.all([
+      read.router.sessionOf(a),
+      key ? read.provider.getBalance(key.address) : Promise.resolve(null)
+    ]).then(function (r) {
+      if (wallet.account !== a) return;
+      var s = r[0];
+      sess.onchain = s && s.key !== ZERO ? { key: s.key, expiry: Number(s.expiry), cap6: BigInt(s.maxMarginPerTrade), referrer: s.referrer } : null;
+      sess.gasWei = r[1] == null ? null : BigInt(r[1]);
+      sess.loaded = true;
+      renderSession(); renderAction();
+    }).catch(function () { /* transient RPC trouble: keep the last values */ });
+  }
+
+  function renderSession() {
+    var btn = $('sessionBtn'), rv = $('sessionRevoke'), st = $('sessionState');
+    if (!btn || !st) return;
+    var s = sess.onchain;
+    var mine = !!(s && sess.key && s.key.toLowerCase() === sess.key.address.toLowerCase());
+    var live = sessionLive();
+    var text = '—', title = '';
+    if (read.router && wallet.account) {
+      if (live) { text = 'on · ' + fmtUsd(usd6ToNum(s.cap6)) + ' a trade · until ' + fmtTime(s.expiry); title = 'session key ' + sess.key.address + ' · gas ' + fmtHype(sess.gasWei) + ' HYPE'; }
+      else if (mine && s.expiry <= chainNow() + 60) text = 'expired';
+      else if (mine) text = 'out of gas';
+      else if (s) text = 'on in another browser';
+      else text = sess.loaded ? 'off' : '…';
+    }
+    st.textContent = text; st.title = title;
+    btn.disabled = state.busy || !read.router;
+    if (live) btn.setAttribute('hidden', ''); else btn.removeAttribute('hidden');
+    if (rv) {
+      rv.disabled = state.busy;
+      if (read.router && wallet.account && (s || sess.key)) rv.removeAttribute('hidden'); else rv.setAttribute('hidden', '');
+    }
+  }
+
+  function openSession() {
+    if (!read.router) return;
+    if (!wallet.account) { connect(); return; }
+    if (wallet.chainId !== CHAIN_ID) { toast('Switch the wallet to HyperEVM first.', 'err'); return; }
+    var cap = $('sessionCap');
+    if (cap && !cap.value) {
+      var guess = isFinite(form.margin) && form.margin >= MIN_MARGIN ? form.margin : acct.available;
+      cap.value = String(Math.max(MIN_MARGIN, Math.floor(guess) || MIN_MARGIN));
+    }
+    var hint = $('sessionHint'); if (hint) { hint.textContent = ''; hint.classList.remove('is-err'); }
+    openDialog('sessionModal');
+  }
+
+  /* authorize(key, expiry, cap, referrer, keySig) from the wallet with SESSION_GAS_HYPE. This
+     browser's key is reused (its leftover gas comes along) unless the router binds it to another
+     account; a new key is written to localStorage before the transaction, so the gas it receives
+     is never lost with the page. The referrer is the one a wallet open would pass (referrerArg);
+     the key signs the router's authorizationDigest (EIP-191 over the 32 bytes) to prove the
+     wallet holds it. */
+  function submitAuthorize(capUsd, days) {
+    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
+    if (!read.router) return Promise.resolve();
+    var E = window.ethers;
+    var a = wallet.account;
+    var router = new E.Contract(read.router.target, ROUTER_ABI, wallet.signer);
+    setBusy(true);
+    loadSessionKey();
+    var reuse = sess.key ? read.router.traderOf(sess.key.address).then(function (t) { return t === ZERO || t.toLowerCase() === a.toLowerCase(); }) : Promise.resolve(false);
+    var expiry, cap6, referrer;
+    return Promise.all([reuse, loadReferral().catch(function () { /* keep the last referral state */ })]).then(function (r) {
+      var ok = r[0];
+      if (!ok) {
+        var fresh = E.Wallet.createRandom();
+        lsSet(sessionStoreKey(), fresh.privateKey);
+        if (lsGet(sessionStoreKey()) !== fresh.privateKey) throw new Error('This browser keeps no local storage; one-click needs it.');
+        loadSessionKey();
+      }
+      expiry = Math.floor(chainNow()) + Math.min(days * 86400, SESSION_MAX_S - 600);
+      cap6 = numToUsd6(capUsd);
+      referrer = referrerArg();
+      return read.router.authorizationDigest(a, sess.key.address, expiry, cap6, referrer);
+    }).then(function (digest) {
+      return sess.key.signMessage(E.getBytes(digest));
+    }).then(function (keySig) {
+      return sendTx('One-click', router.authorize, [sess.key.address, expiry, cap6, referrer, keySig, { value: E.parseEther(SESSION_GAS_HYPE) }]);
+    }).then(function (rc) {
+      toast('One-click on: up to ' + fmtUsd(capUsd) + ' a trade, ' + days + (days === 1 ? ' day.' : ' days.'), 'ok', txLink(rc.hash));
+      closeDialog('sessionModal');
+      return refreshSession();
+    }).catch(function (e) {
+      toast('One-click failed: ' + describeError(e), 'err');
+    }).then(function () { setBusy(false); });
+  }
+
+  /* revoke() from the wallet when the router holds a session, then the key's leftover HYPE back
+     to the wallet (signed by the key), then the key leaves localStorage. */
+  function submitRevoke() {
+    if (!wallet.account || !read.router) return Promise.resolve();
+    var a = wallet.account;
+    setBusy(true);
+    var p = Promise.resolve();
+    if (sess.onchain) {
+      p = Promise.resolve().then(function () {
+        requireSigner();
+        var router = new window.ethers.Contract(read.router.target, ROUTER_ABI, wallet.signer);
+        return sendTx('Revoke', router.revoke, []);
+      }).then(function (rc) { toast('One-click off.', 'ok', txLink(rc.hash)); });
+    }
+    return p.then(function () { return returnSessionGas(a); }).then(function () {
+      if (wallet.account === a) dropSessionKey();
+      return refreshSession();
+    }).catch(function (e) {
+      toast('Revoke failed: ' + describeError(e), 'err');
+    }).then(function () { setBusy(false); });
+  }
+
+  /* What is left of the key's HYPE, less a 21,000-gas transfer at twice the fee, back to `to`. */
+  function returnSessionGas(to) {
+    loadSessionKey();
+    var key = sess.key;
+    if (!key) return Promise.resolve();
+    return Promise.all([read.provider.getBalance(key.address), read.provider.getFeeData()]).then(function (r) {
+      var bal = BigInt(r[0]), fee = r[1];
+      var eip1559 = fee.maxFeePerGas != null;
+      var price = (eip1559 ? fee.maxFeePerGas : fee.gasPrice) * 2n;
+      var cost = 21000n * price;
+      if (bal <= cost) return null;
+      var tx = { to: to, value: bal - cost, gasLimit: 21000n };
+      if (eip1559) { tx.maxFeePerGas = price; tx.maxPriorityFeePerGas = fee.maxPriorityFeePerGas || 0n; } else tx.gasPrice = price;
+      return key.sendTransaction(tx).then(function (t) { return t.wait(); }).then(function (rc) {
+        toast('Returned ' + fmtHype(bal - cost) + ' HYPE from the session key.', 'ok', txLink(rc.hash));
+      });
+    });
+  }
+
+  /* The session key carries a trading call when the session is live and the call is one it may
+     make: requestOpen within the per-trade cap whose referrer the session already holds (the
+     router passes the session's stored referrer, and the first fill locks it for good; once the
+     account's referrer is locked any stored one is ignored), requestClose and the two cancels
+     through the router, and the two fallback fills straight on the exchange (anyone may fill
+     after the keeper window). An open whose non-zero referrer differs from the session's (not
+     yet locked) goes to the wallet. */
+  function sessionCarries(kind, args) {
+    if (!sessionLive() || house.usdcBad) return false;
+    if (kind === 'requestOpen') return sessionRefOk(args[4]) && BigInt(args[2]) <= sess.onchain.cap6;
+    return true;
+  }
+
+  /* The session may file an open with `referrer` (the one the page would pass): fine unless the
+     page has a non-zero referrer that differs from the session's stored one and the account's
+     referrer is not locked yet. A zero `referrer` defers to the stored one: the wallet signed it
+     into the session, and it outranks "no ref in this page load". */
+  function sessionRefOk(referrer) {
+    var s = sess.onchain;
+    if (!s) return false;
+    if (ref.locked === true || referrer === ZERO) return true;
+    return String(s.referrer || ZERO).toLowerCase() === String(referrer).toLowerCase();
+  }
+
+  function isGasShortfall(err) {
+    return walkError(err, function (e) { return e.code === 'INSUFFICIENT_FUNDS' || /insufficient funds/i.test(String(e.message || '')); });
+  }
+
+  function walletTrade(desc, kind, args) {
+    return Promise.resolve().then(function () {
+      requireSigner();
+      return sendTx(desc, exchangeWrite()[kind], args);
+    });
+  }
+
+  /* Send a trading call (an Exchange function name and its wallet arguments): through the
+     session key when it carries the call, else from the wallet. A session the router refuses
+     before anything is sent (no session, expired, over the cap) or a key out of gas falls back to
+     the wallet once; an on-chain revert never does (the call already ran). */
+  function sendTrade(desc, kind, args) {
+    if (!sessionCarries(kind, args)) return walletTrade(desc, kind, args);
+    var E = window.ethers;
+    var target = kind === 'executeOpen' || kind === 'executeClose'
+      ? new E.Contract(cfg.contracts.exchange, EXCHANGE_ABI, sess.key)
+      : new E.Contract(read.router.target, ROUTER_ABI, sess.key);
+    var sargs = kind === 'requestOpen' ? args.slice(0, 4) : args;
+    state.viaSession = true; renderAction();
+    return sendTx(desc, target[kind], sargs).catch(function (e) {
+      if (!SESSION_ERRORS[revertName(e)] && !isGasShortfall(e)) throw e;
+      state.viaSession = false; renderAction();
+      return refreshSession().then(function () { return walletTrade(desc, kind, args); });
+    });
+  }
+
+  /* A trading action may start: a live session, or a wallet that can sign. */
+  function tradeReady() {
+    if (sessionLive() && !house.usdcBad && hasExchange()) return true;
+    try { requireSigner(); return true; } catch (e) { toast(e.message, 'err'); return false; }
+  }
+
   /* Step one of an open: file the request. The margin leaves the available balance and the
      request shows under Positions as "filling…"; a keeper fills it a few seconds later. */
   function submitOpen() {
     var m = state.market;
-    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return; }
+    if (!tradeReady()) return;
     if (!m || m.instrumentId == null) return;
     var margin6 = numToUsd6(form.margin);
     var isLong = form.side === 'long';
     var lev = form.lev;
     var desc = (isLong ? 'Buy ' : 'Sell ') + m.symbol + ' x' + lev;
     setBusy(true);
-    var ex = exchangeWrite();
-    sendTx(desc, ex.requestOpen, [m.instrumentId, isLong, margin6, lev, referrerArg()]).then(function (rc) {
+    sendTrade(desc, 'requestOpen', [m.instrumentId, isLong, margin6, lev, referrerArg()]).then(function (rc) {
       var ev = receiptEvents(rc, 'OpenRequested')[0];
       if (ev) {
         var a = ev.args;
@@ -2144,15 +2591,14 @@
     }).then(function () { setBusy(false); });
   }
 
-  /* The fallback fill from the user's own wallet (after the keeper window, before expiry). */
+  /* The fallback fill (after the keeper window, before expiry): the session key, else the wallet. */
   function executeOpenNow(r) {
-    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return; }
+    if (!tradeReady()) return;
     var inst = state.byInstId[r.instrumentId];
     var desc = 'Fill #r' + r.id + (inst && inst.market ? ' ' + inst.market.symbol : '');
     setBusy(true);
-    r.busy = true; /* the poll leaves it alone while the wallet transaction is out */
-    var ex = exchangeWrite();
-    sendTx(desc, ex.executeOpen, [BigInt(r.id)]).then(function (rc) {
+    r.busy = true; /* the poll leaves it alone while the transaction is out */
+    sendTrade(desc, 'executeOpen', [BigInt(r.id)]).then(function (rc) {
       reportOpenOutcome(r, rc.logs || [], rc.hash);
       untrackOpenRequest(r.id);
       return afterTx();
@@ -2169,12 +2615,11 @@
 
   /* Refund of an expired open request. */
   function cancelOpenNow(r) {
-    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return; }
+    if (!tradeReady()) return;
     var desc = 'Cancel #r' + r.id;
     setBusy(true);
     r.busy = true;
-    var ex = exchangeWrite();
-    sendTx(desc, ex.cancelOpen, [BigInt(r.id)]).then(function (rc) {
+    sendTrade(desc, 'cancelOpen', [BigInt(r.id)]).then(function (rc) {
       toast('Refunded #r' + r.id + ': ' + fmtUsd(r.margin) + ' back to available.', 'ok', txLink(rc.hash));
       untrackOpenRequest(r.id);
       return afterTx();
@@ -2186,12 +2631,11 @@
 
   /* Step one of a close: file the request; the position line shows "closing…". */
   function submitClose(pos) {
-    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(false); }
+    if (!tradeReady()) return Promise.resolve(false);
     var m = positionMarket(pos);
     var desc = 'Close #' + pos.id + (m ? ' ' + m.symbol : '');
     setBusy(true);
-    var ex = exchangeWrite();
-    return sendTx(desc, ex.requestClose, [pos.id]).then(function (rc) {
+    return sendTrade(desc, 'requestClose', [pos.id]).then(function (rc) {
       var ev = receiptEvents(rc, 'CloseRequested')[0];
       acct.closeReqs[String(pos.id)] = {
         requestedAt: chainNow(), px0: ev ? px18ToNum(ev.args.px0) : NaN, block: Number(rc.blockNumber)
@@ -2205,16 +2649,15 @@
     }).then(function (ok) { setBusy(false); return ok; });
   }
 
-  /* The fallback close fill from the user's own wallet. */
+  /* The fallback close fill: the session key, else the wallet. */
   function executeCloseNow(pos) {
-    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return; }
+    if (!tradeReady()) return;
     var m = positionMarket(pos);
     var desc = 'Fill close #' + pos.id + (m ? ' ' + m.symbol : '');
     var cr = acct.closeReqs[String(pos.id)];
     setBusy(true);
     if (cr) cr.busy = true;
-    var ex = exchangeWrite();
-    sendTx(desc, ex.executeClose, [pos.id]).then(function (rc) {
+    sendTrade(desc, 'executeClose', [pos.id]).then(function (rc) {
       reportCloseOutcome(pos.id, rc.logs || [], rc.hash);
       delete acct.closeReqs[String(pos.id)];
       return afterTx();
@@ -2229,13 +2672,12 @@
 
   /* Drop an expired close request; the position stays open. */
   function cancelCloseNow(pos) {
-    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return; }
+    if (!tradeReady()) return;
     var desc = 'Cancel close #' + pos.id;
     var cr = acct.closeReqs[String(pos.id)];
     setBusy(true);
     if (cr) cr.busy = true;
-    var ex = exchangeWrite();
-    sendTx(desc, ex.cancelClose, [pos.id]).then(function (rc) {
+    sendTrade(desc, 'cancelClose', [pos.id]).then(function (rc) {
       toast('Close request on #' + pos.id + ' cancelled; the position stays open.', 'ok', txLink(rc.hash));
       delete acct.closeReqs[String(pos.id)];
       return afterTx();
@@ -2548,6 +2990,109 @@
     }).then(function () { setBusy(false); });
   }
 
+  /* ---- deposit from Hyperliquid (DepositProxyFactory) -------------------------------------
+     The trader's proxy address is factory.proxyOf(trader), fixed before the proxy exists. USDC
+     sent to it on Hyperliquid is bridged and deposited by sweep (anyone; the keeper sweeps too):
+     spot -> HyperEVM in one sweep, the deposit in the next, perp first moves to spot. */
+
+  function sweepStoreKey() { return wallet.account ? LS.sweep + wallet.account.toLowerCase() : null; }
+
+  function lastSweep() {
+    var k = sweepStoreKey();
+    try { return k ? JSON.parse(lsGet(k) || 'null') : null; } catch (e) { return null; }
+  }
+
+  /* What one sweep did, from its return values or its Swept event: USDC deposited (6 dec), Core
+     spot USDC sent to HyperEVM and Core perp USDC moved to spot (both 8 dec). */
+  function sweepText(s) {
+    var parts = [];
+    if (s.dep > 0) parts.push(fmtUsd(s.dep / 1e6) + ' deposited');
+    if (s.bridged > 0) parts.push(fmtUsd(s.bridged / 1e8) + ' on its way from Hyperliquid');
+    if (s.perp > 0) parts.push(fmtUsd(s.perp / 1e8) + ' moved from perp to spot');
+    return parts.length ? parts.join(' · ') : 'nothing to move';
+  }
+
+  /* The proxy and what waits on it: Core spot (precompile 0x801, total - hold), Core perp
+     withdrawable (0x803) and HyperEVM USDC on the proxy. A read that fails leaves its field null. */
+  function refreshProxy() {
+    var a = wallet.account;
+    if (!read.factory || !a) { hl.account = null; hl.proxy = null; renderDepositModal(); return Promise.resolve(); }
+    var E = window.ethers;
+    var coder = E.AbiCoder.defaultAbiCoder();
+    var none = function () { return null; };
+    var addr = hl.account === a && hl.proxy ? Promise.resolve(hl.proxy) : read.factory.proxyOf(a);
+    return addr.then(function (proxy) {
+      if (wallet.account !== a) return;
+      if (hl.account !== a) { hl.spotFreeWei = null; hl.perp6 = null; hl.evm6 = null; }
+      hl.account = a; hl.proxy = proxy;
+      return Promise.all([
+        read.provider.call({ to: SPOT_BALANCE_PRECOMPILE, data: coder.encode(['address', 'uint64'], [proxy, 0]) }).catch(none),
+        read.provider.call({ to: WITHDRAWABLE_PRECOMPILE, data: coder.encode(['address'], [proxy]) }).catch(none),
+        new E.Contract(USDC, ERC20_ABI, read.provider).balanceOf(proxy).catch(none)
+      ]).then(function (r) {
+        if (wallet.account !== a) return;
+        var spot = typeof r[0] === 'string' && r[0].length === 2 + 192 ? coder.decode(['uint64', 'uint64', 'uint64'], r[0]) : null;
+        var perp = typeof r[1] === 'string' && r[1].length === 2 + 64 ? coder.decode(['uint64'], r[1]) : null;
+        hl.spotFreeWei = spot ? (BigInt(spot[0]) > BigInt(spot[1]) ? BigInt(spot[0]) - BigInt(spot[1]) : 0n) : null;
+        hl.perp6 = perp ? BigInt(perp[0]) : null;
+        hl.evm6 = r[2] == null ? null : BigInt(r[2]);
+      });
+    }).catch(function () { /* unreadable: the dialog shows the last sweep */ }).then(renderDepositModal);
+  }
+
+  /* factory.sweep(trader) from the wallet, after an eth_call that says it would move something. */
+  function submitSweep() {
+    var a = wallet.account;
+    if (!read.factory || !a) return Promise.resolve();
+    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
+    var f = new window.ethers.Contract(read.factory.target, FACTORY_ABI, wallet.signer);
+    setBusy(true);
+    return f.sweep.staticCall(a).then(function (r) {
+      if (BigInt(r[0]) === 0n && BigInt(r[1]) === 0n && BigInt(r[2]) === 0n) { toast('Nothing to sweep yet.'); return null; }
+      return sendTx('Sweep', f.sweep, [a]);
+    }).then(function (rc) {
+      if (!rc) return null;
+      var s = { at: Math.floor(Date.now() / 1000), dep: 0, bridged: 0, perp: 0 };
+      (rc.logs || []).forEach(function (log) {
+        try {
+          var p = proxyIface.parseLog({ topics: Array.from(log.topics), data: log.data });
+          if (p && p.name === 'Swept') { s.dep = Number(p.args.depositedUsdc); s.bridged = Number(p.args.bridgedWei); s.perp = Number(p.args.perpToSpotWei); }
+        } catch (e) { /* another contract's log */ }
+      });
+      if (wallet.account === a) lsSet(sweepStoreKey(), JSON.stringify(s));
+      toast('Sweep: ' + sweepText(s) + (s.bridged > 0 || s.perp > 0 ? '. Sweep again in a few seconds.' : '.'), 'ok', txLink(rc.hash));
+      return afterTx();
+    }).catch(function (e) {
+      toast('Sweep failed: ' + describeError(e), 'err');
+    }).then(function () { setBusy(false); return refreshProxy(); });
+  }
+
+  function renderHyperliquid() {
+    var addrEl = $('hlProxy');
+    if (!addrEl) return;
+    var on = !!(read.factory && wallet.account && hl.account === wallet.account && hl.proxy);
+    addrEl.textContent = on ? hl.proxy : '—';
+    addrEl.title = on ? hl.proxy : '';
+    var copy = $('hlCopy'); if (copy) copy.disabled = !on;
+    var sweep = $('hlSweep'); if (sweep) sweep.disabled = !on || state.busy;
+    var readable = on && (hl.spotFreeWei != null || hl.perp6 != null);
+    setText('hlPendingKey', readable || !on ? 'Pending' : 'Last sweep');
+    var val = '—', title = '';
+    if (readable) {
+      var spot = hl.spotFreeWei != null && hl.spotFreeWei > CORE_FEE_RESERVE_WEI ? hl.spotFreeWei - CORE_FEE_RESERVE_WEI : 0n;
+      var perp = hl.perp6 || 0n, evm = hl.evm6 || 0n;
+      var total = Number(spot) / 1e8 + Number(perp) / 1e6 + Number(evm) / 1e6;
+      var moves = spot >= MIN_BRIDGE_WEI || perp >= MIN_PERP_USD || evm > 0n;
+      val = fmtUsd(total) + (total > 0 && !moves ? ' · under 1 USDC, waits' : '');
+      title = 'Hyperliquid spot ' + fmtUsd(Number(spot) / 1e8) + ' · perp ' + fmtUsd(Number(perp) / 1e6) + ' · HyperEVM ' + fmtUsd(Number(evm) / 1e6);
+    } else if (on) {
+      var s = lastSweep();
+      if (s) val = fmtTime(s.at) + ' · ' + sweepText(s);
+    }
+    setText('hlPending', val);
+    var pe = $('hlPending'); if (pe) pe.title = title;
+  }
+
   /* ---- dialogs ------------------------------------------------------------------- */
 
   function openDialog(id) {
@@ -2570,6 +3115,7 @@
     renderDepositModal();
     openDialog('depositModal');
     refreshWalletUsdc();
+    refreshProxy();
     var inp = $('depositAmount'); if (inp) { inp.value = ''; inp.focus(); }
   }
 
@@ -2586,6 +3132,7 @@
     setText('depWallet', wallet.account ? fmtUsd(acct.walletUsdc) : '—');
     setText('depAvailable', acct.loaded ? fmtUsd(acct.available) : '—');
     setText('depAllowance', wallet.account ? fmtUsd(acct.allowance) : '—');
+    renderHyperliquid();
   }
 
   function renderWithdrawModal() {
@@ -2594,7 +3141,7 @@
   }
 
   function initDialogs() {
-    ['depositModal', 'withdrawModal'].forEach(function (id) {
+    ['depositModal', 'withdrawModal', 'sessionModal'].forEach(function (id) {
       var d = $(id);
       if (!d) return;
       var closers = d.querySelectorAll('[data-close]');
@@ -2634,6 +3181,36 @@
         $('withdrawAmount').value = String(Math.floor(acct.available * 1e6) / 1e6);
       });
     }
+    var hlSweep = $('hlSweep');
+    if (hlSweep) hlSweep.addEventListener('click', function () { if (!state.busy) submitSweep(); });
+    var hlCopy = $('hlCopy');
+    if (hlCopy) {
+      hlCopy.addEventListener('click', function () {
+        if (!hl.proxy) return;
+        var addr = hl.proxy;
+        var done = function () { toast('Copied ' + addr); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(addr).then(done, function () { toast(addr); });
+        else toast(addr);
+      });
+    }
+    var sForm = $('sessionForm');
+    if (sForm) {
+      sForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        if (state.busy) return;
+        var cap = Number($('sessionCap').value);
+        var days = Number($('sessionDays').value) || 7;
+        var hint = $('sessionHint');
+        if (!isFinite(cap) || cap < MIN_MARGIN) { hint.textContent = 'Cap per trade: at least ' + MIN_MARGIN + ' USDC.'; hint.classList.add('is-err'); return; }
+        hint.classList.remove('is-err');
+        hint.textContent = '';
+        submitAuthorize(cap, days);
+      });
+    }
+    var sBtn = $('sessionBtn');
+    if (sBtn) sBtn.addEventListener('click', function () { if (!state.busy) openSession(); });
+    var sRevoke = $('sessionRevoke');
+    if (sRevoke) sRevoke.addEventListener('click', function () { if (!state.busy) submitRevoke(); });
   }
 
   /* ---- confetti's own 24h volume (the owner 2026-10-17: "second box"): the notional of every position opened on the
@@ -2943,14 +3520,15 @@
     var rpc = $('stRpc'); if (rpc) { rpc.textContent = cfg.rpcUrl || '—'; rpc.title = cfg.rpcUrl || ''; }
     setText('stWallet', wallet.account ? shortAddr(wallet.account) : 'not connected');
     setText('stWalletChain', wallet.account ? (wallet.chainId === CHAIN_ID ? 'HyperEVM · 999' : String(wallet.chainId) + ' (wrong chain)') : '—');
+    renderV2Link();
 
     setText('stLp', house.lp != null ? fmtUsd(house.lp) : '—');
     setText('stFeePool', house.feePool != null ? fmtUsd(house.feePool) : '—');
     setText('stQueued', house.queued != null ? fmtUsd(house.queued) : '—');
     setText('stQueueLen', house.queueLen != null ? fmtInt(house.queueLen - house.queueHead) + ' live · ' + fmtInt(house.queueLen) + ' ever' : '—');
     renderHouseLine();
-    setText('stPaused', read.exchange ? (house.globalPaused ? 'yes' : 'no') : '—');
-    setText('stBreaker', read.exchange ? (house.breakerTripped ? 'tripped · opens paused' : 'armed') : '—');
+    setText('stPaused', read.exchange ? (house.globalPaused || house.breakerTripped ? 'yes' : 'no') : '—');
+    setText('stBreaker', read.exchange ? (house.breakerTripped ? 'tripped · opens paused' : house.breakerBps != null && house.breakerBps >= 10000 ? 'off' : 'armed') : '—');
     setText('stFee', read.exchange && house.feeRate != null ? feePctText() : '—');
     setText('stWindows', read.exchange ? house.minDelay + ' s wait · ' + house.grace + ' s keeper · ' + house.expiry + ' s expiry' : '—');
     setText('stJump', read.exchange && house.maxJumpBps != null ? (house.maxJumpBps / 100).toFixed(house.maxJumpBps % 100 ? 2 : 0) + '%' : '—');
@@ -2958,6 +3536,12 @@
     setText('stRefShare', read.exchange && house.referralShareBps != null ? (house.referralShareBps / 100).toFixed(0) + '%' : '—');
     setText('finePrint', 'Fills at the oracle price, a few seconds after you click. Wins pay the impact haircut plus a ' + feePctText() + ' fee.');
     setText('stInstCount', house.instCount != null ? String(house.instCount) : '—');
+    var kc = $('stKeeper');
+    if (kc) {
+      var kv = keeper ? keeper.view() : { text: '—', offline: false, title: '' };
+      kc.textContent = kv.text; kc.title = kv.title;
+      kc.className = 'kv-val' + (kv.offline ? ' neg' : '');
+    }
 
     addrCell('stExchange', cfg.contracts && cfg.contracts.exchange);
     addrCell('stUsdc', usdcAddress());
@@ -2968,6 +3552,10 @@
     addrCell('stReferrals', house.addrs.referrals || (cfg.contracts && cfg.contracts.referrals));
     addrCell('stOwner', house.addrs.owner);
     addrCell('stFeeRecipient', house.addrs.feeRecipient);
+    /* v3 only: a dash on an exchange without them */
+    [['stRouter', house.addrs.sessionRouter], ['stRules', house.addrs.marketRules], ['stFactory', read.factory && read.factory.target]].forEach(function (c) {
+      if (read.exchange && isAddr(c[1])) addrCell(c[0], c[1]); else setText(c[0], '—');
+    });
 
     var m = state.market;
     var inst = m && m.inst;
@@ -3072,7 +3660,7 @@
 
   function submitRegister(code) {
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
-    var addr = house.addrs.referrals || (cfg.contracts && cfg.contracts.referrals);
+    var addr = house.unpinned.referrals ? null : cfg.contracts.referrals;
     if (!isAddr(addr)) { toast('Referrals address unknown.', 'err'); return Promise.resolve(); }
     var rc = new window.ethers.Contract(addr, REFERRALS_ABI, wallet.signer);
     setBusy(true);
@@ -3192,13 +3780,6 @@
   }
 
   function initHeader() {
-    var links = document.querySelectorAll('.nav a[data-soon]');
-    for (var i = 0; i < links.length; i++) {
-      links[i].addEventListener('click', function (ev) {
-        ev.preventDefault();
-        toast(ev.currentTarget.getAttribute('data-soon') + ' is coming in v2.');
-      });
-    }
     $('connectBtn').addEventListener('click', function () {
       if (wallet.account) disconnect(); else connect();
     });
@@ -3213,6 +3794,10 @@
     refreshHouse();
     refreshMarketChain();
     refreshAccount();
+    refreshSession();
+    var dm = $('depositModal');
+    if (dm && dm.open) refreshProxy();
+    if (keeper && Date.now() - keeperAt >= KEEPER_EVERY_MS) { keeperAt = Date.now(); keeper.refresh().then(renderStatus); }
   }
 
   function onVisibility() {
@@ -3251,6 +3836,7 @@
     renderPositions();
     renderHistory();
     renderRefer();
+    renderSession();
 
     tickMids(true);
     tickCtx(true);
@@ -3264,6 +3850,11 @@
       boot.then(function () {
         refreshHouse();
         refreshMarketChain();
+        if (read.exchange && window.ConfettiKeeper) {
+          keeper = window.ConfettiKeeper.create({ provider: read.provider, logProvider: read.logProvider, exchange: read.exchange, iface: exIface });
+          keeperAt = Date.now();
+          keeper.refresh().then(renderStatus);
+        }
         if (!hasExchange()) toast('No exchange address in config: showing live prices only.', null, null, 9000);
         refreshConfVol();
         setInterval(refreshConfVol, CONF_VOL_EVERY_MS);

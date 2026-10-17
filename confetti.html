@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — stake</title>
+  <meta name="description" content="Stake CONFETTI on HyperEVM and earn the house's USDC: stake, unstake, claim, and the APR from recent pushes.">
+  <meta name="theme-color" content="#f4ecd8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="paper.css?v=v3tabs">
+  <link rel="stylesheet" href="points.css?v=c3ee29a">
+  <script>
+    /* Apply a saved night theme before first paint so the page never flashes cream. */
+    try {
+      if (localStorage.getItem('confetti.theme') === 'night') {
+        document.documentElement.setAttribute('data-theme', 'night');
+      }
+    } catch (e) { /* storage blocked: stay on paper */ }
+  </script>
+</head>
+<body class="tabs-page" data-page="confetti">
+
+  <header class="header container-fluid">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <nav class="nav nav-main" aria-label="Primary">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html" aria-current="page">Confetti</a>
+      <a href="leaderboard.html">Leaderboard</a>
+    </nav>
+    <div class="header-actions">
+      <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
+    </div>
+  </header>
+
+  <main class="container tab-main">
+    <div class="tab-title"><h1>Confetti</h1><span class="sub">stake CONFETTI, earn the house's USDC</span></div>
+
+    <div class="tab-grid">
+      <section class="panel" aria-label="Your stake">
+        <div class="panel-head"><span>You</span></div>
+        <div class="panel-body">
+          <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="cfWallet">—</span></div>
+          <div class="kv"><span class="kv-key">Staked</span><span class="kv-val" id="cfStaked">—</span></div>
+          <div class="kv"><span class="kv-key">Share of pool</span><span class="kv-val" id="cfShare">—</span></div>
+          <div class="kv"><span class="kv-key">Unclaimed</span><span class="kv-val" id="cfEarned">—</span></div>
+
+          <div class="act-block">
+            <label class="label" for="stakeAmount">Stake</label>
+            <div class="act">
+              <div class="input-group">
+                <input class="input" id="stakeAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false">
+                <span class="unit">CONFETTI</span>
+              </div>
+              <button class="btn btn-sm" id="stakeMax" type="button" disabled>Max</button>
+              <button class="btn btn-sm btn-primary" id="stakeBtn" type="button" disabled>Stake</button>
+            </div>
+          </div>
+          <div class="act-block">
+            <label class="label" for="unstakeAmount">Unstake</label>
+            <div class="act">
+              <div class="input-group">
+                <input class="input" id="unstakeAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false">
+                <span class="unit">CONFETTI</span>
+              </div>
+              <button class="btn btn-sm" id="unstakeMax" type="button" disabled>Max</button>
+              <button class="btn btn-sm" id="unstakeBtn" type="button" disabled>Unstake</button>
+            </div>
+          </div>
+          <div class="act-block">
+            <div class="act"><button class="btn btn-sm btn-block" id="claimBtn" type="button" disabled>Claim</button></div>
+            <div class="hint" id="cfHint" aria-live="polite">Connect a wallet to stake.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Staking pool">
+        <div class="panel-head"><span>Pool</span></div>
+        <div class="panel-body">
+          <div class="kv"><span class="kv-key">APR</span><span class="kv-val" id="cfApr">—</span></div>
+          <div class="kv"><span class="kv-key">Pushed, 30d</span><span class="kv-val" id="cfPushed">—</span></div>
+          <div class="kv"><span class="kv-key">Paid to stakers</span><span class="kv-val" id="cfRewards">—</span></div>
+          <div class="kv"><span class="kv-key">Total staked</span><span class="kv-val" id="cfTotal">—</span></div>
+          <div class="kv"><span class="kv-key">Mint rate</span><span class="kv-val" id="cfRate">—</span></div>
+          <div class="kv"><span class="kv-key">Transfers</span><span class="kv-val" id="cfTransfers">—</span></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel tab-section" aria-label="Reward pushes">
+      <div class="panel-head"><span>Pushes</span><span class="count" id="cfPushCount"></span></div>
+      <div class="pos-lines" id="cfPushes">
+        <div class="empty">Loading…</div>
+      </div>
+    </section>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="terms.html">terms</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+      <button class="btn btn-sm btn-ghost" id="themeToggle" type="button" aria-pressed="false">Night</button>
+    </footer>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="tabs.js?v=v3pins" defer></script>
+  <script src="points.js?v=c3ee29a" defer></script>
+</body>
+</html>

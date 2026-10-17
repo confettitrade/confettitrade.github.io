@@ -1757,4 +1757,71 @@ body { font-weight: 400; -webkit-font-smoothing: antialiased; text-rendering: op
 @media (max-width: 640px) {
   html, body { overflow-x: hidden; }
   .header { flex-wrap: wrap; height: auto; min-height: var(--header-h); padding-top: 6px; padding-bottom: 6px; }
+  /* the five tabs on their own row, all in view */
+  .nav-main { flex: 1 1 100%; justify-content: space-between; gap: 0; }
+  .nav-main a { padding: 6px 3px; font-size: 11px; letter-spacing: 0.04em; }
+}
+
+/* --------------------------------------------------------------------------
+   Shared page furniture: header actions, line lists, status grids, toasts,
+   footer. Used by trade.html and the Portfolio / House / Confetti /
+   Leaderboard pages.
+   -------------------------------------------------------------------------- */
+.header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.hint { min-height: 1.4em; font-size: var(--text-xs); line-height: 1.4; color: var(--ink-faint); text-align: center; }
+.hint.is-err { color: var(--neg); }
+.empty { padding: 20px 12px; color: var(--ink-faint); font-size: var(--text-sm); text-align: center; }
+.pos-lines .pos-line { padding-left: 12px; padding-right: 12px; }
+.pos-lines .pos-line:first-child, .pos-lines .empty[hidden] + .pos-line { border-top: 0; }
+.pos-lines .pos-line .btn { min-height: 24px; }
+.pos-lines .pos-line a { color: inherit; text-decoration-color: var(--rule); }
+.hist-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-top: 1px solid var(--rule); }
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 8px; }
+.status-grid .kv-val a { text-decoration-color: var(--rule); }
+.status-grid h4 { margin: 12px 0 2px; }
+.toasts { position: fixed; right: var(--gutter); bottom: var(--gutter); z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
+.toast { pointer-events: auto; padding: 8px 12px; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); font-size: var(--text-sm); line-height: 1.4; box-shadow: 4px 4px 0 var(--sunken); overflow-wrap: anywhere; }
+.toast-ok { border-color: var(--pos); }
+.toast-err { border-color: var(--neg); }
+.toast-pending { border-color: var(--rule-strong); }
+.toast a { color: var(--ink); }
+.trade-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: var(--text-xs); color: var(--ink-faint); }
+.trade-foot .spacer { flex: 1 1 auto; }
+.trade-foot a { color: var(--ink-muted); }
+@media (max-width: 600px) {
+  .header-actions { margin-left: 0; width: 100%; }
+  .header-actions .btn { flex: 1 1 0; }
+  .toasts { right: var(--gutter); left: var(--gutter); width: auto; }
+}
+
+/* --------------------------------------------------------------------------
+   Tab pages: Portfolio, House, Confetti, Leaderboard. Panels of kv rows and
+   line lists, no tables.
+   -------------------------------------------------------------------------- */
+.tab-main { padding-top: var(--gap); padding-bottom: 32px; }
+.tab-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0 0 var(--gap); min-width: 0; }
+.tab-title h1 { margin: 0; font-size: var(--text-2xl); line-height: 1.1; }
+.tab-title .sub { min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); overflow-wrap: anywhere; }
+.tab-title .sub a { color: inherit; text-decoration-color: var(--rule); }
+.tab-section { margin-bottom: var(--gap); }
+.tab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: var(--gap); align-items: start; margin-bottom: var(--gap); }
+.tab-grid > .panel { min-width: 0; }
+.panel-head .count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); letter-spacing: 0; }
+.status-grid .kv-val { overflow-wrap: anywhere; }
+.tabs-page .pos-line .sym { min-width: 8ch; }
+.btn[hidden] { display: none; }
+.pos-line .rk { min-width: 3ch; text-align: right; color: var(--ink-faint); }
+.pos-line.is-you { background: var(--sunken); }
+.pos-line .badge { flex: none; }
+.act { display: flex; align-items: stretch; gap: 6px; margin-top: 8px; }
+.act .input-group { flex: 1 1 auto; min-width: 0; }
+.act .input-group .input { min-height: 36px; font-size: var(--text-md); }
+.act .btn { flex: none; }
+.act-block { margin-top: 10px; }
+.act-block .hint { text-align: left; margin-top: 6px; }
+@media (max-width: 480px) {
+  .tab-title h1 { font-size: var(--text-xl); }
+  .act { flex-wrap: wrap; }
+  .act .input-group { flex-basis: 100%; }
+  .act .btn { flex: 1 1 0; }
 }
