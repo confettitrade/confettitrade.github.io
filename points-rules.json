@@ -1,0 +1,177 @@
+{
+  "version": 2,
+  "updated": "2026-10-15",
+  "note": "Points are recomputed from chain history whenever this file's version changes. Copy to site/points-rules.json (the indexer does).",
+  "relay": "",
+  "relayBlock": 0,
+  "transfer": {
+    "min": 1
+  },
+  "minMarginUsdc": 10,
+  "minHoldBlocks": 30,
+  "dailyCaps": {
+    "deposit": 2000,
+    "open": 4000,
+    "close": 2000,
+    "win": 4000,
+    "loss": 2000,
+    "liquidation": 500,
+    "liquidator": 1000
+  },
+  "deposit": {
+    "perUsdc": 2
+  },
+  "open": {
+    "perNotionalUsd": 0.04,
+    "leverage": [
+      {
+        "upTo": 10,
+        "x": 1.0
+      },
+      {
+        "upTo": 50,
+        "x": 1.25
+      },
+      {
+        "upTo": 250,
+        "x": 1.5
+      },
+      {
+        "upTo": 1000000,
+        "x": 2.0
+      }
+    ]
+  },
+  "close": {
+    "perNotionalUsd": 0.02
+  },
+  "win": {
+    "flat": 150,
+    "minUsdc": 0.5,
+    "perUsdc": 20,
+    "max": 2500
+  },
+  "loss": {
+    "flat": 50,
+    "minUsdc": 0.5,
+    "perUsdc": 5,
+    "max": 1000
+  },
+  "liquidation": {
+    "flat": 25,
+    "perUsdc": 2,
+    "max": 250,
+    "liquidatorFlat": 50
+  },
+  "staking": {
+    "perThousandConfettiPerDay": 10
+  },
+  "daily": {
+    "flat": 100
+  },
+  "streak": {
+    "perDay": 25,
+    "maxDays": 30,
+    "milestones": [
+      {
+        "at": 3,
+        "pts": 500
+      },
+      {
+        "at": 7,
+        "pts": 1500
+      },
+      {
+        "at": 14,
+        "pts": 4000
+      },
+      {
+        "at": 30,
+        "pts": 10000
+      },
+      {
+        "at": 60,
+        "pts": 25000
+      },
+      {
+        "at": 100,
+        "pts": 60000
+      }
+    ]
+  },
+  "firstMarket": {
+    "flat": 300
+  },
+  "volume": {
+    "milestones": [
+      {
+        "at": 10000,
+        "pts": 500
+      },
+      {
+        "at": 50000,
+        "pts": 2000
+      },
+      {
+        "at": 250000,
+        "pts": 8000
+      },
+      {
+        "at": 1000000,
+        "pts": 25000
+      },
+      {
+        "at": 5000000,
+        "pts": 100000
+      }
+    ]
+  },
+  "code": {
+    "flat": 250
+  },
+  "referral": {
+    "shareBps": 4000,
+    "firstTrade": 5000,
+    "referredWelcome": 500,
+    "feePerUsdc": 50,
+    "ladder": [
+      {
+        "at": 1,
+        "pts": 2500
+      },
+      {
+        "at": 5,
+        "pts": 15000
+      },
+      {
+        "at": 20,
+        "pts": 75000
+      },
+      {
+        "at": 100,
+        "pts": 500000
+      }
+    ]
+  },
+  "sources": {
+    "refShare": "Referral share",
+    "refBonus": "Referral first trades",
+    "refLadder": "Referral ladder",
+    "refFees": "Referral fees",
+    "referred": "Welcome bonus",
+    "open": "Opens",
+    "close": "Closes",
+    "win": "Wins",
+    "loss": "Losses",
+    "liquidation": "Liquidations",
+    "liquidator": "Liquidating others",
+    "deposit": "Deposits",
+    "staking": "Staking",
+    "daily": "Daily activity",
+    "streak": "Streaks",
+    "market": "New markets",
+    "volume": "Volume milestones",
+    "code": "Referral code",
+    "transfer": "Received"
+  }
+}

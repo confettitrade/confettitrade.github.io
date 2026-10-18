@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — house</title>
+  <meta name="description" content="The Confetti house on HyperEVM: LP cash, fee pool, payout queue, open interest by market, breaker and keeper, read live from chain.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="paper.css?v=v3tabs">
+  <link rel="stylesheet" href="points.css?v=c3ee29a">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+</head>
+<body class="tabs-page" data-page="house">
+
+  <header class="header container-fluid">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <nav class="nav nav-main" aria-label="Primary">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html" aria-current="page">House</a>
+      <a href="confetti.html">Confetti</a>
+      <a href="leaderboard.html">Leaderboard</a>
+    </nav>
+    <div class="header-actions">
+      <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
+    </div>
+  </header>
+
+  <main class="container tab-main">
+    <div class="tab-title"><h1>House</h1><span class="sub">every trade is against this</span></div>
+
+    <section class="panel tab-section" aria-label="House state">
+      <div class="status-grid">
+        <div>
+          <h4>Cash</h4>
+          <div class="kv"><span class="kv-key">LP cash</span><span class="kv-val" id="hsLp">—</span></div>
+          <div class="kv"><span class="kv-key">Fee pool</span><span class="kv-val" id="hsFeePool">—</span></div>
+          <div class="kv"><span class="kv-key">Queued payouts</span><span class="kv-val" id="hsQueued">—</span></div>
+          <div class="kv"><span class="kv-key">Queue entries</span><span class="kv-val" id="hsQueueLen">—</span></div>
+        </div>
+        <div>
+          <h4>Guards</h4>
+          <div class="kv"><span class="kv-key">Opens</span><span class="kv-val" id="hsOpens">—</span></div>
+          <div class="kv"><span class="kv-key">Breaker</span><span class="kv-val" id="hsBreaker">—</span></div>
+          <div class="kv"><span class="kv-key">Trips at</span><span class="kv-val" id="hsTrips">—</span></div>
+          <div class="kv"><span class="kv-key">This hour</span><span class="kv-val" id="hsOutflow">—</span></div>
+          <div class="kv"><span class="kv-key">Keeper</span><span class="kv-val" id="hsKeeper">—</span></div>
+          <div class="kv"><span class="kv-key">Max payout</span><span class="kv-val" id="hsMaxPayout">—</span></div>
+        </div>
+      </div>
+      <p class="hint">Above the staker cap, house cash goes to stakers. While nobody is staked, the stakers' share of fees waits in the fee pool, behind winners.</p>
+    </section>
+
+    <section class="panel tab-section" aria-label="Open interest by market">
+      <div class="panel-head"><span>Open interest</span><span class="count" id="hsOiTotal"></span></div>
+      <div class="pos-lines" id="hsOi">
+        <div class="empty">Loading…</div>
+      </div>
+    </section>
+
+    <section class="panel tab-section" aria-label="Payout queue">
+      <div class="panel-head"><span>Payout queue</span><span class="count" id="hsQueueCount"></span></div>
+      <div class="pos-lines" id="hsQueue">
+        <div class="empty">Loading…</div>
+      </div>
+    </section>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="terms.html">terms</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+    </footer>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="keeper.js?v=house1" defer></script>
+  <script src="tabs.js?v=quiet2" defer></script>
+  <script src="points.js?v=quiet2" defer></script>
+</body>
+</html>

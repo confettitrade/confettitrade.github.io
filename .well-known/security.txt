@@ -1,0 +1,6 @@
+Contact: https://x.com/confetti_trade
+Contact: https://github.com/confettitrade/confetti/issues
+Expires: 2027-10-14T00:00:00.000Z
+Policy: https://confetti.trade/terms.html#security
+Preferred-Languages: en
+Canonical: https://confetti.trade/.well-known/security.txt
