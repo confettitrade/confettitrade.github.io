@@ -10,28 +10,29 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4ecd8'/%3E%3Ctext x='3' y='24' font-family='Tinos,Times New Roman,serif' font-size='22' fill='%232a2520'%3Ec%3C/text%3E%3Crect x='17' y='9' width='9' height='16' fill='%238b2020'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="paper.css?v=v3tabs">
+  <link rel="stylesheet" href="paper.css?v=intuitive2">
   <link rel="stylesheet" href="points.css?v=c3ee29a">
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
   <style>
-    /* Page-specific rules only. Tokens and components come from paper.css?v=v3tabs. */
+    /* Page-specific rules only. Tokens and components come from paper.css?v=intuitive2. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
-    /* Market bar: selector, live price, stats chips */
+    /* Market bar: coin button (DOGE ▾ up to 1000x), live price, two stats, How to trade */
     .market-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 0 0 var(--gap); }
     .market-select { position: relative; flex: none; }
     .market-btn {
       -webkit-appearance: none; appearance: none;
       display: inline-flex; align-items: center; gap: 8px;
-      min-height: 36px; padding: 0 10px;
+      min-height: 44px; padding: 0 12px;
       border: 1px solid var(--ink); background: var(--raised); color: var(--ink);
       font-family: var(--font-display); font-size: var(--text-xl); line-height: 1; cursor: pointer;
     }
     .market-btn:hover { background: var(--sunken); }
-    .market-caret { font-family: var(--font-ui); font-size: 11px; color: var(--ink-faint); }
+    .market-caret { font-family: var(--font-ui); font-size: 14px; color: var(--ink-muted); }
+    .market-lev { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
     .market-menu {
       position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
       width: min(360px, calc(100vw - 2 * var(--gutter)));
@@ -40,12 +41,12 @@
     }
     .market-menu[hidden] { display: none; }
     .market-filter { position: sticky; top: 0; padding: 8px; background: var(--raised); border-bottom: 1px solid var(--rule); }
-    .market-filter .input { min-height: 30px; font-size: var(--text-sm); }
-    .market-group { padding: 6px 10px 2px; border-bottom: 1px solid var(--rule); }
+    .market-filter .input { min-height: 36px; font-size: var(--text-sm); }
+    .market-group { padding: 8px 10px 4px; border-bottom: 1px solid var(--rule); }
     .market-row {
       -webkit-appearance: none; appearance: none;
       display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center;
-      width: 100%; padding: 6px 10px; border: 0; border-bottom: 1px dotted var(--rule);
+      width: 100%; min-height: 44px; padding: 6px 10px; border: 0; border-bottom: 1px dotted var(--rule);
       background: transparent; color: var(--ink); font-family: var(--font-ui); font-size: var(--text-sm);
       text-align: left; cursor: pointer;
     }
@@ -53,21 +54,26 @@
     .market-row .sym { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: var(--text-lg); line-height: 1.1; }
     .market-row .px { font-family: var(--font-mono); text-align: right; }
     .market-row .chg { font-family: var(--font-mono); font-size: var(--text-xs); min-width: 58px; text-align: right; }
-    .market-row .lev { grid-column: 1; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
-    .market-row.is-soon .sym, .market-row.is-soon .px { opacity: 0.55; }
-    .market-tag { font-family: var(--font-ui); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--rule-strong); padding: 1px 4px; color: var(--ink-faint); }
+    .market-soon { padding: 10px; font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); cursor: default; }
+    .market-tag { font-family: var(--font-ui); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--warn); padding: 1px 4px; color: var(--warn); align-self: center; }
+    .market-tag[hidden] { display: none; }
+    .market-quote { display: inline-flex; align-items: center; gap: 8px 14px; min-width: 0; }
+    .market-sub { display: inline-flex; align-items: center; gap: 8px; }
     .market-price { font-family: var(--font-mono); font-size: var(--text-xl); font-variant-numeric: tabular-nums; }
     .market-change { font-family: var(--font-mono); font-size: var(--text-sm); }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+    .chip-live { min-height: 22px; padding: 0 6px; }
     .chip-live.is-stale { border-color: var(--neg); color: var(--neg); }
+    .chip-live.is-stale #chipLiveText { font-family: var(--font-ui); font-size: var(--text-xs); }
+    .tour-btn { flex: none; }
+    .tour-short { display: none; }
 
-    /* Chart: header bar (price, timeframes, indicators, line tool) over the canvas; the box keeps its height */
+    /* Chart: header bar (timeframes, indicators, line tool) over the canvas; the box keeps its height */
     .chart-canvas { position: absolute; inset: 0; }
     .chart-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px; border: 1px solid var(--rule); border-bottom: 0; background: var(--raised); }
-    .chart-bar .pill { position: static; }
-    .chart-meta { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
     .chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-left: auto; min-width: 0; }
     .chart-tf { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+    .chart-tf-select { display: none; width: auto; min-height: 44px; padding: 0 28px 0 12px; font-size: var(--text-sm); }
     .chart-bar .chart-btn { min-height: 24px; padding: 0 6px; font-size: 10.5px; letter-spacing: 0.04em; border-color: var(--rule-strong); }
     .chart-bar .chart-btn[aria-pressed="true"], .chart-bar .chart-btn[aria-expanded="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
     .chart-bar .chart-btn[aria-pressed="true"]::before, .chart-bar .chart-btn[aria-pressed="true"]::after,
@@ -89,24 +95,40 @@
     .chart-note { position: absolute; left: 8px; bottom: 30px; z-index: 3; padding: 2px 6px; border: 1px solid var(--rule); background: var(--sunken); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
     .chart-note[hidden] { display: none; }
 
-    /* Order panel */
-    .order-form { border-top: 1px solid var(--rule); }
-    .lev-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .lev-input { width: 84px; min-height: 26px; padding: 0 6px; text-align: right; font-size: var(--text-sm); }
-    .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); text-align: center; }
-    /* One-time acceptance of the terms; shown until ticked, remembered in localStorage. */
-    .terms-gate { display: flex; align-items: center; justify-content: center; gap: 0.4em; cursor: pointer; }
-    .terms-gate input { margin: 0; }
-    .terms-gate a { color: inherit; }
-    .terms-gate[hidden] { display: none; }
+    /* Layout: chart, your positions and the history tabs on the left, the ticket on the right */
+    body.trade { --side-panel: 360px; }
+    body.trade .trade-layout { grid-template-areas: "chart side" "pos side" "bottom side"; }
+    @media (max-width: 1100px) { body.trade { --side-panel: 320px; } }
+    @media (min-width: 901px) and (max-width: 1100px) { .side-pair .dir-label { font-size: 16px; } }
+    /* desktop: position cards side by side */
+    @media (min-width: 901px) { .pos-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); align-items: start; } }
+    .trade-pos { grid-area: pos; min-width: 0; }
+    .pos-head { font-size: var(--text-md); }
+    .pos-head .count { margin-left: 4px; }
+    .lev-input { width: 72px; text-align: right; }
+    .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
+    @media (min-width: 901px) {
+      /* the ticket scrolls inside itself on a short screen and its button area is pinned to the
+         bottom of it, so OPEN POSITION is always on screen; the max-height leaves room for the
+         market bar above the column at scroll 0 */
+      html body.trade .trade-side { max-height: calc(100vh - var(--header-h) - 2 * var(--gap) - var(--pts-bar-h, 0px) - 56px); overflow-y: auto; overscroll-behavior: contain; }
+      body.trade .ticket-go { position: sticky; bottom: 0; z-index: 3; margin: 0 -12px; padding: 8px 12px; background: var(--panel); }
+      /* with positions open the chart gives up height, so the first card's CLOSE POSITION is above the fold */
+      body.trade .trade-layout.has-pos .chart-box { height: clamp(220px, calc(100vh - 470px), 520px); }
+      /* toasts sit over the chart (top right, under its toolbar), never over the ticket's button or
+         progress card and never over the position cards' CLOSE POSITION at the bottom */
+      body.trade .toasts {
+        top: calc(var(--header-h) + var(--pts-bar-h, 0px) + 104px); bottom: auto;
+        right: calc(max(var(--gutter), (100vw - var(--max-width)) / 2 + var(--gutter)) + var(--side-panel) + var(--gap));
+      }
+      body.trade .acct-mini { display: none; }
+    }
 
-    /* Bottom tabs */
-    .tab .count { margin-left: 4px; font-family: var(--font-mono); color: var(--ink-faint); letter-spacing: 0; }
+    /* History and Refer tabs */
     .tab-panel[hidden] { display: none; }
-    /* A request still filling: the line waits, its status counts down, its button appears
-       only when the user can do something (fill after the keeper window, cancel after expiry). */
-    .pos-line.is-pending { background: var(--sunken); }
-    .pos-line.is-pending [data-role="status"] { min-width: 9ch; }
+    #histLines .pos-line.hist-line { flex-wrap: wrap; white-space: normal; min-width: 0; gap: 4px 12px; }
+    .hist-line .hist-what { font-family: var(--font-ui); font-weight: 600; }
+    .hist-line .hist-detail { font-size: var(--text-xs); }
 
     /* Refer panel */
     .refer { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 12px; }
@@ -117,6 +139,13 @@
     .refer-form[hidden] { display: none; }
     .refer .hint { text-align: left; margin-top: 6px; }
 
+    /* Contracts & status: closed under the page, opened from the footer link */
+    .status-box { margin-top: var(--gap); }
+    .status-box > summary { cursor: pointer; list-style: none; }
+    .status-box > summary::-webkit-details-marker { display: none; }
+    .status-box > summary::after { content: "▾"; font-family: var(--font-ui); color: var(--ink-faint); }
+    .status-box[open] > summary::after { content: "▴"; }
+
     /* Dialogs */
     .modal { width: min(420px, calc(100vw - 2 * var(--gutter))); padding: 0; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 8px 8px 0 var(--sunken); }
     .modal::backdrop { background: rgba(42, 37, 32, 0.35); }
@@ -125,27 +154,139 @@
     .modal .panel-head { font-size: var(--text-xl); }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .modal-actions .btn { flex: 1 1 auto; }
+    .modal .hint.left { text-align: left; }
+    .modal .seg-item { min-height: 44px; }
 
     /* One-click: the session switch under the order button, and the Hyperliquid deposit block */
     .session-row { display: flex; align-items: center; gap: 8px; }
+    .session-row[hidden] { display: none; }
     .session-row #sessionState { flex: 1 1 auto; min-width: 0; text-align: right; }
     .session-row [hidden] { display: none; }
     .hl-dep { border-top: 1px solid var(--rule); }
-    .hl-addr { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; padding: 6px 8px; border: 1px solid var(--rule); background: var(--sunken); }
+    .hl-addr { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; padding: 6px 8px; margin-top: 6px; border: 1px solid var(--rule); background: var(--sunken); }
+    .hl-dep[hidden], #depFromWallet[hidden] { display: none; }
+
+    /* Header menu button: phones only */
+    .nav-toggle { display: none; }
+
+    /* Tap targets: at least 44 px on touch screens and narrow windows */
+    @media (pointer: coarse), (max-width: 900px) {
+      body.trade .btn, body.trade .pick, body.trade .tab, body.trade .select, body.trade .market-row { min-height: 44px; }
+      body.trade .input-group .input { min-height: 44px; }
+      body.trade .pos-lines .pos-line .btn { min-height: 44px; }
+      body.trade .details > summary, body.trade .status-box > summary, body.trade .details-chk, body.trade .prog-auto,
+      body.trade .market-filter .input { min-height: 44px; }
+      body.trade .status-box > summary { display: flex; align-items: center; justify-content: space-between; }
+      body.trade .details-chk, body.trade .prog-auto { align-items: center; }
+      body.trade .details-chk input, body.trade .prog-auto input { width: 20px; height: 20px; margin: 0; }
+      body.trade .hist-line a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 6px; }
+      body.trade .status-box .kv-val a, body.trade .header .wordmark { display: inline-flex; align-items: center; min-height: 44px; }
+      /* the big actions keep their own height over the 44 px floor */
+      body.trade .btn-go { min-height: 56px; }
+      body.trade .close-btn { min-height: 52px; }
+    }
+
+    /* Phones and tablets: the ticket is a bottom sheet opened from a pinned BUY / LONG + SELL / SHORT bar */
+    @media (max-width: 900px) {
+      body.trade { padding-bottom: calc(var(--mbar-h) + 56px + env(safe-area-inset-bottom)); }
+      body.trade .mbar { display: block; }
+      body.trade .trade-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "chart" "pos" "bottom"; }
+      body.trade .trade-layout.has-pos { grid-template-areas: "pos" "chart" "bottom"; }
+      html body.trade .trade-side {
+        position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 56;
+        max-height: calc(100vh - 44px); max-height: calc(100dvh - 44px);
+        overflow-y: auto; overscroll-behavior: contain;
+        transform: translateY(102%); visibility: hidden;
+        transition: transform 220ms ease, visibility 0s linear 220ms;
+      }
+      html body.trade.sheet-open .trade-side { transform: none; visibility: visible; transition: transform 220ms ease; }
+      body.trade .ticket { border-width: 1px 0 0; border-color: var(--ink); box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.45); padding-bottom: env(safe-area-inset-bottom); }
+      body.trade .sheet-head { display: flex; }
+      body.trade .sheet-scrim:not([hidden]) { display: block; }
+      /* OPEN POSITION (or its progress card) is pinned to the bottom of the sheet: never below the
+         visible edge, whatever the screen height (-12px matches the .panel-body padding) */
+      body.trade .ticket-go {
+        position: sticky; bottom: 0; z-index: 3; margin: 0 -12px;
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+        background: var(--panel); border-top: 1px solid var(--rule);
+      }
+      /* the sheet's account line is one row of numbers; Deposit and Withdraw live on the page
+         (.acct-mini at the top of Your positions) */
+      body.trade .acct-strip { padding: 6px 12px; gap: 4px 12px; }
+      body.trade .acct-strip .acct-btns { display: none; }
+      body.trade .acct-nums { flex-wrap: nowrap; white-space: nowrap; overflow: hidden; gap: 4px 12px; }
+      /* while a request is out the form folds away, so the progress card sits under the direction buttons */
+      body.trade .ticket.is-going #amountBox, body.trade .ticket.is-going #levBox,
+      body.trade .ticket.is-going #previewBox, body.trade .ticket.is-going #detailsBox { display: none; }
+      /* toasts at the top, under the points bar, never over the bar's buttons or the cards */
+      body.trade .toasts { top: calc(var(--pts-bar-h, 0px) + 8px); bottom: auto; left: var(--gutter); right: var(--gutter); width: auto; }
+      /* with the sheet up they keep clear of its close button */
+      body.trade.sheet-open .toasts { right: 60px; }
+    }
+    /* points.css moves its toasts to the top only at 640 px and below; between that and the
+       sheet layout they sit above the pinned BUY / LONG + SELL / SHORT bar */
+    @media (min-width: 641px) and (max-width: 900px) {
+      body.trade .pts-toasts { bottom: calc(var(--mbar-h) + 56px + env(safe-area-inset-bottom)); }
+      /* the header still sticks at these widths: the toasts go under it */
+      body.trade .toasts { top: calc(var(--pts-bar-h, 0px) + var(--header-h) + 8px); }
+    }
+    @media (max-width: 400px) {
+      body.trade .acct-nums { font-size: var(--text-xs); gap: 4px 10px; }
+      /* the live dot says nothing while prices flow: room for the price and a PAUSED tag */
+      .chip-live:not(.is-stale) { display: none; }
+    }
+    @media (max-width: 340px) {
+      body.trade .tour-short { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html body.trade .trade-side, html body.trade.sheet-open .trade-side { transition: none; }
+    }
+
+    @media (max-width: 640px) {
+      /* one 48 px header row: wordmark, Menu, Connect; it scrolls away */
+      body.trade .header { position: static; flex-wrap: nowrap; min-height: 48px; }
+      body.trade .header.nav-open { flex-wrap: wrap; }
+      body.trade .nav-toggle { display: inline-flex; margin-left: auto; }
+      body.trade .nav-main { display: none; }
+      body.trade .header.nav-open .nav-main { display: flex; order: 3; flex: 1 1 100%; }
+      body.trade .header-actions { width: auto; margin-left: 0; }
+      body.trade .header-actions .btn { flex: none; }
+      body.trade #depositBtn, body.trade #withdrawBtn { display: none; }
+    }
 
     @media (max-width: 600px) {
-      .chips { margin-left: 0; width: 100%; }
-      .market-price { font-size: var(--text-lg); }
-      .chart-legend { font-size: 10px; line-height: 1.35; max-width: calc(100% - 76px); }
+      .chips { display: none; }
+      .market-bar { flex-wrap: nowrap; gap: 8px; }
+      /* every part may shrink, so a long symbol or a PAUSED tag never runs under the ? button */
+      .market-select { flex: 0 0 auto; min-width: 0; max-width: 52%; }
+      .market-btn { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: var(--text-lg); padding: 0 10px; }
+      .market-btn #marketSym { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .market-lev { display: none; }
+      .market-quote { flex: 1 1 auto; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; }
+      .market-price { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-lg); line-height: 1.1; }
+      .market-change { font-size: var(--text-xs); }
+      .market-sub { flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+      .tour-btn { margin-left: auto; min-width: 44px; padding: 0 8px; }
+      .tour-word { display: none; }
+      .tour-short { display: inline; }
+      .chart-tf, #indBtn, #lineBtn, #lineClear { display: none !important; }
+      .chart-tf-select { display: inline-flex; }
+      /* the one timeframe picker floats over the chart's top right, left of the price scale */
+      .trade-chart { position: relative; }
+      .chart-bar { position: absolute; top: 6px; right: calc(var(--scale-w, 72px) + 8px); z-index: 4; border: 0; background: transparent; padding: 0; }
+      body.trade .chart-box { height: clamp(240px, 42vh, 360px); }
+      .chart-legend { font-size: 10px; line-height: 1.35; max-width: calc(100% - 168px); }
       .chart-legend-row { gap: 0 6px; }
+      .modal.sheet-modal { width: 100%; max-width: 100%; margin: auto 0 0; border-width: 1px 0 0; box-shadow: none; padding-bottom: env(safe-area-inset-bottom); }
     }
   </style>
 </head>
 <body class="trade">
 
-  <header class="header container-fluid">
+  <header class="header container-fluid" id="siteHeader">
     <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
-    <nav class="nav nav-main" aria-label="Primary">
+    <button class="btn btn-sm nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="navMain">Menu</button>
+    <nav class="nav nav-main" id="navMain" aria-label="Primary">
       <a href="trade.html" aria-current="page">Trade</a>
       <a href="portfolio.html">Portfolio</a>
       <a href="house.html">House</a>
@@ -153,48 +294,51 @@
       <a href="leaderboard.html">Leaderboard</a>
     </nav>
     <div class="header-actions">
-      <button class="btn btn-sm" id="depositBtn" type="button">Deposit</button>
-      <button class="btn btn-sm" id="withdrawBtn" type="button">Withdraw</button>
+      <button class="btn btn-sm" id="depositBtn" type="button" hidden>Deposit</button>
+      <button class="btn btn-sm" id="withdrawBtn" type="button" hidden>Withdraw</button>
       <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
     </div>
   </header>
 
   <main class="container trade-main">
 
-    <!-- Market selector, live price, stats -->
+    <!-- Market: the coin button, the live price, two stats, How to trade -->
     <div class="market-bar">
       <div class="market-select">
         <button class="market-btn" id="marketBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="marketMenu">
           <span id="marketSym">—</span>
-          <span class="badge" id="marketTier" title="Tier">·</span>
-          <span class="market-caret" aria-hidden="true">▼</span>
+          <span class="market-caret" aria-hidden="true">▾</span>
+          <span class="market-lev" id="marketTier">up to 1000x</span>
         </button>
         <div class="market-menu" id="marketMenu" role="listbox" aria-label="Markets" hidden>
           <div class="market-filter">
-            <input class="input" id="marketFilter" type="search" placeholder="Filter markets" autocomplete="off" spellcheck="false" aria-label="Filter markets">
+            <input class="input" id="marketFilter" type="search" placeholder="Find a coin" autocomplete="off" spellcheck="false" aria-label="Find a coin">
           </div>
           <div id="marketList"></div>
         </div>
       </div>
-      <span class="market-price" id="marketPrice">—</span>
-      <span class="market-change" id="marketChange" title="24h change"></span>
+      <span class="market-quote">
+        <span class="market-price" id="marketPrice" title="Live price">—</span>
+        <span class="market-sub">
+          <span class="market-tag" id="marketTag" hidden></span>
+          <span class="market-change" id="marketChange" title="Change since this time yesterday"></span>
+          <span class="chip chip-live" id="chipLive" title="Live prices"><span class="dot dot-pulse" aria-hidden="true"></span><span class="sr-only" id="chipLiveText">live</span></span>
+        </span>
+      </span>
       <div class="chips">
-        <span class="chip"><span class="chip-label">24h vol</span><span class="chip-value" id="chipVol">—</span></span>
-        <span class="chip" title="Positions opened on confetti in the last 24 hours (margin x leverage), every market, house bots included"><span class="chip-label">confetti 24h vol</span><span class="chip-value" id="chipConfVol">—</span></span>
-        <span class="chip"><span class="chip-label">long oi</span><span class="chip-value" id="chipLongOi">—</span></span>
-        <span class="chip"><span class="chip-label">short oi</span><span class="chip-value" id="chipShortOi">—</span></span>
-        <span class="chip"><span class="chip-label">tick</span><span class="chip-value" id="chipTf">1m</span></span>
-        <span class="chip chip-live" id="chipLive"><span class="dot dot-pulse" aria-hidden="true"></span><span id="chipLiveText">live</span></span>
+        <span class="chip" title="Money in open trades on this coin, house bots left out"><span class="chip-label">Open bets</span><span class="chip-value"><span id="chipLongOi">—</span> long · <span id="chipShortOi">—</span> short</span></span>
+        <span class="chip" title="Positions opened on Confetti in the last 24 hours, every coin, house bots included"><span class="chip-label">Traded here 24h</span><span class="chip-value" id="chipConfVol">—</span></span>
       </div>
+      <button class="btn btn-sm tour-btn" id="tourBtn" type="button" title="How to trade: a short tour of every button" aria-label="How to trade">?<span class="tour-word">&nbsp;How to trade</span><span class="tour-short">&nbsp;Help</span></button>
     </div>
 
-    <div class="trade-layout">
+    <div class="notice" id="v2Banner" hidden>You have <b id="v2Amt">money</b> on the old exchange. <a class="btn btn-sm" id="stV2" href="v2.html">Move it</a></div>
+
+    <div class="trade-layout" id="tradeLayout">
 
       <!-- Candlestick chart -->
       <section class="trade-chart" aria-label="Price chart">
         <div class="chart-bar" id="chartBar">
-          <span class="pill" id="pricePill">—</span>
-          <span class="chart-meta" id="chartMeta">1m</span>
           <div class="chart-tools">
             <div class="chart-tf" id="chartTf" role="group" aria-label="Timeframe">
               <button class="btn btn-sm chart-btn" type="button" data-tf="1m" aria-pressed="true">1m</button>
@@ -204,6 +348,14 @@
               <button class="btn btn-sm chart-btn" type="button" data-tf="4h" aria-pressed="false">4h</button>
               <button class="btn btn-sm chart-btn" type="button" data-tf="1d" aria-pressed="false">1D</button>
             </div>
+            <select class="select chart-tf-select" id="tfSelect" aria-label="Timeframe">
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1D</option>
+            </select>
             <button class="btn btn-sm chart-btn" id="indBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="indMenu">Indicators</button>
             <button class="btn btn-sm chart-btn" id="lineBtn" type="button" aria-pressed="false" title="Click the chart to draw a price line; click a line to remove it">Line</button>
             <button class="btn btn-sm chart-btn" id="lineClear" type="button" hidden>Clear lines</button>
@@ -217,89 +369,144 @@
         </div>
       </section>
 
-      <!-- Order panel -->
-      <aside class="trade-side" aria-label="Order panel">
-        <div class="panel">
-          <div class="panel-body">
-            <div class="kv"><span class="kv-key">Account Equity</span><span class="kv-val" id="eqEquity">—</span></div>
-            <div class="kv"><span class="kv-key">Available to Trade</span><span class="kv-val" id="eqAvailable">—</span></div>
-            <div class="kv"><span class="kv-key">Margin in Use</span><span class="kv-val" id="eqMargin">—</span></div>
-            <div class="kv"><span class="kv-key">Open PnL</span><span class="kv-val" id="eqPnl">—</span></div>
+      <!-- Your positions: one card each, CLOSE POSITION on every card -->
+      <section class="trade-pos panel" id="posPanel" aria-label="Your positions">
+        <div class="panel-head pos-head">
+          <span>Your positions<span class="count" id="posCount"></span></span>
+          <button class="btn btn-sm" id="closeAllBtn" type="button" hidden>Close all</button>
+        </div>
+        <div class="acct-mini" id="acctMini" hidden>
+          <span class="acct-mini-bal">Balance <b class="js-bal">—</b></span>
+          <span class="acct-mini-owed js-owed" hidden></span>
+          <span class="acct-mini-btns">
+            <button class="btn btn-sm js-dep" type="button">+ Deposit</button>
+            <button class="btn btn-sm js-wd" type="button">Withdraw</button>
+          </span>
+        </div>
+        <div class="pos-cards" id="posLines">
+          <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
+        </div>
+      </section>
+
+      <!-- The ticket: a column on desktop, a bottom sheet on a phone -->
+      <aside class="trade-side" id="ticket" aria-label="Order ticket">
+        <div class="panel ticket">
+          <div class="sheet-head">
+            <span class="sheet-title" id="sheetTitle">—</span>
+            <button class="btn btn-sm btn-ghost btn-plain sheet-x" id="sheetClose" type="button" aria-label="Close the ticket">✕</button>
+          </div>
+
+          <div class="acct-strip" id="acctStrip" hidden>
+            <div class="acct-nums">
+              <span>Balance <b id="eqAvailable">—</b></span>
+              <span>In trades <b id="eqMargin">—</b></span>
+              <span>P&amp;L <b id="eqPnl">—</b></span>
+            </div>
+            <div class="acct-owed" id="acctOwed" hidden></div>
+            <div class="acct-btns">
+              <button class="btn btn-sm" id="acctDeposit" type="button">+ Deposit</button>
+              <button class="btn btn-sm" id="acctWithdraw" type="button">Withdraw</button>
+            </div>
           </div>
 
           <form class="panel-body stack order-form" id="orderForm" autocomplete="off" novalidate>
-            <div class="seg" id="sideSeg" role="group" aria-label="Direction">
-              <button class="seg-item seg-long" type="button" data-side="long" aria-pressed="true">Long</button>
-              <button class="seg-item seg-short" type="button" data-side="short" aria-pressed="false">Short</button>
+            <div class="side-pair" id="sidePair" role="group" aria-label="Direction">
+              <button class="dir-btn dir-long" type="button" data-side="long" aria-pressed="true">
+                <span class="dir-label">BUY / LONG</span>
+                <span class="dir-hint">price goes up</span>
+                <span class="dir-liq">Liquidation <b id="liqLong">—</b></span>
+              </button>
+              <button class="dir-btn dir-short" type="button" data-side="short" aria-pressed="false">
+                <span class="dir-label">SELL / SHORT</span>
+                <span class="dir-hint">price goes down</span>
+                <span class="dir-liq">Liquidation <b id="liqShort">—</b></span>
+              </button>
             </div>
 
-            <label class="label" for="marginInput">Margin</label>
-            <div class="input-group">
-              <input class="input" id="marginInput" type="number" min="10" step="any" inputmode="decimal" placeholder="10.00">
-              <span class="unit">USDC</span>
-            </div>
-            <div class="quick" role="group" aria-label="Quick size">
-              <button class="btn" type="button" data-mult="0.5">½x</button>
-              <button class="btn" type="button" data-mult="2">2x</button>
-              <button class="btn" type="button" data-mult="max">Max</button>
-            </div>
-
-            <div class="lev-row">
-              <label class="label" for="levInput">Leverage</label>
-              <div class="input-group" style="width:auto">
-                <span class="unit" style="border-left:0;border-right:1px solid var(--rule)">x</span>
-                <input class="input lev-input" id="levInput" type="number" min="1" max="1000" step="1" inputmode="numeric" value="100">
+            <div class="field" id="amountBox">
+              <div class="field-head">
+                <label class="label" for="marginInput">Amount</label>
+                <span class="field-note">most you can lose</span>
+              </div>
+              <div class="input-group">
+                <span class="unit unit-pre" aria-hidden="true">$</span>
+                <input class="input" id="marginInput" type="number" min="10" step="any" inputmode="decimal" placeholder="Amount" value="10">
+                <span class="unit">USDC</span>
+              </div>
+              <div class="chip-row amt-chips" id="amtChips" role="group" aria-label="Amount">
+                <button class="pick" type="button" data-amt="10" aria-pressed="true">$10</button>
+                <button class="pick" type="button" data-amt="25" aria-pressed="false">$25</button>
+                <button class="pick" type="button" data-amt="50" aria-pressed="false">$50</button>
+                <button class="pick" type="button" data-amt="max" aria-pressed="false">Max</button>
               </div>
             </div>
-            <input class="slider" id="levSlider" type="range" min="0" max="1000" value="0" aria-label="Leverage">
-            <div class="slider-scale"><span class="safe">x1 Safe</span><span class="wild" id="levWild">Wild x1000</span></div>
 
-            <div>
-              <div class="kv"><span class="kv-key">Order Value</span><span class="kv-val" id="orderValue">—</span></div>
-              <div class="kv"><span class="kv-key">Bust Price</span><span class="kv-val neg" id="bustPrice">—</span></div>
-              <div class="kv"><span class="kv-key">Max Profit</span><span class="kv-val" id="maxProfit" title="Profit on one position is capped at the market's payout cap times its margin, shown here after the fee; anything above the cap stays with the house.">—</span></div>
-              <div class="kv"><span class="kv-key">Kept after impact</span><span class="kv-val" id="keptShare" title="The share of a raw gain you keep after the impact haircut, on a 0.1% move and on a 1% move, before the fee.">—</span></div>
-              <div class="kv"><span class="kv-key">Payout cap</span><span class="kv-val" id="payoutCap" title="Profit on one position is capped at this many times its margin; anything above the cap is forfeited to the house.">—</span></div>
-              <div class="kv"><span class="kv-key">House balance</span><span class="kv-val" id="houseLp" title="What the house can pay from right now, and what is still owed to queued wins. Read from the exchange every 10 s.">—</span></div>
+            <div class="field" id="levBox">
+              <div class="field-head">
+                <span class="label" id="levLabel">Leverage</span>
+                <span class="field-bal" id="levNow">20x</span>
+              </div>
+              <div class="chip-row lev-chips" id="levChips" role="group" aria-labelledby="levLabel"></div>
+              <div class="lev-custom" id="levCustom" hidden>
+                <div class="lev-row">
+                  <input class="slider" id="levSlider" type="range" min="0" max="1000" value="434" aria-label="Leverage">
+                  <div class="input-group lev-box">
+                    <input class="input lev-input" id="levInput" type="number" min="1" max="1000" step="1" inputmode="numeric" value="20" aria-label="Leverage">
+                    <span class="unit">x</span>
+                  </div>
+                </div>
+                <div class="slider-scale"><span class="safe">1x</span><span class="wild" id="levWild">1000x max</span></div>
+              </div>
+              <div class="lev-note" id="levNote">20x: a 4.75% move against you liquidates your $10.</div>
             </div>
 
-            <button class="btn btn-lg btn-block btn-accent" id="actionBtn" type="submit" disabled>Connect wallet</button>
-            <div class="hint" id="actionHint" aria-live="polite"></div>
-            <div class="session-row">
+            <div class="tp" id="previewBox">
+              <div class="tp-line"><span class="tp-k">Position size</span><span class="tp-v" id="orderValue">—</span></div>
+              <div class="tp-line"><span class="tp-k" id="moveKey">If the price moves 1% your way</span><span class="tp-v pos" id="moveWin">—</span></div>
+              <div class="tp-sent" id="opensNear">Opens near the oracle price in about 6 s</div>
+            </div>
+
+            <div class="ticket-go" id="ticketGo">
+              <div class="ticket-notice" id="ticketNotice" hidden></div>
+              <button class="btn btn-lg btn-block btn-go go-setup" id="actionBtn" type="submit">Connect wallet</button>
+              <div class="ticket-progress" id="ticketProgress" hidden aria-live="polite"></div>
+              <div class="hint" id="actionHint" aria-live="polite"></div>
+            </div>
+
+            <details class="details" id="detailsBox">
+              <summary>Details</summary>
+              <p class="dl" id="maxProfit">Win cap: —</p>
+              <p class="dl" id="capLine" hidden></p>
+              <p class="dl tp-amber" id="queueLine" hidden>The house is paying earlier winners first. A win right now may be paid later.</p>
+              <p class="dl" id="keptShare">Small wins are trimmed.</p>
+              <p class="dl" id="feeLine">Fee: 5% of winnings</p>
+              <p class="dl" id="posCapLine">Biggest position: —</p>
+              <p class="dl">Hyperliquid 24h volume <b id="chipVol">—</b></p>
+              <p class="dl">Every trade fills at the oracle price a few seconds after you click. Prices on the chart come from Hyperliquid.</p>
+              <label class="details-chk"><input type="checkbox" id="autoFillChk" data-autofill checked> If a fill is slow, ask my wallet to finish it (recommended)</label>
+            </details>
+
+            <div class="session-row" id="sessionRow" hidden>
               <button class="btn btn-sm" id="sessionBtn" type="button" disabled>Trade without popups</button>
               <span class="xs faint truncate" id="sessionState">—</span>
               <button class="btn btn-sm btn-ghost" id="sessionRevoke" type="button" hidden>Revoke</button>
             </div>
-            <div class="fineprint" id="finePrint">Fills at the oracle price, a few seconds after you click. Wins pay the impact haircut plus a 5% fee.</div>
-            <div class="fineprint">A win the house cannot cover is paid as a queued claim, in order, as the house refills.</div>
           </form>
         </div>
       </aside>
 
-      <!-- Positions / History / Status -->
-      <section class="trade-bottom panel" aria-label="Account">
+      <!-- History / Refer -->
+      <section class="trade-bottom panel" aria-label="History and referrals">
         <div class="tabs" role="tablist">
-          <button class="tab" id="tabPositions" type="button" role="tab" aria-selected="true" aria-controls="panelPositions" data-tab="positions">Positions<span class="count" id="posCount"></span></button>
-          <button class="tab" id="tabHistory" type="button" role="tab" aria-selected="false" aria-controls="panelHistory" data-tab="history">History</button>
+          <button class="tab" id="tabHistory" type="button" role="tab" aria-selected="true" aria-controls="panelHistory" data-tab="history">History</button>
           <button class="tab" id="tabRefer" type="button" role="tab" aria-selected="false" aria-controls="panelRefer" data-tab="refer">Refer</button>
-          <button class="tab" id="tabStatus" type="button" role="tab" aria-selected="false" aria-controls="panelStatus" data-tab="status">Status</button>
-          <span class="grow"></span>
-          <label class="auto-fill xs faint" title="After the keeper window anyone may fill a request at the worse of the two oracle prints until it expires, and you cannot cancel it. On, the page asks your wallet to fill it the moment that window opens."><input type="checkbox" id="autoFillChk" checked> fill from my wallet if the keeper misses</label>
-          <button class="btn btn-sm btn-ghost" id="closeAllBtn" type="button" disabled>Close all</button>
         </div>
 
-        <div class="tab-panel" id="panelPositions" role="tabpanel" aria-labelledby="tabPositions">
-          <div class="pos-lines" id="posLines">
-            <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panelHistory" role="tabpanel" aria-labelledby="tabHistory" hidden>
+        <div class="tab-panel" id="panelHistory" role="tabpanel" aria-labelledby="tabHistory">
           <div class="pos-lines" id="histLines">
             <div class="empty" id="histEmpty">Connect a wallet to load your history.</div>
             <div class="hist-foot">
               <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
-              <span class="faint xs" id="histRange"></span>
             </div>
           </div>
         </div>
@@ -323,58 +530,51 @@
             </div>
           </div>
         </div>
-
-        <div class="tab-panel" id="panelStatus" role="tabpanel" aria-labelledby="tabStatus" hidden>
-          <div class="status-grid">
-            <div>
-              <h4>Chain</h4>
-              <div class="kv"><span class="kv-key">Network</span><span class="kv-val" id="stChain">—</span></div>
-              <div class="kv"><span class="kv-key">Latest block</span><span class="kv-val" id="stBlock">—</span></div>
-              <div class="kv"><span class="kv-key">RPC</span><span class="kv-val truncate" id="stRpc">—</span></div>
-              <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="stWallet">not connected</span></div>
-              <div class="kv"><span class="kv-key">Wallet chain</span><span class="kv-val" id="stWalletChain">—</span></div>
-              <a class="btn btn-sm" id="stV2" href="v2.html" style="margin-top: 8px" hidden>v2: close and withdraw</a>
-              <h4>House</h4>
-              <div class="kv"><span class="kv-key">LP balance</span><span class="kv-val" id="stLp">—</span></div>
-              <div class="kv"><span class="kv-key">Fee pool</span><span class="kv-val" id="stFeePool">—</span></div>
-              <div class="kv"><span class="kv-key">Fee rate</span><span class="kv-val" id="stFee">—</span></div>
-              <div class="kv"><span class="kv-key">To stakers</span><span class="kv-val" id="stStakerShare">—</span></div>
-              <div class="kv"><span class="kv-key">To referrers</span><span class="kv-val" id="stRefShare">—</span></div>
-              <div class="kv"><span class="kv-key">Fill windows</span><span class="kv-val" id="stWindows">—</span></div>
-              <div class="kv"><span class="kv-key">Jump guard</span><span class="kv-val" id="stJump">—</span></div>
-              <div class="kv"><span class="kv-key">Queued payouts</span><span class="kv-val" id="stQueued">—</span></div>
-              <div class="kv"><span class="kv-key">Queue entries</span><span class="kv-val" id="stQueueLen">—</span></div>
-              <div class="kv"><span class="kv-key">Opens paused</span><span class="kv-val" id="stPaused">—</span></div>
-              <div class="kv"><span class="kv-key">LP breaker</span><span class="kv-val" id="stBreaker">—</span></div>
-              <div class="kv"><span class="kv-key">Markets on chain</span><span class="kv-val" id="stInstCount">—</span></div>
-              <div class="kv"><span class="kv-key">Keeper</span><span class="kv-val" id="stKeeper">—</span></div>
-            </div>
-            <div>
-              <h4>Contracts</h4>
-              <div class="kv"><span class="kv-key">Exchange</span><span class="kv-val" id="stExchange">—</span></div>
-              <div class="kv"><span class="kv-key">USDC</span><span class="kv-val" id="stUsdc">—</span></div>
-              <div class="kv"><span class="kv-key">Oracle</span><span class="kv-val" id="stOracle">—</span></div>
-              <div class="kv"><span class="kv-key">FETTI</span><span class="kv-val" id="stConfetti">—</span></div>
-              <div class="kv"><span class="kv-key">Tokenomics</span><span class="kv-val" id="stTokenomics">—</span></div>
-              <div class="kv"><span class="kv-key">Staking</span><span class="kv-val" id="stStaking">—</span></div>
-              <div class="kv"><span class="kv-key">Referrals</span><span class="kv-val" id="stReferrals">—</span></div>
-              <div class="kv"><span class="kv-key">Session router</span><span class="kv-val" id="stRouter">—</span></div>
-              <div class="kv"><span class="kv-key">Market rules</span><span class="kv-val" id="stRules">—</span></div>
-              <div class="kv"><span class="kv-key">Deposit factory</span><span class="kv-val" id="stFactory">—</span></div>
-              <h4>This market</h4>
-              <div class="kv"><span class="kv-key">Instrument</span><span class="kv-val" id="stInst">—</span></div>
-              <div class="kv"><span class="kv-key">Max leverage</span><span class="kv-val" id="stMaxLev">—</span></div>
-              <div class="kv"><span class="kv-key">Deadband</span><span class="kv-val" id="stBand">—</span></div>
-              <div class="kv"><span class="kv-key">Impact curve</span><span class="kv-val" id="stCurve">—</span></div>
-              <div class="kv"><span class="kv-key">OI caps L / S</span><span class="kv-val" id="stCaps">—</span></div>
-              <div class="kv"><span class="kv-key">Position cap · payout</span><span class="kv-val" id="stPosCap">—</span></div>
-              <div class="kv"><span class="kv-key">Oracle price</span><span class="kv-val" id="stOraclePx">—</span></div>
-            </div>
-          </div>
-        </div>
       </section>
 
     </div>
+
+    <!-- Contracts & status (was the Status tab) -->
+    <details class="panel status-box" id="statusBox">
+      <summary class="panel-head">Contracts &amp; status</summary>
+      <div class="status-grid">
+        <div>
+          <h4>Chain</h4>
+          <div class="kv"><span class="kv-key">Network</span><span class="kv-val" id="stChain">—</span></div>
+          <div class="kv"><span class="kv-key">Latest block</span><span class="kv-val" id="stBlock">—</span></div>
+          <div class="kv"><span class="kv-key">RPC</span><span class="kv-val truncate" id="stRpc">—</span></div>
+          <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="stWallet">not connected</span></div>
+          <div class="kv"><span class="kv-key">Wallet chain</span><span class="kv-val" id="stWalletChain">—</span></div>
+          <h4>Rules</h4>
+          <div class="kv"><span class="kv-key">Fee rate</span><span class="kv-val" id="stFee">—</span></div>
+          <div class="kv"><span class="kv-key">To stakers</span><span class="kv-val" id="stStakerShare">—</span></div>
+          <div class="kv"><span class="kv-key">To referrers</span><span class="kv-val" id="stRefShare">—</span></div>
+          <div class="kv"><span class="kv-key">New trades paused</span><span class="kv-val" id="stPaused">—</span></div>
+          <div class="kv"><span class="kv-key">Auto-pause</span><span class="kv-val" id="stBreaker">—</span></div>
+          <div class="kv"><span class="kv-key">Markets on chain</span><span class="kv-val" id="stInstCount">—</span></div>
+          <div class="kv"><span class="kv-key">Keeper</span><span class="kv-val" id="stKeeper">—</span></div>
+        </div>
+        <div>
+          <h4>Contracts</h4>
+          <div class="kv"><span class="kv-key">Exchange</span><span class="kv-val" id="stExchange">—</span></div>
+          <div class="kv"><span class="kv-key">USDC</span><span class="kv-val" id="stUsdc">—</span></div>
+          <div class="kv"><span class="kv-key">Oracle</span><span class="kv-val" id="stOracle">—</span></div>
+          <div class="kv"><span class="kv-key">FETTI</span><span class="kv-val" id="stConfetti">—</span></div>
+          <div class="kv"><span class="kv-key">Tokenomics</span><span class="kv-val" id="stTokenomics">—</span></div>
+          <div class="kv"><span class="kv-key">Staking</span><span class="kv-val" id="stStaking">—</span></div>
+          <div class="kv"><span class="kv-key">Referrals</span><span class="kv-val" id="stReferrals">—</span></div>
+          <div class="kv"><span class="kv-key">Session router</span><span class="kv-val" id="stRouter">—</span></div>
+          <div class="kv"><span class="kv-key">Market rules</span><span class="kv-val" id="stRules">—</span></div>
+          <div class="kv"><span class="kv-key">Deposit factory</span><span class="kv-val" id="stFactory">—</span></div>
+          <h4>This market</h4>
+          <div class="kv"><span class="kv-key">Market id</span><span class="kv-val" id="stInst">—</span></div>
+          <div class="kv"><span class="kv-key">Max leverage</span><span class="kv-val" id="stMaxLev">—</span></div>
+          <div class="kv"><span class="kv-key">Max open bets long / short</span><span class="kv-val" id="stCaps">—</span></div>
+          <div class="kv"><span class="kv-key">Biggest position · win cap</span><span class="kv-val" id="stPosCap">—</span></div>
+          <div class="kv"><span class="kv-key">Oracle price</span><span class="kv-val" id="stOraclePx">—</span></div>
+        </div>
+      </div>
+    </details>
 
     <section class="panel points-panel" id="pointsPanel" aria-label="Points"></section>
 
@@ -382,6 +582,7 @@
       <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
       <span>HyperEVM (999)</span>
       <span class="spacer"></span>
+      <a href="#statusBox" id="statusLink">Contracts &amp; status</a>
       <a href="docs.html">docs</a>
       <a href="terms.html">terms</a>
       <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
@@ -389,36 +590,95 @@
     </footer>
   </main>
 
-  <!-- Deposit -->
-  <dialog class="modal" id="depositModal" aria-labelledby="depositTitle">
-    <form method="dialog" id="depositForm" autocomplete="off" novalidate>
-      <div class="panel-head"><span id="depositTitle">Deposit USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+  <!-- Phones: BUY / LONG and SELL / SHORT pinned to the bottom; each opens the ticket sheet -->
+  <div class="mbar" id="mobileBar">
+    <div class="mbar-float">
+      <button class="mbar-status" id="barStatus" type="button" hidden></button>
+      <button class="mbar-chip" id="posChip" type="button" hidden>Your positions</button>
+    </div>
+    <div class="mbar-pair" id="mbarPair">
+      <button class="dir-btn dir-long is-solid" type="button" data-open-side="long"><span class="dir-label">BUY / LONG</span><span class="dir-hint">price goes up</span></button>
+      <button class="dir-btn dir-short is-solid" type="button" data-open-side="short"><span class="dir-label">SELL / SHORT</span><span class="dir-hint">price goes down</span></button>
+    </div>
+  </div>
+  <div class="sheet-scrim" id="sheetScrim" hidden></div>
+
+  <!-- Check before a big trade (100x and up, or Max), and Close all -->
+  <dialog class="modal sheet-modal" id="confirmModal" aria-labelledby="confirmTitle">
+    <form method="dialog" id="confirmForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="confirmTitle">Check your trade</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
       <div class="panel-body stack">
-        <div class="kv"><span class="kv-key">Wallet USDC</span><span class="kv-val" id="depWallet">—</span></div>
-        <div class="kv"><span class="kv-key">Exchange available</span><span class="kv-val" id="depAvailable">—</span></div>
-        <div class="kv"><span class="kv-key">Current allowance</span><span class="kv-val" id="depAllowance">—</span></div>
+        <div class="confirm-body" id="confirmBody"></div>
+        <label class="details-chk" id="confirmSkipRow" hidden><input type="checkbox" id="confirmSkip"> Don't ask again</label>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="confirmBack" data-close>Back</button>
+          <button class="btn btn-primary" type="submit" id="confirmOk">Confirm</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- No wallet in this browser (a phone browser): open the page in a wallet app -->
+  <dialog class="modal sheet-modal" id="walletAppModal" aria-labelledby="walletAppTitle">
+    <div class="panel-head"><span id="walletAppTitle">Open in your wallet app</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+    <div class="panel-body stack">
+      <div class="hint left">This browser has no wallet. Open Confetti in your wallet app's browser:</div>
+      <a class="btn btn-block" id="waMetaMask" href="https://metamask.app.link/dapp/confetti.trade/trade.html" rel="noopener">MetaMask</a>
+      <a class="btn btn-block" id="waCoinbase" href="https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fconfetti.trade%2Ftrade.html" rel="noopener">Coinbase Wallet</a>
+      <a class="btn btn-block" id="waOkx" href="okx://wallet/dapp/url?dappUrl=https%3A%2F%2Fconfetti.trade%2Ftrade.html" rel="noopener">OKX Wallet</a>
+      <button class="btn btn-block" id="waCopy" type="button">Copy link</button>
+      <div class="hint left">Or copy the link and paste it into your wallet's browser.</div>
+    </div>
+  </dialog>
+
+  <!-- Your address: copy, explorer, disconnect -->
+  <dialog class="modal sheet-modal" id="acctModal" aria-labelledby="acctTitle">
+    <div class="panel-head"><span id="acctTitle">Your wallet</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+    <div class="panel-body stack">
+      <button class="btn btn-block" id="amCopy" type="button">Copy address</button>
+      <a class="btn btn-block" id="amExplorer" href="https://hyperevmscan.io" target="_blank" rel="noopener">View on explorer</a>
+      <button class="btn btn-block btn-accent" id="amDisconnect" type="button">Disconnect</button>
+    </div>
+  </dialog>
+
+  <!-- Add USDC -->
+  <dialog class="modal sheet-modal" id="depositModal" aria-labelledby="depositTitle">
+    <form method="dialog" id="depositForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="depositTitle">Add USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+      <div class="panel-body stack">
+        <div class="notice" id="depHype" hidden>You need a little HYPE on HyperEVM to pay network fees (about 0.01).</div>
+        <div class="label">Where is your USDC?</div>
+        <div class="seg" id="depWhere" role="group" aria-label="Where is your USDC?">
+          <button class="seg-item" type="button" data-where="wallet" aria-pressed="true">In this wallet</button>
+          <button class="seg-item" type="button" data-where="hl" aria-pressed="false">On Hyperliquid</button>
+        </div>
+      </div>
+      <div class="panel-body stack" id="depFromWallet">
+        <div class="kv"><span class="kv-key">In your wallet</span><span class="kv-val" id="depWallet">—</span></div>
+        <div class="kv"><span class="kv-key">Confetti balance</span><span class="kv-val" id="depAvailable">—</span></div>
         <label class="label" for="depositAmount">Amount</label>
         <div class="input-group">
           <input class="input" id="depositAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00">
           <span class="unit">USDC</span>
         </div>
         <div class="quick"><button class="btn" type="button" id="depMax">Max</button></div>
-        <div class="hint" id="depositHint">Approves the exact amount, then deposits it into your exchange balance.</div>
+        <div class="hint" id="depositHint">The first time takes two steps: approve USDC, then deposit it.</div>
         <div class="modal-actions">
           <button class="btn" type="button" data-close>Cancel</button>
-          <button class="btn btn-primary" type="submit" id="depositSubmit">Approve &amp; deposit</button>
+          <button class="btn btn-primary" type="submit" id="depositSubmit">Deposit</button>
         </div>
       </div>
-      <div class="panel-body stack hl-dep">
-        <div class="label">From Hyperliquid</div>
-        <div class="hl-addr" id="hlProxy">—</div>
-        <div class="hint">send USDC from your Hyperliquid account to this address, then press Sweep</div>
-        <div class="kv"><span class="kv-key" id="hlPendingKey">Pending</span><span class="kv-val" id="hlPending">—</span></div>
-        <div class="fineprint">The first send pays Hyperliquid's 1 USDC activation fee.</div>
-        <div class="fineprint">Bring a little HYPE to HyperEVM for gas.</div>
+      <div class="panel-body stack hl-dep" id="depFromHl" hidden>
+        <ol class="steps-list">
+          <li>Copy your Confetti deposit address. <button class="btn btn-sm" type="button" id="hlCopy" disabled>Copy</button>
+            <div class="hl-addr" id="hlProxy">—</div></li>
+          <li>On Hyperliquid, send USDC to it. The first send costs 1 USDC.</li>
+          <li>It arrives here by itself, usually within a minute.</li>
+        </ol>
+        <div class="kv"><span class="kv-key" id="hlPendingKey">Waiting</span><span class="kv-val" id="hlPending">—</span></div>
         <div class="modal-actions">
-          <button class="btn" type="button" id="hlCopy" disabled>Copy address</button>
-          <button class="btn btn-primary" type="button" id="hlSweep" disabled>Sweep</button>
+          <button class="btn" type="button" data-close>Close</button>
+          <button class="btn btn-primary" type="button" id="hlSweep" disabled>Add to my balance</button>
         </div>
       </div>
     </form>
@@ -451,20 +711,21 @@
     </form>
   </dialog>
 
-  <!-- Withdraw -->
-  <dialog class="modal" id="withdrawModal" aria-labelledby="withdrawTitle">
+  <!-- Withdraw to your wallet -->
+  <dialog class="modal sheet-modal" id="withdrawModal" aria-labelledby="withdrawTitle">
     <form method="dialog" id="withdrawForm" autocomplete="off" novalidate>
-      <div class="panel-head"><span id="withdrawTitle">Withdraw USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+      <div class="panel-head"><span id="withdrawTitle">Withdraw to your wallet</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
       <div class="panel-body stack">
-        <div class="kv"><span class="kv-key">Exchange available</span><span class="kv-val" id="wdAvailable">—</span></div>
-        <div class="kv"><span class="kv-key">Margin in use</span><span class="kv-val" id="wdMargin">—</span></div>
+        <div class="hint left" id="wdTo">To your wallet on HyperEVM</div>
+        <div class="kv"><span class="kv-key">Confetti balance <span class="faint">(you can withdraw this)</span></span><span class="kv-val" id="wdAvailable">—</span></div>
+        <div class="kv"><span class="kv-key">In open trades <span class="faint">(close them first)</span></span><span class="kv-val" id="wdMargin">—</span></div>
         <label class="label" for="withdrawAmount">Amount</label>
         <div class="input-group">
           <input class="input" id="withdrawAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00">
           <span class="unit">USDC</span>
         </div>
         <div class="quick"><button class="btn" type="button" id="wdMax">Max</button></div>
-        <div class="hint" id="withdrawHint">Only the available balance can be withdrawn. Margin in open positions stays locked.</div>
+        <div class="hint" id="withdrawHint">Withdraw your balance. Money in open trades comes back when you close.</div>
         <div class="modal-actions">
           <button class="btn" type="button" data-close>Cancel</button>
           <button class="btn btn-primary" type="submit" id="withdrawSubmit">Withdraw</button>
@@ -485,7 +746,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=quiet2" defer></script>
+  <script src="trade.js?v=intuitive2" defer></script>
   <script src="points.js?v=quiet2" defer></script>
 </body>
 </html>

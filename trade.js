@@ -17,6 +17,12 @@
    popup; anything it may not do (or a dead session) goes to the wallet.
    Deposits from Hyperliquid (v3): the Deposit dialog shows the trader's
    DepositProxyFactory address and sweeps it.
+   The ticket (intuitive1): BUY / LONG or SELL / SHORT, an amount, a
+   leverage chip, three money lines and OPEN POSITION. After a click that
+   button turns into a progress card (Sent, Opening at the oracle price,
+   Open) and every open position is a card with CLOSE POSITION. On a phone
+   the two direction buttons sit in a bar pinned to the bottom and the
+   ticket opens as a sheet. A first-trade tour rings each real button.
    No build step. Config comes from config.json (falls back to
    config.example.json). Contract ABI fragments are written by hand from
    contracts/src and cross-checked against contracts/out
@@ -24,6 +30,19 @@
    ========================================================================== */
 (function () {
   'use strict';
+
+  /* Local demo for screenshots: a pretend funded account, no wallet, no chain. Only on localhost or
+     127.0.0.1 with ?demo=1 (the account), ?demo=tour (and the tour) or ?demo=pending (an open
+     request counting down in the ticket). On any other host (confetti.trade) DEMO is null, and
+     every demo branch below starts by checking it, so nothing of the demo runs, loads or is stored. */
+  var DEMO = (function () {
+    try {
+      var h = String(location.hostname || '');
+      if (h !== 'localhost' && h !== '127.0.0.1') return null;
+      var v = new URLSearchParams(location.search).get('demo');
+      return v === '1' || v === 'tour' || v === 'pending' ? v : null;
+    } catch (e) { return null; }
+  })();
 
   var CHAIN_ID = 999;
   var CHAIN_HEX = '0x3e7';
@@ -50,7 +69,11 @@
     market: 'confetti.trade.market', side: 'confetti.trade.side', lev: 'confetti.trade.lev.', tab: 'confetti.trade.tab',
     ref: 'confetti.ref', pending: 'confetti.trade.pending.', autoFill: 'confetti.trade.autofill',
     session: 'confetti.trade.session.', sweep: 'confetti.trade.sweep.',
-    tf: 'confetti.trade.tf', ind: 'confetti.trade.ind', lines: 'confetti.trade.lines.'
+    tf: 'confetti.trade.tf', ind: 'confetti.trade.ind', lines: 'confetti.trade.lines.',
+    /* intuitive1: the last amount, the Details toggle, the tour (per wallet, or 'visitor'), the
+       big-trade check's "don't ask again", and the last block seen per account */
+    amount: 'confetti.trade.amount', details: 'confetti.trade.details', tour: 'confetti.trade.tour.',
+    noConfirm: 'confetti.trade.noconfirm', seen: 'confetti.trade.seen.'
   };
   var TZ_OFFSET_S = new Date().getTimezoneOffset() * 60;
   var ZERO = '0x0000000000000000000000000000000000000000';
@@ -124,9 +147,37 @@
   var MIN_BRIDGE_WEI = 100000000n;
   var MIN_PERP_USD = 1000000n;
 
+  /* Under this much HYPE in the wallet the page says so before a transaction fails for gas. */
+  var HYPE_LOW_WEI = 5000000000000000n; /* 0.005 HYPE */
+  var HYPE_NOTE = 'You need a little HYPE on HyperEVM to pay network fees (about 0.01).';
+  /* The leverage chips; a market shows the ones up to its cap, then Custom. */
+  var LEV_CHIPS = [5, 10, 20, 50, 100, 250, 500, 1000];
+  /* A big trade (this leverage and up, or Max) gets one check before the wallet. */
+  var CONFIRM_LEV = 100;
+  /* "Taking longer than usual" goes on screen this long before the fallback window opens, so the
+     wallet prompt (autoFill) can go out the moment it opens and still have its reason in view. */
+  var LATE_SHOW_MS = 1500;
+  /* Wallet chain ids people arrive on, named in "Your wallet is on Ethereum". */
+  var CHAIN_NAMES = {
+    1: 'Ethereum', 10: 'Optimism', 56: 'BNB Chain', 100: 'Gnosis', 137: 'Polygon', 324: 'zkSync', 998: 'HyperEVM testnet',
+    8453: 'Base', 42161: 'Arbitrum', 43114: 'Avalanche', 59144: 'Linea', 81457: 'Blast', 11155111: 'Sepolia'
+  };
+
   /* ---- tiny helpers ------------------------------------------------------- */
 
   function $(id) { return document.getElementById(id); }
+
+  // On phones the timeframe picker floats over the chart (trade.html, .chart-bar at <=600px). The price scale's width
+  // depends on the coin's decimals, so hand it to the CSS as --scale-w and the picker sits just left of it.
+  function placeChartBar() {
+    var bar = $('chartBar');
+    if (!bar || !chart.api || !window.requestAnimationFrame) return;
+    requestAnimationFrame(function () {
+      var w = 0;
+      try { w = chart.api.priceScale('right').width(); } catch (e) { return; }
+      if (w) bar.style.setProperty('--scale-w', w + 'px');
+    });
+  }
 
   function cssVar(name, fallback) {
     var v = getComputedStyle(document.documentElement).getPropertyValue(name);
@@ -183,6 +234,32 @@
   }
 
   function fmtInt(n) { return isFinite(n) ? Math.round(n).toLocaleString('en-US') : '—'; }
+
+  /* "$10" for whole dollars, "$12.50" otherwise: the amount as people say it. */
+  function fmtUsdShort(n) {
+    if (n == null || !isFinite(n)) return '—';
+    return Math.abs(n - Math.round(n)) < 0.005 && n >= 0 ? '$' + Math.round(n).toLocaleString('en-US') : fmtUsd(n);
+  }
+
+  /* "+3.6%": P&L as a share of the amount put in. */
+  function fmtPct1(x) {
+    if (x == null || !isFinite(x)) return '';
+    return (x > 0 ? '+' : x < 0 ? '-' : '') + Math.abs(x * 100).toFixed(1) + '%';
+  }
+
+  /* A move already in percent, trimmed: 4.75, 0.95, 9.5, 0.05. */
+  function fmtMove(p) { return isFinite(p) ? String(Number(p.toFixed(p >= 1 ? 2 : 3))) : '—'; }
+
+  /* A coin quantity for "about 1,000 DOGE". */
+  function fmtQty(q) {
+    if (!isFinite(q) || q <= 0) return '—';
+    if (q >= 1000) return fmtInt(q);
+    return String(Number(q.toPrecision(q >= 1 ? 4 : 3)));
+  }
+
+  function sideWord(isLong) { return isLong ? 'Long' : 'Short'; }
+
+  function chainName(id) { return CHAIN_NAMES[id] || (id ? 'network ' + id : 'another network'); }
 
   function shortAddr(a) { return a ? a.slice(0, 6) + '…' + a.slice(-4) : '—'; }
 
@@ -513,7 +590,30 @@
     busy: false
   };
 
-  var form = { side: 'long', margin: NaN, lev: 100 };
+  /* The ticket. margin starts at $10 (or the last amount used); touched: the user edited it;
+     maxed: the amount came from Max (that trade gets the check); levCustom: Custom is open. */
+  var form = { side: 'long', margin: 10, lev: 20, touched: false, maxed: false, levCustom: false };
+
+  /* Page furniture: sheet, the ticket sheet is open (phones); closing, position ids waiting on the
+     wallet for their close; checking, ids whose close request is gone from chain and whose result
+     is being looked up in the logs (the position as last read, so its card can say so even once
+     the position is gone); settling, ids whose close is known to have filled (their card says so
+     until the next read drops them); retrying, ids whose expired close is being cleared and filed
+     again; reported, ids whose end (closed or liquidated) has been reported, so a second report
+     from another path stays quiet; recent, result cards (closed, liquidated, away); hypeWei, the
+     wallet's HYPE; posSig, the shape of the last positions render; awayDone, per account: the
+     "while you were away" scan is 'running', 'done' or 'failed' (LS.seen moves only after 'done');
+     owedSig / owedAt, the queue state and time of the last "owed to you" read. */
+  var ui = {
+    sheet: false, closing: {}, checking: {}, settling: {}, retrying: {}, reported: {}, recent: [], hypeWei: null, posSig: '',
+    awayDone: {}, posInView: false, owedSig: '', owedAt: 0
+  };
+
+  /* The ticket's progress card: what OPEN POSITION turned into after the click. phase: null (the
+     form), 'wallet' (waiting on the wallet or the one-click key), 'req' (filed as reqId: its own
+     phase says opening, late or expired), 'opened' (entry), 'refunded', 'error' or 'unknown' (msg:
+     the request is gone and the logs never said how). */
+  var tk = { phase: null, reqId: null, isLong: true, sym: '', lev: 0, margin: 0, entry: NaN, posId: null, msg: '', timer: null };
 
   var wallet = { eth: null, provider: null, signer: null, account: null, chainId: null, subscribed: false };
 
@@ -563,6 +663,7 @@
     return { long: Math.max(0, oi.long - (b ? b.long : 0)), short: Math.max(0, oi.short - (b ? b.short : 0)) };
   }
   function loadHouseBotOi() {
+    if (DEMO) return Promise.resolve();
     if (!hbots.n || hbots.busy || !read.exchange || Date.now() - hbots.at < HBOT_EVERY_MS) return Promise.resolve();
     hbots.busy = true; hbots.at = Date.now();
     var ex = read.exchange, next = {}, ok = true;
@@ -600,7 +701,7 @@
 
   /* The Status tab's v2 link: shown for the connected account while the v2 Exchange still holds its
      balance, margin or a pending open request (a pending close keeps its position's margin in use). */
-  var v2link = { account: null, at: 0, show: false };
+  var v2link = { account: null, at: 0, show: false, total: 0 };
 
   /* One-click session of the connected account. key: ethers.Wallet from localStorage (or null);
      onchain: router.sessionOf(account) { key, expiry, cap } once read; gasWei: the key's HYPE. */
@@ -657,11 +758,14 @@
     }).then(function () { midsInFlight = false; });
   }
 
+  /* The live dot says nothing while prices flow; it shows words only when they stop. */
   function setLive(ok) {
     var chip = $('chipLive');
     if (!chip) return;
     chip.classList.toggle('is-stale', !ok);
-    setText('chipLiveText', ok ? 'live' : 'stale');
+    chip.title = ok ? 'Live prices' : 'Prices stopped updating. Retrying.';
+    var t = $('chipLiveText');
+    if (t) { t.textContent = ok ? 'live' : 'prices stale'; t.className = ok ? 'sr-only' : ''; }
   }
 
   var ctxInFlight = false;
@@ -695,7 +799,6 @@
 
   /* Timeframes: Hyperliquid candleSnapshot intervals and each bucket's length. */
   var TF_MS = { '1m': 60000, '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
-  function tfLabel(tf) { return tf === '1d' ? '1D' : tf; }
 
   /* Indicators in menu order. Line colours: the night palette's confetti colours (share.js). */
   var INDS = [
@@ -856,6 +959,7 @@
         if (reset) chart.api.timeScale().scrollToRealTime();
         chartNote('', false);
         if (!chart.hover) renderLegend(-1);
+        placeChartBar();
         if (!state.mids[coin]) { state.mids[coin] = last; onPrices(); }
       })
       .catch(function () {
@@ -1082,10 +1186,10 @@
     chart.pos = [];
     var t = chartTheme();
     mine.forEach(function (p) {
-      var tag = mine.length > 1 ? ' #' + String(p.id) : '';
+      var tag = mine.length > 1 ? ' ' + sideWord(p.isLong).toLowerCase() + ' ' + p.leverage + 'x' : '';
       chart.pos.push(chart.series.createPriceLine({ price: p.entry, color: t.ink, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'entry' + tag }));
       var bust = px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage));
-      if (bust > 0) chart.pos.push(chart.series.createPriceLine({ price: bust, color: t.accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'bust' + tag }));
+      if (bust > 0) chart.pos.push(chart.series.createPriceLine({ price: bust, color: t.accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'liq.' + tag }));
     });
   }
 
@@ -1164,6 +1268,9 @@
       var b = e.target.closest('[data-tf]');
       if (b) setTf(b.getAttribute('data-tf'));
     });
+    /* phones: one 44 px picker instead of six small buttons */
+    var tfSel = $('tfSelect');
+    if (tfSel) tfSel.addEventListener('change', function () { setTf(tfSel.value); });
     var menu = $('indMenu'), btn = $('indBtn');
     if (menu && btn) {
       INDS.forEach(function (d) {
@@ -1231,14 +1338,13 @@
     if (tfs) Array.prototype.forEach.call(tfs.querySelectorAll('[data-tf]'), function (b) {
       b.setAttribute('aria-pressed', b.getAttribute('data-tf') === chart.tf ? 'true' : 'false');
     });
-    setText('chartMeta', (state.market ? state.market.coin + ' · ' : '') + tfLabel(chart.tf));
-    setText('chipTf', tfLabel(chart.tf));
+    var tfSel = $('tfSelect');
+    if (tfSel && tfSel.value !== chart.tf) tfSel.value = chart.tf;
   }
 
   /* ---- markets --------------------------------------------------------------- */
 
   function tierLetter(m) { return m.inst ? ['A', 'B', 'C'][m.inst.tier] || '?' : String(m.tier || '?'); }
-  function tierClass(m) { return 'badge badge-' + tierLetter(m).toLowerCase(); }
   function maxLev(m) { return m.inst ? m.inst.maxLeverage : Number(m.maxLeverage) || 1; }
   function marketPrice(m) { return m ? state.mids[m.coin] : NaN; }
 
@@ -1272,6 +1378,7 @@
 
     var savedLev = Number(lsGet(LS.lev + sym));
     form.lev = clamp(isFinite(savedLev) && savedLev >= 1 ? Math.round(savedLev) : defaultLeverage(m), 1, maxLev(m));
+    form.levCustom = false;
 
     renderMarketHeader();
     renderLeverage();
@@ -1289,23 +1396,29 @@
     }
   }
 
-  function defaultLeverage(m) {
-    var max = maxLev(m);
-    if (max >= 1000) return 100;
-    if (max >= 250) return 50;
-    return 10;
+  /* A first visit opens at 20x (or the market's cap when lower); after that the user's own
+     choice is remembered per market (LS.lev). */
+  function defaultLeverage(m) { return Math.min(20, maxLev(m)); }
+
+  /* On chain and open: a market the page may offer. Before the instruments are read, every market counts. */
+  function marketOnChain(m) { return !hasExchange() || !state.instrumentsLoaded || !!m.inst; }
+
+  /* The word beside the coin when it takes no new trades. */
+  function marketTagText(m) {
+    if (!m) return '';
+    if (!marketOnChain(m)) return 'soon';
+    if (m.inst && m.inst.retired) return 'closed';
+    if ((m.inst && m.inst.opensPaused) || house.globalPaused || house.breakerTripped) return 'paused';
+    return '';
   }
 
   function renderMarketHeader() {
     var m = state.market;
     if (!m) return;
-    setText('marketSym', m.symbol + '-USD');
-    var badge = $('marketTier');
-    if (badge) {
-      badge.className = tierClass(m);
-      badge.textContent = tierLetter(m);
-      badge.title = 'Tier ' + tierLetter(m) + ' · up to x' + maxLev(m);
-    }
+    setText('marketSym', m.symbol);
+    setText('marketTier', 'up to ' + maxLev(m) + 'x');
+    var tag = $('marketTag');
+    if (tag) { var tt = marketTagText(m); tag.textContent = tt; tag.hidden = !tt; }
     var px = marketPrice(m);
     setText('marketPrice', fmtPrice(px, m.szDecimals));
     var c = state.ctx[m.coin];
@@ -1319,54 +1432,50 @@
     var oi = publicOi(m.symbol, m.instrumentId);
     setText('chipLongOi', oi ? fmtUsdCompact(oi.long) : (hasExchange() ? '—' : 'n/a'));
     setText('chipShortOi', oi ? fmtUsdCompact(oi.short) : (hasExchange() ? '—' : 'n/a'));
-    var pill = $('pricePill');
-    if (pill) {
-      var last = chart.candles.length ? chart.candles[chart.candles.length - 1] : null;
-      pill.textContent = m.coin + ' ' + fmtPrice(px, m.szDecimals);
-      pill.classList.toggle('pill-pos', !!last && last.c >= last.o);
-      pill.classList.toggle('pill-neg', !!last && last.c < last.o);
-    }
+    setText('sheetTitle', m.symbol + ' · ' + fmtPrice(px, m.szDecimals));
     document.title = (isFinite(px) ? fmtPrice(px, m.szDecimals) + ' ' : '') + m.symbol + ' — confetti_';
   }
 
-  /* Market menu */
+  /* Market menu: grouped by how far leverage goes (Up to 1000x, Up to 250x ...), BTC and ETH first.
+     Markets not on chain yet are one greyed "Coming soon" line that cannot be picked. */
 
   function buildMarketMenu() {
     var list = $('marketList');
     if (!list) return;
     list.textContent = '';
     var filter = ($('marketFilter') && $('marketFilter').value || '').trim().toLowerCase();
-    /* leverage is per coin now (each row says up to x{max}); the tier sets the caps */
-    var groups = [['A', 'Tier A'], ['B', 'Tier B'], ['C', 'Tier C']];
-    groups.forEach(function (g) {
-      var rows = state.markets.filter(function (m) {
-        return tierLetter(m) === g[0] && (!filter || m.symbol.toLowerCase().indexOf(filter) !== -1);
-      });
-      if (!rows.length) return;
-      list.appendChild(el('div', 'label market-group', g[1]));
-      rows.forEach(function (m) {
+    var live = [], soon = [];
+    state.markets.forEach(function (m) {
+      if (filter && m.symbol.toLowerCase().indexOf(filter) === -1) return;
+      (marketOnChain(m) ? live : soon).push(m);
+    });
+    var firsts = ['BTC', 'ETH'];
+    function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
+    live.sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); });
+    var caps = [];
+    live.forEach(function (m) { if (caps.indexOf(maxLev(m)) < 0) caps.push(maxLev(m)); });
+    caps.sort(function (a, b) { return b - a; });
+    caps.forEach(function (cap) {
+      list.appendChild(el('div', 'label market-group', 'Up to ' + cap + 'x'));
+      live.filter(function (m) { return maxLev(m) === cap; }).forEach(function (m) {
         var row = el('button', 'market-row');
         row.type = 'button';
         row.setAttribute('role', 'option');
         row.setAttribute('data-sym', m.symbol);
         row.setAttribute('aria-selected', state.market === m ? 'true' : 'false');
-        var onChain = !hasExchange() || !state.instrumentsLoaded || !!m.inst;
-        if (!onChain) row.classList.add('is-soon');
         var sym = el('span', 'sym');
         sym.appendChild(el('span', null, m.symbol));
-        var b = el('span', tierClass(m), tierLetter(m));
-        sym.appendChild(b);
-        if (!onChain) sym.appendChild(el('span', 'market-tag', 'soon'));
-        else if (m.inst && m.inst.retired) sym.appendChild(el('span', 'market-tag', 'retired'));
-        else if (m.inst && m.inst.opensPaused) sym.appendChild(el('span', 'market-tag', 'paused'));
+        var tt = marketTagText(m);
+        if (tt) sym.appendChild(el('span', 'market-tag', tt));
         row.appendChild(sym);
         row.appendChild(el('span', 'px', fmtPrice(marketPrice(m), m.szDecimals)));
         row.appendChild(el('span', 'chg', ''));
-        row.appendChild(el('span', 'lev', 'up to x' + maxLev(m)));
-        row.addEventListener('click', function () { selectMarket(m.symbol); });
+        row.addEventListener('click', function () { selectMarket(m.symbol); tourEvent('market'); });
         list.appendChild(row);
       });
     });
+    if (soon.length) list.appendChild(el('div', 'market-soon', 'Coming soon: ' + soon.map(function (m) { return m.symbol; }).join(', ')));
+    if (!live.length && !soon.length) list.appendChild(el('div', 'market-soon', 'No coin by that name.'));
     renderMarketMenuPrices();
   }
 
@@ -1557,34 +1666,122 @@
     var input = $('levInput');
     if (slider) slider.value = String(sliderFromLev(form.lev, max));
     if (input) { input.max = String(max); if (document.activeElement !== input) input.value = String(form.lev); }
-    setText('levWild', 'Wild x' + max);
+    setText('levWild', max + 'x max');
+    setText('levNow', form.lev + 'x');
+    renderLevChips(max);
   }
 
+  /* The leverage chips up to the market's cap, then Custom (the slider and the box). The chip equal
+     to the leverage is lit; a leverage between chips lights Custom and keeps it open. */
+  function renderLevChips(max) {
+    var host = $('levChips');
+    if (!host) return;
+    var vals = LEV_CHIPS.filter(function (v) { return v <= max; });
+    if (vals.indexOf(max) < 0) vals.push(max);
+    var sig = vals.join(',');
+    if (host.getAttribute('data-sig') !== sig) {
+      host.textContent = '';
+      vals.forEach(function (v) {
+        var b = el('button', 'pick', v + 'x');
+        b.type = 'button';
+        b.setAttribute('data-lev', String(v));
+        host.appendChild(b);
+      });
+      var c = el('button', 'pick pick-custom', 'Custom');
+      c.type = 'button';
+      c.setAttribute('data-lev', 'custom');
+      host.appendChild(c);
+      host.setAttribute('data-sig', sig);
+    }
+    var custom = form.levCustom || vals.indexOf(form.lev) < 0;
+    Array.prototype.forEach.call(host.querySelectorAll('[data-lev]'), function (b) {
+      var v = b.getAttribute('data-lev');
+      b.setAttribute('aria-pressed', (v === 'custom' ? custom : !custom && Number(v) === form.lev) ? 'true' : 'false');
+    });
+    var box = $('levCustom');
+    if (box) box.hidden = !custom;
+  }
+
+  function setLev(v) {
+    var max = state.market ? maxLev(state.market) : 1000;
+    form.lev = clamp(Math.round(v) || 1, 1, max);
+    if (state.market) lsSet(LS.lev + state.market.symbol, String(form.lev));
+    renderLeverage(); renderForm(); renderAction();
+  }
+
+  /* The amount chips: $10 $25 $50 lit when the box says so, Max while the amount came from it. */
+  function renderAmountChips() {
+    var host = $('amtChips');
+    if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll('[data-amt]'), function (b) {
+      var v = b.getAttribute('data-amt');
+      var on = v === 'max' ? form.maxed : !form.maxed && Number(v) === form.margin;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  /* A position as if opened now at px with the ticket's amount, side and leverage: what the money
+     lines and the check before a big trade are priced on. Zero terms fall back to the market's. */
+  function pretendPos(px, margin) {
+    return { entry: px, margin: margin, leverage: form.lev, isLong: form.side === 'long', feeBps: -1, deadbandBps: 0, payoutCapX: 0 };
+  }
+
+  /* Seconds from a request to its expected fill: the keeper's wait plus a block. */
+  function fillSecs() { return house.minDelay + 1; }
+
+  /* The ticket in money: the liquidation price on each direction button, what the leverage means,
+     the position size, what a 1% move pays, the price it opens near. Details holds the win cap, the
+     trim on small wins, the fee and the biggest position. No house balance anywhere. */
   function renderForm() {
     var m = state.market;
+    var sz = m ? m.szDecimals : null;
+    var sym = m ? m.symbol : '';
+    var inst = m && m.inst ? m.inst : null;
     var px = openPriceFor(m);
-    var notional = isFinite(form.margin) && form.margin > 0 ? form.margin * form.lev : NaN;
-    setText('orderValue', isFinite(notional) ? fmtUsd(notional) : '—');
-    setText('bustPrice', fmtPrice(bustPriceNum(px, form.side === 'long', form.lev), m ? m.szDecimals : null));
-    /* DESIGN 3b: the payout cap is shown before the user opens. */
-    var capX = m && m.inst ? m.inst.payoutCapX : 0;
-    setText('maxProfit', capX > 0 && isFinite(form.margin) && form.margin > 0 ? fmtUsd(form.margin * capX * (1 - feeRate())) + ' (x' + capX + ')' : '—');
-    /* What a winner keeps and loses: the impact haircut's kept share of a raw gain (on a 0.1%
-       and a 1% move, the live curve) and the payout cap; the house's balance sits beside them. */
-    var c = curveOf(m && m.inst ? m.inst : null);
-    var keptLo = impactScale(0.001, c), keptHi = impactScale(0.01, c);
-    setText('keptShare', m ? Math.round(keptLo * 100) + '% to ' + Math.round(keptHi * 100) + '% of a gain' : '—');
-    setText('payoutCap', capX > 0 ? 'x' + capX + ' margin, rest forfeited' : '—');
-    renderHouseLine();
+    var margin = isFinite(form.margin) && form.margin > 0 ? form.margin : NaN;
+    var notional = isFinite(margin) ? margin * form.lev : NaN;
+    var isLong = form.side === 'long';
+    setText('liqLong', fmtPrice(bustPriceNum(px, true, form.lev), sz));
+    setText('liqShort', fmtPrice(bustPriceNum(px, false, form.lev), sz));
+    setText('levNote', form.lev + 'x: a ' + fmtMove(bustMovePct(form.lev)) + '% move against you liquidates your ' + (isFinite(margin) ? fmtUsdShort(margin) : 'amount') + '.');
+    setText('orderValue', isFinite(notional) ? fmtUsd(notional) + (px > 0 ? ' (about ' + fmtQty(notional / px) + ' ' + sym + ')' : '') : '—');
+    setText('moveKey', 'If ' + (sym || 'the price') + ' moves 1% your way');
+    var win = isFinite(notional) && px > 0 ? estimateClose(pretendPos(px, margin), inst, px * (isLong ? 1.01 : 0.99), true) : null;
+    setText('moveWin', win && !win.flat ? fmtUsd(win.pnl, true) : '—');
+    setText('opensNear', 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' in about ' + fillSecs() + ' s');
+    /* the win cap line (in Details) shows only when a 20% move would reach it */
+    var capX = inst ? inst.payoutCapX : 0;
+    var capUsd = capX > 0 && isFinite(margin) ? margin * capX * (1 - feeRate()) : NaN;
+    var big = isFinite(capUsd) && px > 0 ? estimateClose(pretendPos(px, margin), inst, px * (isLong ? 1.2 : 0.8), true) : null;
+    var capLine = $('capLine');
+    if (capLine) {
+      var capped = !!big && big.pnl >= capUsd * 0.999;
+      capLine.hidden = !capped;
+      if (capped) capLine.textContent = 'At this amount and leverage, wins above ' + fmtUsd(capUsd) + ' are capped.';
+    }
+    var q = $('queueLine');
+    if (q) q.hidden = !(house.queued > 0);
+    setText('maxProfit', isFinite(capUsd)
+      ? 'Win cap ' + fmtUsd(capUsd) + ' (' + capX + 'x your ' + fmtUsdShort(margin) + ', after fee)'
+      : 'Win cap: ' + (capX > 0 ? capX + 'x your amount, after fee' : '—'));
+    var c = curveOf(inst);
+    setText('keptShare', 'Small wins are trimmed: you keep about ' + Math.round(impactScale(0.001, c) * 100) + '% of a 0.1% move, ' + Math.round(impactScale(0.01, c) * 100) + '% of a 1% move.');
+    setText('feeLine', 'Fee: ' + feePctText() + ' of winnings');
+    setText('posCapLine', inst && inst.maxNotional > 0 ? 'Biggest ' + sym + ' position $' + fmtInt(inst.maxNotional) : 'Biggest position: —');
   }
 
-  /* House balance beside Max Profit: what the house can pay from right now (lpBalance) and what
-     queued wins are still owed (queuedTotal). Both come with the house status read every 10 s. */
-  function renderHouseLine() {
-    var cell = $('houseLp');
-    if (!cell) return;
-    if (house.lp == null) { cell.textContent = '—'; return; }
-    cell.textContent = fmtUsd(house.lp) + (house.queued > 0 ? ' · ' + fmtUsd(house.queued) + ' queued' : '');
+  /* The win cap in dollars for the ticket's amount when a 20% move would reach it, else NaN: the
+     line in Details and the check before a big trade. */
+  function ticketCapUsd() {
+    var m = state.market;
+    var inst = m && m.inst ? m.inst : null;
+    var px = openPriceFor(m);
+    var margin = isFinite(form.margin) && form.margin > 0 ? form.margin : NaN;
+    var capX = inst ? inst.payoutCapX : 0;
+    var capUsd = capX > 0 && isFinite(margin) ? margin * capX * (1 - feeRate()) : NaN;
+    if (!isFinite(capUsd) || !(px > 0)) return NaN;
+    var big = estimateClose(pretendPos(px, margin), inst, px * (form.side === 'long' ? 1.2 : 0.8), true);
+    return big && big.pnl >= capUsd * 0.999 ? capUsd : NaN;
   }
 
   /* The one-time terms acceptance: the line shows until ticked, the tick is remembered and the
@@ -1609,141 +1806,256 @@
     render();
   }
 
+  /* BUY / LONG and SELL / SHORT pick the side; the picked one is pressed (filled). */
   function renderSide() {
-    var seg = $('sideSeg');
-    if (!seg) return;
-    var items = seg.querySelectorAll('[data-side]');
+    var pair = $('sidePair');
+    if (!pair) return;
+    var items = pair.querySelectorAll('[data-side]');
     for (var i = 0; i < items.length; i++) {
       items[i].setAttribute('aria-pressed', items[i].getAttribute('data-side') === form.side ? 'true' : 'false');
     }
   }
 
-  /* Validation problems for the open form, or null when the order can go. */
+  function setSide(side) {
+    form.side = side === 'short' ? 'short' : 'long';
+    lsSet(LS.side, form.side);
+    renderSide(); renderForm(); renderAction();
+  }
+
+  /* Why this market takes no new trades, or null. Checked before any wallet step, so a visitor
+     reads it before connecting. Before the instruments are read nothing is blocked. */
+  function marketBlock() {
+    var m = state.market;
+    if (!m) return 'Pick a coin to trade.';
+    if (!m.inst) return hasExchange() && state.instrumentsLoaded ? m.symbol + ' is coming soon.' : null;
+    if (m.inst.retired) return m.symbol + ' is closed for new trades. You can still close.';
+    if (house.globalPaused || house.breakerTripped) return 'New trades are paused for now. You can still close.';
+    if (m.inst.opensPaused) return 'New trades on ' + m.symbol + ' are paused for now. You can still close.';
+    return null;
+  }
+
+  /* An open market to offer instead: BTC, then ETH, then the first open one. Null while every
+     market is paused (the global pause and the loss breaker). */
+  function altMarket() {
+    if (house.globalPaused || house.breakerTripped) return null;
+    var pick = null;
+    ['BTC', 'ETH'].concat(state.markets.map(function (m) { return m.symbol; })).some(function (s) {
+      var m = state.bySym[s];
+      if (m && m !== state.market && m.inst && !m.inst.opensPaused && !m.inst.retired) { pick = m; return true; }
+      return false;
+    });
+    return pick;
+  }
+
+  /* Problems with the trade itself, in plain words, or null when it can go. */
   function orderProblem() {
     var m = state.market;
-    if (!m || !m.inst) return 'Market is not listed on chain yet.';
-    if (m.inst.retired) return 'Market retired: closes only.';
-    if (house.globalPaused) return 'Opens are paused on every market.';
-    if (house.breakerTripped) return 'Opens are paused: the LP loss breaker is tripped.';
-    if (m.inst.opensPaused) return 'Opens are paused on this market.';
-    if (!isFinite(form.margin) || form.margin < MIN_MARGIN) return 'Minimum margin is ' + MIN_MARGIN + ' USDC.';
-    if (form.margin > acct.available + 1e-9) return 'Margin exceeds your available balance.';
-    if (form.lev < 1 || form.lev > m.inst.maxLeverage) return 'Leverage must be between x1 and x' + m.inst.maxLeverage + '.';
-    if (m.inst.maxNotional > 0 && form.margin * form.lev > m.inst.maxNotional + 1e-6) return 'Exceeds the per-position cap of ' + fmtUsdCompact(m.inst.maxNotional) + ' notional.';
+    var block = marketBlock();
+    if (block) return block;
+    if (!m || !m.inst) return 'Loading the market…';
+    if (!isFinite(form.margin) || form.margin <= 0) return 'Enter an amount.';
+    if (form.margin < MIN_MARGIN) return 'Minimum is $' + MIN_MARGIN + '.';
+    if (form.margin > acct.available + 1e-9) return 'That is more than your balance (' + fmtUsd(acct.available) + ').';
+    if (form.lev < 1 || form.lev > m.inst.maxLeverage) return 'Leverage on ' + m.symbol + ' goes up to ' + m.inst.maxLeverage + 'x.';
+    if (m.inst.maxNotional > 0 && form.margin * form.lev > m.inst.maxNotional + 1e-6) return 'Too big: the largest ' + m.symbol + ' position is $' + fmtInt(m.inst.maxNotional) + '.';
     var oi = house.oi[m.symbol];
     if (oi) {
       var cap = form.side === 'long' ? m.inst.longCap : m.inst.shortCap;
       var used = form.side === 'long' ? oi.long : oi.short;
       var headroom = Math.max(0, cap - used);
-      if (form.margin * form.lev > headroom + 1e-6) return 'Exceeds ' + form.side + ' OI headroom (' + fmtUsdCompact(headroom) + ').';
+      if (form.margin * form.lev > headroom + 1e-6) {
+        return m.symbol + ' ' + (form.side === 'long' ? 'longs' : 'shorts') + ' are full right now. Up to ' + fmtUsdCompact(headroom) + ' more fits: lower the amount or leverage.';
+      }
     }
     return null;
   }
 
+  /* Not enough HYPE in the wallet for gas (a live one-click key pays its own). */
+  function hypeLow() { return !!wallet.account && ui.hypeWei != null && ui.hypeWei < HYPE_LOW_WEI && !sessionLive(); }
+
+  /* The one button under the ticket: the next setup step (Connect wallet, Switch to HyperEVM, Add
+     USDC, Enter an amount) until the account can trade, then OPEN POSITION in the side's colour. A
+     market that takes no new trades says so first, before any wallet step. While a request is out
+     the button gives way to the progress card (renderTicketProgress). */
   function renderAction() {
     var btn = $('actionBtn');
     var hint = $('actionHint');
     if (!btn) return;
     var m = state.market;
     var sym = m ? m.symbol : '';
-    var label, cls = 'btn btn-lg btn-block', disabled = false, note = '', err = false;
-
-    if (!window.ethers) {
-      label = 'Wallet library unavailable'; cls += ' btn-accent'; disabled = true; note = 'ethers.js failed to load.'; err = true;
+    var label = 'OPEN POSITION', cls = 'btn btn-lg btn-block btn-go', disabled = false, note = '', err = false;
+    var notice = null, alt = null, setup = true;
+    var block = marketBlock();
+    if (block) {
+      disabled = true; notice = block; alt = altMarket();
+    } else if (!window.ethers) {
+      label = 'Wallet unavailable'; disabled = true; note = 'The wallet library did not load. Reload the page.'; err = true;
     } else if (!wallet.account) {
-      label = 'Connect wallet'; cls += ' btn-accent';
-      note = wallet.eth || getInjected() ? '' : 'No wallet detected. Use a wallet browser or extension.';
+      label = 'Connect wallet';
+      note = wallet.eth || getInjected() ? 'Your wallet asks to connect, then to switch to HyperEVM if it is elsewhere. Nothing is signed.' : 'No wallet in this browser: tap to open Confetti in your wallet app.';
     } else if (wallet.chainId !== CHAIN_ID) {
-      label = 'Switch to HyperEVM'; cls += ' btn-accent'; note = 'Wallet is on chain ' + (wallet.chainId || '?') + '.';
+      label = 'Switch to HyperEVM'; note = 'Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM.';
     } else if (!hasExchange()) {
-      label = 'Exchange not configured'; cls += ' btn-accent'; disabled = true; note = 'Set contracts.exchange in config.json.'; err = true;
+      label = 'Trading is off'; disabled = true; note = 'This copy of the site has no exchange address.'; err = true;
     } else if (!acct.loaded) {
-      label = 'Loading account…'; cls += ' btn-accent'; disabled = true;
+      label = 'Loading your account…'; disabled = true;
     } else if (acct.available < MIN_MARGIN) {
-      label = 'Deposit to trade'; cls += ' btn-primary';
-      note = 'Available ' + fmtUsd(acct.available) + ' · minimum margin ' + MIN_MARGIN + ' USDC.';
+      label = 'Add USDC';
+      note = acct.walletUsdc >= 1 ? 'You have ' + fmtUsd(acct.walletUsdc) + ' USDC in your wallet. Add it to start.'
+        : acct.available > 0 ? 'Your balance is ' + fmtUsd(acct.available) + '. Trades start at $' + MIN_MARGIN + '.'
+        : 'Add at least $' + MIN_MARGIN + ' to start.';
+    } else if (!(form.margin > 0)) {
+      label = 'Enter an amount'; disabled = true;
     } else {
-      label = (form.side === 'long' ? 'Buy ' : 'Sell ') + sym;
-      cls += form.side === 'long' ? ' btn-long' : ' btn-short';
+      setup = false;
+      cls += form.side === 'long' ? ' go-long' : ' go-short';
       var problem = orderProblem();
       if (problem) { disabled = true; note = problem; err = true; }
       else {
-        var px = openPriceFor(m);
-        var bust = bustPriceNum(px, form.side === 'long', form.lev);
-        note = 'Busts on a ' + bustMovePct(form.lev).toFixed(3) + '% move' + (isFinite(bust) ? ' (' + fmtPrice(bust, m.szDecimals) + ')' : '') + '. Fills in about ' + (house.minDelay + 1) + ' s.';
+        note = (form.side === 'long' ? 'BUY / LONG ' : 'SELL / SHORT ') + sym + ' · ' + fmtUsdShort(form.margin) + ' at ' + form.lev + 'x.';
         if (sessionLive()) {
-          if (!sessionRefOk(referrerArg())) note += ' Your first fill sets your referrer: the wallet signs this one.';
-          else if (numToUsd6(form.margin) > sess.onchain.cap6) note += ' Over the one-click cap: the wallet signs.';
-          else note += ' No popup.';
-        }
+          if (!sessionRefOk(referrerArg())) note += ' Your first fill sets your referrer: your wallet signs this one.';
+          else if (numToUsd6(form.margin) > sess.onchain.cap6) note += ' Over your one-click cap: your wallet signs this one.';
+          else note += ' No wallet popup.';
+        } else note += ' Your wallet asks you to confirm.';
       }
     }
-    if (state.busy) { disabled = true; note = state.viaSession ? 'Sending…' : 'Confirm in your wallet…'; err = false; }
+    if (!notice && wallet.account && wallet.chainId === CHAIN_ID && hypeLow()) notice = HYPE_NOTE;
+    if (setup) cls += ' go-setup';
+    if (state.busy && !tk.phase) { disabled = true; note = state.viaSession ? 'Sending…' : 'Confirm in your wallet…'; err = false; }
     if (!termsAccepted()) disabled = true;
     btn.className = cls;
     btn.textContent = label;
     btn.disabled = disabled;
-    if (hint) { hint.textContent = note; hint.classList.toggle('is-err', err); }
+    if (hint) { hint.textContent = tk.phase ? '' : note; hint.classList.toggle('is-err', err && !tk.phase); }
+    renderTicketNotice(notice, alt);
+    renderTicketProgress(false);
     var closeAll = $('closeAllBtn');
-    if (closeAll) closeAll.disabled = state.busy || !acct.positions.length;
+    if (closeAll) closeAll.disabled = state.busy;
+  }
+
+  /* The line above the button: a paused or coming-soon market (with an open one to switch to), or
+     too little HYPE for gas. Rebuilt only when its words change. */
+  function renderTicketNotice(text, alt) {
+    var n = $('ticketNotice');
+    if (!n) return;
+    var key = (text || '') + '|' + (alt ? alt.symbol : '');
+    if (n.getAttribute('data-key') === key) return;
+    n.setAttribute('data-key', key);
+    n.textContent = '';
+    n.hidden = !text;
+    if (!text) return;
+    n.appendChild(document.createTextNode(text));
+    if (alt) {
+      var b = el('button', 'btn btn-sm btn-block', 'Trade ' + alt.symbol + ' instead');
+      b.type = 'button';
+      b.addEventListener('click', function () { selectMarket(alt.symbol); });
+      n.appendChild(b);
+    }
   }
 
   function initForm() {
-    var seg = $('sideSeg');
+    var pair = $('sidePair');
     var marginInput = $('marginInput');
     var slider = $('levSlider');
     var levInput = $('levInput');
     var formEl = $('orderForm');
 
     form.side = lsGet(LS.side) === 'short' ? 'short' : 'long';
+    /* the amount box starts ready: $10, or the last amount used */
+    var saved = Number(lsGet(LS.amount));
+    form.margin = isFinite(saved) && saved >= MIN_MARGIN ? Math.floor(saved * 100) / 100 : MIN_MARGIN;
+    if (marginInput) marginInput.value = String(form.margin);
     renderSide();
+    renderAmountChips();
 
-    if (seg) {
-      seg.addEventListener('click', function (ev) {
+    if (pair) {
+      pair.addEventListener('click', function (ev) {
         var b = ev.target && ev.target.closest ? ev.target.closest('[data-side]') : null;
+        if (!b || b.disabled) return;
+        setSide(b.getAttribute('data-side'));
+        tourEvent('side');
+      });
+    }
+    /* phones: the pinned bar picks the side and opens the ticket sheet */
+    var bar = $('mbarPair');
+    if (bar) {
+      bar.addEventListener('click', function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest('[data-open-side]') : null;
         if (!b) return;
-        form.side = b.getAttribute('data-side') === 'short' ? 'short' : 'long';
-        lsSet(LS.side, form.side);
-        renderSide(); renderForm(); renderAction();
+        setSide(b.getAttribute('data-open-side'));
+        openSheet();
+        tourEvent('side');
       });
     }
     if (marginInput) {
       marginInput.addEventListener('input', function () {
         var v = Number(marginInput.value);
-        form.margin = isFinite(v) && v > 0 ? v : NaN;
-        renderForm(); renderAction();
+        form.margin = marginInput.value !== '' && isFinite(v) && v > 0 ? v : NaN;
+        form.touched = true; form.maxed = false;
+        renderAmountChips(); renderForm(); renderAction();
+      });
+      marginInput.addEventListener('change', function () { tourEvent('amount'); });
+    }
+    /* Enter in the amount or leverage box only commits the number: a trade needs the button */
+    [marginInput, levInput].forEach(function (inp) {
+      if (inp) inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
+    });
+    var amt = $('amtChips');
+    if (amt) {
+      amt.addEventListener('click', function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest('[data-amt]') : null;
+        if (!b) return;
+        var v = b.getAttribute('data-amt');
+        var next = MIN_MARGIN;
+        form.maxed = false;
+        if (v === 'max') {
+          /* Max is the whole balance; that trade gets the check first */
+          var all = acct.loaded ? Math.floor(acct.available * 100) / 100 : NaN;
+          if (all > 0) { next = all; form.maxed = true; }
+          else if (wallet.account && acct.loaded) toast('Your balance is ' + fmtUsd(acct.available) + '. Add USDC to trade.');
+        } else next = Number(v);
+        form.margin = next; form.touched = true;
+        if (marginInput) marginInput.value = String(next);
+        renderAmountChips(); renderForm(); renderAction();
+        tourEvent('amount');
       });
     }
-    var quick = document.querySelectorAll('#orderForm .quick [data-mult]');
-    for (var i = 0; i < quick.length; i++) {
-      quick[i].addEventListener('click', function (ev) {
-        var mult = ev.currentTarget.getAttribute('data-mult');
-        var base = isFinite(form.margin) ? form.margin : MIN_MARGIN;
-        var next = mult === 'max' ? acct.available : base * Number(mult);
-        next = Math.floor(next * 100) / 100;
-        if (acct.loaded) next = Math.min(next, Math.floor(acct.available * 100) / 100);
-        next = Math.max(MIN_MARGIN, next);
-        form.margin = next;
-        if (marginInput) marginInput.value = String(next);
-        renderForm(); renderAction();
+    var chips = $('levChips');
+    if (chips) {
+      chips.addEventListener('click', function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest('[data-lev]') : null;
+        if (!b) return;
+        var v = b.getAttribute('data-lev');
+        if (v === 'custom') { form.levCustom = true; renderLeverage(); }
+        else { form.levCustom = false; setLev(Number(v)); }
+        tourEvent('lev');
       });
     }
     if (slider) {
+      /* the slider leaves its own thumb alone while dragging; everything else follows */
       slider.addEventListener('input', function () {
-        form.lev = levFromSlider(Number(slider.value), state.market ? maxLev(state.market) : 1000);
+        var max = state.market ? maxLev(state.market) : 1000;
+        form.levCustom = true;
+        form.lev = levFromSlider(Number(slider.value), max);
         if (levInput) levInput.value = String(form.lev);
         if (state.market) lsSet(LS.lev + state.market.symbol, String(form.lev));
-        renderForm(); renderAction();
+        setText('levNow', form.lev + 'x');
+        renderLevChips(max); renderForm(); renderAction();
       });
+      slider.addEventListener('change', function () { tourEvent('lev'); });
     }
     if (levInput) {
       levInput.addEventListener('input', function () {
         var v = Math.round(Number(levInput.value));
         if (!isFinite(v) || v < 1) return;
-        form.lev = clamp(v, 1, state.market ? maxLev(state.market) : 1000);
-        if (slider) slider.value = String(sliderFromLev(form.lev, state.market ? maxLev(state.market) : 1000));
+        var max = state.market ? maxLev(state.market) : 1000;
+        form.levCustom = true;
+        form.lev = clamp(v, 1, max);
+        if (slider) slider.value = String(sliderFromLev(form.lev, max));
         if (state.market) lsSet(LS.lev + state.market.symbol, String(form.lev));
-        renderForm(); renderAction();
+        setText('levNow', form.lev + 'x');
+        renderLevChips(max); renderForm(); renderAction();
       });
       levInput.addEventListener('blur', function () { renderLeverage(); });
     }
@@ -1753,17 +2065,159 @@
         onAction();
       });
     }
+    /* Details starts closed and remembers being opened */
+    var details = $('detailsBox');
+    if (details) {
+      details.open = lsGet(LS.details) === '1';
+      details.addEventListener('toggle', function () { lsSet(LS.details, details.open ? '1' : '0'); });
+    }
+    var x = $('sheetClose');
+    if (x) x.addEventListener('click', closeSheet);
+    var scrim = $('sheetScrim');
+    if (scrim) scrim.addEventListener('click', closeSheet);
+    var chip = $('posChip');
+    if (chip) chip.addEventListener('click', showPositions);
+    var bs = $('barStatus');
+    if (bs) bs.addEventListener('click', function () { if (tk.phase) openSheet(); else showPositions(); });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && ui.sheet && !tour.on) closeSheet(); });
+    /* every "If a fill is slow, ask my wallet to finish it" box is the same setting */
+    document.addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (t && t.hasAttribute && t.hasAttribute('data-autofill')) { lsSet(LS.autoFill, t.checked ? '1' : '0'); syncAutoFill(); }
+    });
+    syncAutoFill();
+    watchPosPanel();
+  }
+
+  function syncAutoFill() {
+    var on = autoFillEnabled();
+    Array.prototype.forEach.call(document.querySelectorAll('input[data-autofill]'), function (c) { c.checked = on; });
   }
 
   function onAction() {
-    if (state.busy) return;
+    if (state.busy || tk.phase) return;
+    if (marketBlock()) { renderAction(); return; }
     if (!window.ethers) return;
-    if (!wallet.account) { connect(); return; }
-    if (wallet.chainId !== CHAIN_ID) { switchChain().then(function () { return onChainChanged(); }).catch(function (e) { toast(describeError(e), 'err'); }); return; }
-    if (!hasExchange()) return;
+    if (!wallet.account) { if (wallet.eth || getInjected()) connect(); else openWalletApps(); return; }
+    if (wallet.chainId !== CHAIN_ID) { switchChain().then(function () { return onChainChanged(); }).catch(switchFailed); return; }
+    if (!hasExchange() || !acct.loaded) return;
     if (acct.available < MIN_MARGIN) { openDeposit(); return; }
-    if (orderProblem()) { renderAction(); return; }
+    if (!(form.margin > 0) || orderProblem()) { renderAction(); return; }
+    if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') {
+      confirmOpen().then(function (yes) { if (yes && !state.busy && !tk.phase && !orderProblem()) submitOpen(); });
+      return;
+    }
     submitOpen();
+  }
+
+  /* The check before a big trade (100x and up, or Max): the trade in one short read, then the
+     wallet. "Don't ask again" is remembered (LS.noConfirm). */
+  function confirmOpen() {
+    var m = state.market;
+    var sz = m.szDecimals;
+    var isLong = form.side === 'long';
+    var px = openPriceFor(m);
+    var liq = bustPriceNum(px, isLong, form.lev);
+    var win = px > 0 ? estimateClose(pretendPos(px, form.margin), m.inst, px * (isLong ? 1.01 : 0.99), true) : null;
+    var lines = [
+      fmtUsdShort(form.margin) + ' at ' + form.lev + 'x = a ' + fmtUsd(form.margin * form.lev) + ' position.',
+      'Opens near ' + fmtPrice(px, sz) + ' in about ' + fillSecs() + ' s.',
+      { text: 'Liquidated at ' + fmtPrice(liq, sz) + ' (' + (isLong ? '-' : '+') + fmtMove(bustMovePct(form.lev)) + '%): you lose ' + fmtUsdShort(form.margin) + '.', cls: 'neg' },
+      { text: 'If ' + m.symbol + (isLong ? ' rises' : ' falls') + ' 1%: ' + (win ? fmtUsd(win.pnl, true) : '—') + '.', cls: 'pos' }
+    ];
+    var cap = ticketCapUsd();
+    if (isFinite(cap)) lines.push('Wins above ' + fmtUsd(cap) + ' are capped.');
+    return askConfirm({
+      title: (isLong ? 'BUY / LONG ' : 'SELL / SHORT ') + m.symbol,
+      lines: lines,
+      ok: 'OPEN POSITION', okClass: isLong ? 'go-long' : 'go-short', back: 'Back', skipKey: LS.noConfirm
+    });
+  }
+
+  /* One dialog for every check (a big trade, Close all, disconnect). Resolves true on the OK
+     button, false on Back, the cross, Esc or a click outside. */
+  var confirmDone = null;
+  function askConfirm(o) {
+    var d = $('confirmModal');
+    if (!d) return Promise.resolve(true);
+    if (confirmDone) confirmDone(false);
+    setText('confirmTitle', o.title || 'Are you sure?');
+    var body = $('confirmBody');
+    if (body) {
+      body.textContent = '';
+      (o.lines || []).forEach(function (l) {
+        var t = typeof l === 'string' ? { text: l } : l;
+        body.appendChild(el('p', t.cls || null, t.text));
+      });
+    }
+    var skipRow = $('confirmSkipRow'), skip = $('confirmSkip');
+    if (skipRow) skipRow.hidden = !o.skipKey;
+    if (skip) skip.checked = false;
+    var ok = $('confirmOk');
+    if (ok) { ok.textContent = o.ok || 'Confirm'; ok.className = 'btn btn-lg btn-go ' + (o.okClass || 'btn-primary'); }
+    setText('confirmBack', o.back || 'Back');
+    return new Promise(function (resolve) {
+      confirmDone = function (yes) {
+        confirmDone = null;
+        if (yes && o.skipKey && skip && skip.checked) lsSet(o.skipKey, '1');
+        closeDialog('confirmModal');
+        resolve(!!yes);
+      };
+      openDialog('confirmModal');
+    });
+  }
+
+  /* No wallet in this browser (mostly a phone browser): links that open this page in a wallet app. */
+  function openWalletApps() {
+    var page = (/^https:$/.test(location.protocol) ? location.origin + location.pathname : SITE_URL + 'trade.html') + (location.hash || '');
+    var bare = page.replace(/^https:\/\//, '');
+    var mm = $('waMetaMask'), cb = $('waCoinbase'), okx = $('waOkx');
+    if (mm) mm.href = 'https://metamask.app.link/dapp/' + bare;
+    if (cb) cb.href = 'https://go.cb-w.com/dapp?cb_url=' + encodeURIComponent(page);
+    if (okx) okx.href = 'okx://wallet/dapp/url?dappUrl=' + encodeURIComponent(page);
+    var copy = $('waCopy');
+    if (copy) copy.setAttribute('data-link', page);
+    openDialog('walletAppModal');
+  }
+
+  /* ---- phones: the ticket as a bottom sheet ---------------------------------------- */
+
+  function isSheetMode() { return !!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches); }
+
+  function openSheet() {
+    if (!isSheetMode()) return;
+    ui.sheet = true;
+    document.body.classList.add('sheet-open');
+    var s = $('sheetScrim');
+    if (s) s.hidden = false;
+    renderTicketProgress(false);
+  }
+
+  function closeSheet() {
+    if (!ui.sheet && !document.body.classList.contains('sheet-open')) return;
+    ui.sheet = false;
+    document.body.classList.remove('sheet-open');
+    var s = $('sheetScrim');
+    if (s) s.hidden = true;
+    renderTicketProgress(false);
+  }
+
+  /* The chip over the bar only shows while the positions panel is out of view. */
+  function watchPosPanel() {
+    var p = $('posPanel');
+    if (!p || typeof IntersectionObserver !== 'function') return;
+    new IntersectionObserver(function (entries) {
+      ui.posInView = entries.some(function (e) { return e.isIntersecting; });
+      renderPosChip();
+    }, { threshold: 0.15 }).observe(p);
+  }
+
+  /* The positions panel in view, the sheet out of the way; with a selector, that card (the one
+     just opened) instead of the top of the panel. */
+  function showPositions(sel) {
+    closeSheet();
+    var p = (typeof sel === 'string' && document.querySelector(sel)) || $('posPanel');
+    if (p && p.scrollIntoView) p.scrollIntoView({ block: typeof sel === 'string' ? 'center' : 'start', behavior: 'smooth' });
   }
 
   /* ---- read provider and contract reads -------------------------------------- */
@@ -1808,6 +2262,7 @@
   var instrumentsInFlight = false;
 
   function loadInstruments() {
+    if (DEMO) return Promise.resolve();
     if (!read.exchange || instrumentsInFlight) return Promise.resolve();
     instrumentsInFlight = true;
     var ex = read.exchange;
@@ -1841,6 +2296,7 @@
   }
 
   function refreshHouse() {
+    if (DEMO) return Promise.resolve();
     var ex = read.exchange;
     if (!ex) {
       return read.provider ? read.provider.getBlock('latest').then(function (b) { noteBlock(b); renderStatus(); }).catch(function () {}) : Promise.resolve();
@@ -1874,6 +2330,7 @@
      none: the call reverts and one-click stays off). An exchange that does not settle in native
      USDC gets no deposit (requireSigner refuses). */
   function loadHouseAddresses() {
+    if (DEMO) return Promise.resolve();
     var ex = read.exchange;
     if (!ex) return Promise.resolve();
     var E = window.ethers;
@@ -1907,6 +2364,7 @@
 
   /* The deposit factory from config, kept only if it deposits into this exchange in native USDC. */
   function loadFactory() {
+    if (DEMO) return Promise.resolve();
     var a = cfg.contracts.depositFactory;
     if (!isAddr(a) || !read.exchange) return Promise.resolve();
     var f = new window.ethers.Contract(a, FACTORY_ABI, read.provider);
@@ -1928,6 +2386,7 @@
   }
 
   function refreshMarketChain() {
+    if (DEMO) return Promise.resolve();
     var m = state.market;
     var ex = read.exchange;
     if (!m || !ex || m.instrumentId == null) return Promise.resolve();
@@ -1948,6 +2407,7 @@
 
   /* Three reads on the v2 Exchange, at most every V2_EVERY_MS per account, for the Status tab's v2 link. */
   function refreshV2Link() {
+    if (DEMO) return Promise.resolve();
     var a = wallet.account;
     if (!a || !read.v2) { v2link.show = false; renderV2Link(); return Promise.resolve(); }
     if (v2link.account === a && Date.now() - v2link.at < V2_EVERY_MS) return Promise.resolve();
@@ -1957,16 +2417,22 @@
     return Promise.all([ex.balanceOf(a), ex.marginInUse(a), ex.pendingOf(a)]).then(function (r) {
       if (wallet.account !== a) return;
       v2link.show = r[0] > 0n || r[1] > 0n || r[2] > 0n;
+      v2link.total = usd6ToNum(r[0]) + usd6ToNum(r[1]) + usd6ToNum(r[2]);
       renderV2Link();
     }, function () { v2link.at = 0; });
   }
 
+  /* A banner, only while the old exchange still holds this account's money: "You have $X on the
+     old exchange. [Move it]" (v2.html). */
   function renderV2Link() {
-    var l = $('stV2');
-    if (l) l.hidden = !(v2link.show && wallet.account && wallet.account === v2link.account);
+    var b = $('v2Banner');
+    var on = !!(v2link.show && wallet.account && wallet.account === v2link.account);
+    if (b) b.hidden = !on;
+    if (on) setText('v2Amt', v2link.total > 0 ? fmtUsd(v2link.total) : 'money');
   }
 
   function refreshAccount() {
+    if (DEMO) { demoRefresh(); return Promise.resolve(); }
     refreshV2Link();
     if (!wallet.account || !read.exchange) return Promise.resolve();
     var ex = read.exchange;
@@ -1993,9 +2459,17 @@
             deadbandBps: Number(p.deadbandBps), payoutCapX: Number(p.payoutCapX), feeBps: Number(p.feeBps),
             preview: pv ? { pnl: usd6ToNum(pv.pnlUsdc), fee: usd6ToNum(pv.feeUsdc), payout: usd6ToNum(pv.payoutUsdc) } : null
           });
+          var known = acct.closeReqs[String(ids[i])];
           if (cr && Number(cr.requestedAt) > 0) {
-            var known = acct.closeReqs[String(ids[i])];
-            closeReqs[String(ids[i])] = { requestedAt: Number(cr.requestedAt), px0: px18ToNum(cr.px0), block: known ? known.block : null, busy: !!(known && known.busy) };
+            /* what the page is doing about it carries over: the wallet prompt asked once, the late text shown */
+            closeReqs[String(ids[i])] = {
+              requestedAt: Number(cr.requestedAt), px0: px18ToNum(cr.px0), block: known ? known.block : null, busy: !!(known && known.busy),
+              prompted: !!(known && known.prompted), lateSeen: known ? known.lateSeen || 0 : 0, lateToast: !!(known && known.lateToast),
+              localAt: known ? known.localAt : 0
+            };
+          } else if (known && known.localAt && Date.now() - known.localAt < 15000) {
+            /* a close this page filed a moment ago that this read (sent earlier) cannot see yet */
+            closeReqs[String(ids[i])] = known;
           }
         });
         positions.sort(function (x, y) { return x.id < y.id ? -1 : x.id > y.id ? 1 : 0; });
@@ -2005,13 +2479,35 @@
         return Promise.all(instIds.map(readOraclePx)).then(function (opx) {
           if (wallet.account !== a) return;
           instIds.forEach(function (id, i) { if (opx[i] != null) house.oraclePxById[id] = opx[i]; });
+          var before = acct.loaded && acct.owner === a ? acct.positions : null;
+          var have = {};
+          positions.forEach(function (p) { have[String(p.id)] = true; });
+          /* A close request this page was following whose position is gone from this read: the
+             keeper filled it (or it was liquidated) between two reads, before the poll saw the
+             request go. Look the end up from the request's block, so the result card still comes. */
+          if (before) {
+            Object.keys(acct.closeReqs).forEach(function (pid) {
+              if (have[pid] || closeReqs[pid] || ui.checking[pid] || ui.reported[pid]) return;
+              var old = acct.closeReqs[pid];
+              var gone = null;
+              before.forEach(function (p) { if (String(p.id) === pid) gone = p; });
+              ui.checking[pid] = gone || true;
+              resolveCloseOutcome(pid, old, 0);
+            });
+          }
           acct.available = usd6ToNum(r[0]);
           acct.marginInUse = usd6ToNum(r[1]);
           acct.pending = usd6ToNum(r[3]);
           acct.positions = positions;
           acct.closeReqs = closeReqs;
           acct.loaded = true;
+          acct.owner = a;
+          Object.keys(ui.settling).forEach(function (k) { if (!have[k]) delete ui.settling[k]; });
+          if (before) noticeVanished(before, positions, a);
+          /* the last block seen moves on only once "while you were away" has read up to now */
+          if (house.block && ui.awayDone[a] === 'done') lsSet(LS.seen + a.toLowerCase(), String(house.block));
           renderAccount(); renderPositions(); renderAction(); renderStatus();
+          refreshOwed();
           return discoverPendingOpens();
         });
       });
@@ -2020,20 +2516,156 @@
     });
   }
 
+  /* The wallet's own USDC and allowance (the Add USDC dialog) and its HYPE (gas: under 0.005 the
+     ticket and the dialog say so before a transaction fails). */
   function refreshWalletUsdc() {
+    if (DEMO) { renderDepositModal(); return Promise.resolve(); }
     var E = window.ethers;
     var addr = usdcAddress();
     if (!wallet.account || !read.provider || !isAddr(addr)) return Promise.resolve();
     var usdc = new E.Contract(addr, ERC20_ABI, read.provider);
     var spender = hasExchange() ? cfg.contracts.exchange : null;
+    var a = wallet.account;
     return Promise.all([
-      usdc.balanceOf(wallet.account),
-      spender ? usdc.allowance(wallet.account, spender) : Promise.resolve(0n)
+      usdc.balanceOf(a),
+      spender ? usdc.allowance(a, spender) : Promise.resolve(0n),
+      read.provider.getBalance(a).catch(function () { return null; })
     ]).then(function (r) {
+      if (wallet.account !== a) return;
       acct.walletUsdc = usd6ToNum(r[0]);
       acct.allowance = usd6ToNum(r[1]);
-      renderDepositModal();
+      ui.hypeWei = r[2] == null ? null : BigInt(r[2]);
+      renderDepositModal(); renderAction();
     }).catch(function () {});
+  }
+
+  /* Wins owed to this account: the payout queue read the way the House page reads it (live entries
+     from queueHead, at most OWED_SCAN), summed for this account, with its first entry's place in
+     line. Only while the queue has live entries, at most once every OWED_EVERY_MS, and only when
+     the account or the queue (head, length, total) changed since the last read: the public RPC
+     takes one request per entry and rate-limits, and the trade flow's own reads come first. */
+  var OWED_SCAN = 20, OWED_EVERY_MS = 60000;
+  function refreshOwed() {
+    var a = wallet.account;
+    if (DEMO || !a || !read.exchange || house.queueLen == null || !(house.queueLen > house.queueHead)) {
+      ui.owedSig = '';
+      if (acct.owed) { acct.owed = 0; acct.owedAt = 0; renderAccount(); }
+      return Promise.resolve();
+    }
+    var sig = [a, house.queueHead, house.queueLen, house.queued].join('|');
+    if (sig === ui.owedSig || Date.now() - ui.owedAt < OWED_EVERY_MS) return Promise.resolve();
+    ui.owedSig = sig; ui.owedAt = Date.now();
+    var ex = read.exchange, idx = [];
+    for (var i = house.queueHead; i < Math.min(house.queueLen, house.queueHead + OWED_SCAN); i++) idx.push(i);
+    return Promise.all(idx.map(function (i) {
+      return ex.queueEntry(i).then(function (q) { return { i: i, to: String(q[0]).toLowerCase(), owed: usd6ToNum(q[1]) }; });
+    })).then(function (rows) {
+      if (wallet.account !== a) return;
+      var sum = 0, first = 0;
+      rows.forEach(function (r) { if (r.to === a.toLowerCase() && r.owed > 0) { sum += r.owed; if (!first) first = r.i - house.queueHead + 1; } });
+      acct.owed = sum; acct.owedAt = first;
+      renderAccount();
+    }).catch(function () { ui.owedSig = ''; /* the next read after OWED_EVERY_MS tries again */ });
+  }
+
+  /* Positions that were there last read and are gone now, whose end this page has not reported
+     and is not already looking up: liquidated, closed from somewhere else, or closed from here by
+     a path that missed it. Each is looked up in the logs (which say which) and gets its result
+     card, instead of a card that silently disappears. */
+  function noticeVanished(before, now, account) {
+    var have = {};
+    now.forEach(function (p) { have[String(p.id)] = true; });
+    before.forEach(function (p) {
+      var pid = String(p.id);
+      if (have[pid] || ui.checking[pid] || ui.reported[pid]) return;
+      ui.reported[pid] = 'looking';
+      lookupVanished(p, account);
+    });
+  }
+
+  /* The log node can lag the read node: a few tries, then a plain card ("no longer open"). */
+  function lookupVanished(p, account, attempt) {
+    var prov = read.logProvider;
+    if (!prov || !exIface) return;
+    attempt = attempt || 0;
+    var pid = String(p.id);
+    var t = function (n) { return exIface.getEvent(n).topicHash; };
+    var from = Math.max(Number(cfg.deployBlock) || 0, (house.block || 0) - 5000);
+    function giveUp() {
+      if (ui.reported[pid] !== 'looking') return;
+      ui.reported[pid] = true;
+      addRecent({ key: 'c' + pid, pid: pid, title: posLabel(p) + ' is no longer open', lines: ['History shows how it ended.'], ttl: 60000 });
+    }
+    prov.getLogs({ address: cfg.contracts.exchange, fromBlock: from, toBlock: 'latest', topics: [[t('PositionLiquidated'), t('PositionClosed')], topicId(pid)] }).then(function (logs) {
+      if (wallet.account !== account) return;
+      var hits = parsedLogs(logs).filter(function (h) { return String(h.args.positionId) === pid; });
+      if (!hits.length) throw new Error('not yet');
+      if (ui.reported[pid] === 'looking') delete ui.reported[pid];
+      reportCloseOutcome(pid, logs, hits[hits.length - 1].tx, p);
+    }).catch(function () {
+      if (wallet.account !== account) return;
+      if (attempt + 1 < 4) setTimeout(function () { lookupVanished(p, account, attempt + 1); }, 2000);
+      else giveUp();
+    });
+  }
+
+  /* While you were away: liquidations and owed wins paid since the last block this browser saw for
+     the account (LS.seen), once per account per visit, one card. The log node refuses ranges over
+     100,000 blocks, so the walk goes in cfg.logChunkBlocks chunks (halved when a chunk is refused),
+     at most AWAY_MAX_BLOCKS back. LS.seen moves on (refreshAccount) only after the walk is done. */
+  var AWAY_MAX_BLOCKS = 200000;
+  function scanAway(account) {
+    if (DEMO || !account || ui.awayDone[account] || !read.logProvider || !exIface || !hasExchange()) return;
+    var last = Number(lsGet(LS.seen + account.toLowerCase()));
+    if (!(last > 0)) { ui.awayDone[account] = 'done'; return; }
+    ui.awayDone[account] = 'running';
+    var E = window.ethers;
+    var prov = read.logProvider;
+    var t = function (n) { return exIface.getEvent(n).topicHash; };
+    var topics = [[t('PositionLiquidated'), t('QueuePaid')], null, E.zeroPadValue(account, 32)];
+    var found = [];
+    var chunk = Math.max(1000, Number(cfg.logChunkBlocks) || 20000);
+    function walk(from, latest) {
+      if (from > latest || wallet.account !== account) return Promise.resolve();
+      var to = Math.min(latest, from + chunk - 1);
+      return prov.getLogs({ address: cfg.contracts.exchange, fromBlock: from, toBlock: to, topics: topics }).then(function (logs) {
+        found = found.concat(logs || []);
+        return walk(to + 1, latest);
+      }, function (e) {
+        if (chunk <= 1000) throw e;
+        chunk = Math.max(1000, Math.floor(chunk / 2));
+        return walk(from, latest);
+      });
+    }
+    prov.getBlockNumber().then(function (latest) {
+      latest = Number(latest);
+      if (latest <= last) return false;
+      return walk(Math.max(last + 1, latest - AWAY_MAX_BLOCKS), latest).then(function () { return true; });
+    }).then(function (scanned) {
+      if (wallet.account !== account) { ui.awayDone[account] = 'failed'; return; }
+      ui.awayDone[account] = 'done';
+      if (!scanned) return;
+      var lines = [], lost = false;
+      parsedLogs(found).forEach(function (h) {
+        if (h.name === 'PositionLiquidated') {
+          var pid = String(h.args.positionId);
+          ui.reported[pid] = true;
+          lost = true;
+          var mi = hist.openedMarket[pid];
+          var inst = mi != null ? state.byInstId[mi] : null;
+          var side = hist.openedSide[pid];
+          var sym = inst && inst.market ? inst.market.symbol : null;
+          var what = sym ? 'Your ' + sym + (side ? ' ' + String(side).toLowerCase() : '') : 'A position';
+          lines.push(what + ' was liquidated at ' + fmtPrice(px18ToNum(h.args.exitPx18), sym ? inst.market.szDecimals : null) + '. Its ' + fmtUsd(usd6ToNum(h.args.marginUsdc)) + ' is gone.');
+        } else if (h.name === 'QueuePaid') {
+          lines.push('An owed win of ' + fmtUsd(usd6ToNum(h.args.paidUsdc)) + ' was paid into your balance.');
+        }
+      });
+      if (lines.length) addRecent({ key: 'away', cls: lost ? 'is-loss' : 'is-win', title: 'While you were away', lines: lines.slice(0, 6) });
+    }).catch(function () {
+      /* best effort; History has the full list. LS.seen stays put, so the next visit tries again */
+      ui.awayDone[account] = 'failed';
+    });
   }
 
   /* ---- account and positions rendering ---------------------------------------- */
@@ -2070,83 +2702,193 @@
     return any ? sum : (acct.positions.length ? NaN : 0);
   }
 
+  /* The account line at the top of the ticket: Balance · In trades · P&L, with + Deposit and
+     Withdraw. Hidden until a wallet is connected. */
   function renderAccount() {
+    var strip = $('acctStrip');
+    if (strip) strip.hidden = !wallet.account;
+    var mini = $('acctMini');
+    if (mini) mini.hidden = !wallet.account;
     if (!wallet.account || !hasExchange() || !acct.loaded) {
-      ['eqEquity', 'eqAvailable', 'eqMargin', 'eqPnl'].forEach(function (id) { setText(id, '—'); });
-      var pe = $('eqPnl'); if (pe) pe.className = 'kv-val';
+      ['eqAvailable', 'eqMargin', 'eqPnl'].forEach(function (id) { setText(id, '—'); });
+      var pe = $('eqPnl'); if (pe) pe.className = '';
+      renderMiniAccount('—', '');
+      renderPosChip();
       return;
     }
     var pnl = openPnl();
     setText('eqAvailable', fmtUsd(acct.available));
     setText('eqMargin', fmtUsd(acct.marginInUse + acct.pending));
     var marginEl = $('eqMargin');
-    if (marginEl) marginEl.title = acct.pending > 0 ? fmtUsd(acct.pending) + ' of it in requests still filling' : '';
-    setText('eqEquity', fmtUsd(acct.available + acct.marginInUse + acct.pending + (isFinite(pnl) ? pnl : 0)));
+    if (marginEl) marginEl.title = acct.pending > 0 ? fmtUsd(acct.pending) + ' of it in trades still opening' : '';
     var pnlEl = $('eqPnl');
     if (pnlEl) {
       pnlEl.textContent = fmtUsd(pnl, true);
-      pnlEl.className = 'kv-val ' + (pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '');
+      pnlEl.className = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
     }
+    var owedText = acct.owed > 0 ? 'Owed to you: ' + fmtUsd(acct.owed) + (acct.owedAt ? ' · #' + acct.owedAt + ' in line' : '') + ' · paid automatically' : '';
+    var owed = $('acctOwed');
+    if (owed) {
+      owed.hidden = !owedText;
+      if (owedText) owed.textContent = owedText;
+    }
+    renderMiniAccount(fmtUsd(acct.available), owedText);
+    renderPosChip();
   }
 
-  function sideLev(isLong, lev) { return (isLong ? 'long' : 'short') + ' ' + lev + 'x'; }
+  /* Phones: "Balance $X · [+ Deposit] [Withdraw]" at the top of Your positions (the ticket's strip
+     sits in the sheet, which opens only from BUY / LONG or SELL / SHORT). Filled through classes. */
+  function renderMiniAccount(bal, owedText) {
+    var mini = $('acctMini');
+    if (!mini) return;
+    var b = mini.querySelector('.js-bal');
+    if (b && b.textContent !== bal) b.textContent = bal;
+    var o = mini.querySelector('.js-owed');
+    if (o) { o.hidden = !owedText; if (owedText && o.textContent !== owedText) o.textContent = owedText; }
+  }
+
+  /* Phones: "Your positions (2) · +$0.36" over the bar; a tap scrolls to the cards. */
+  function renderPosChip() {
+    var chip = $('posChip');
+    if (!chip) return;
+    var n = wallet.account && acct.loaded ? acct.positions.length + pendingOpenList().length : 0;
+    chip.hidden = !n || ui.posInView;
+    if (!n) return;
+    var pnl = openPnl();
+    chip.textContent = 'Your positions (' + n + ')' + (acct.positions.length && isFinite(pnl) ? ' · P&L ' + fmtUsd(pnl, true) : '');
+  }
+
+  function sideLev(isLong, lev) { return (isLong ? 'Long' : 'Short') + ' ' + lev + 'x'; }
+
+  /* "DOGE Long 20x" */
+  function posLabel(p) {
+    var m = positionMarket(p);
+    return (m ? m.symbol : 'Market ' + p.instrumentId) + ' ' + sideLev(p.isLong, p.leverage);
+  }
+
+  function reqSym(r) {
+    var inst = state.byInstId[r.instrumentId];
+    return inst && inst.market ? inst.market.symbol : 'Market ' + r.instrumentId;
+  }
+
+  function posById(pid) {
+    pid = String(pid);
+    for (var i = 0; i < acct.positions.length; i++) if (String(acct.positions[i].id) === pid) return acct.positions[i];
+    return null;
+  }
+
+  function szOf(sym) { var m = state.bySym[sym]; return m ? m.szDecimals : null; }
 
   function clearLines(host) {
     var lines = host.querySelectorAll('.pos-line');
     for (var i = 0; i < lines.length; i++) host.removeChild(lines[i]);
   }
 
-  /* Fill the live PnL span of one position line. Only this span depends on the price. */
-  function fillPositionPnl(line, p) {
+  /* Set the text of the [data-role] element under host (only when it changed); returns it. */
+  function setRole(host, role, text) {
+    var n = host.querySelector('[data-role="' + role + '"]');
+    if (n && n.textContent !== text) n.textContent = text;
+    return n;
+  }
+
+  /* A position's liquidation price, how far the price now is from it, and its colour: amber
+     under half of the full liquidation move, red under a fifth. */
+  function liqRoom(p, px) {
+    var liq = px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage));
+    var out = { liq: liq, away: NaN, cls: '' };
+    if (!(px > 0) || !(liq > 0)) return out;
+    out.away = Math.max(0, p.isLong ? (px - liq) / px : (liq - px) / px);
+    var share = out.away / (bustMovePct(p.leverage) / 100);
+    out.cls = share < 0.2 ? 'is-red' : share < 0.5 ? 'is-amber' : '';
+    return out;
+  }
+
+  /* The live parts of a position card: P&L in $ and %, the price now (the oracle, what a close
+     settles on), the liquidation line and what a close gives back. */
+  function fillPositionPnl(card, p) {
     var m = positionMarket(p);
+    var sz = m ? m.szDecimals : null;
     var px = closePriceFor(p);
     var est = positionEstimate(p);
-    var span = line.querySelector('[data-role="pnl"]');
-    if (!span) return;
     var known = isFinite(px) || !!p.preview;
-    span.textContent = known ? fmtUsd(est.pnl, true) : '—';
-    span.className = est.pnl > 0 ? 'pos' : est.pnl < 0 ? 'neg' : '';
-    span.title = known && !est.flat
-      ? (isFinite(px) ? 'exit ' + fmtPrice(px, m ? m.szDecimals : null) + ' · ' : '') + 'payout ' + fmtUsd(est.payout) + (est.fee ? ' · fee ' + fmtUsd(est.fee) : '')
-      : '';
+    var pnl = card.querySelector('[data-role="pnl"]');
+    if (pnl) {
+      var t = known ? fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')' : '—';
+      if (pnl.textContent !== t) pnl.textContent = t;
+      pnl.className = 'pc-pnl' + (est.pnl > 0 ? ' pos' : est.pnl < 0 ? ' neg' : '');
+      pnl.title = known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') : '';
+    }
+    setRole(card, 'now', isFinite(px) ? fmtPrice(px, sz) : '—');
+    var room = liqRoom(p, px);
+    var liqEl = setRole(card, 'liq', fmtPrice(room.liq, sz) + (isFinite(room.away) ? ' (' + (room.away * 100).toFixed(room.away >= 0.01 ? 1 : 2) + '% away)' : ''));
+    if (liqEl) liqEl.className = 'pc-v' + (room.cls ? ' ' + room.cls : '');
+    card.classList.toggle('is-near', room.cls === 'is-red');
+    setRole(card, 'est', known ? 'you get back about ' + fmtUsd(est.payout) : '');
   }
 
   /* The three request windows, measured on the chain clock from the request timestamp:
        wait     before minDelay, and the keeper-only grace window after it: nobody but a keeper
-                can fill; the page shows a countdown to the end of the keeper window
+                can fill; the page counts down to the expected fill (minDelay + 1 s) and then
+                says "any second now" until the keeper window ends
        fallback from minDelay + grace + CANCEL_PAD_S until expiry - FILL_END_S: anyone may fill, at the worse
                 of the request-time and fill-time oracle prints, and the trader cannot cancel.
                 That is an option held by the public against the trader (whoever fills picks the
-                print), so the page asks the wallet to fill at once (autoFill) and offers a Fill
-                button. A fill past expiry reverts RequestExpired, so the page stops offering it
+                print), so the page shows "Taking longer than usual" with Finish now and, with the
+                trader's standing consent, asks the wallet to fill (autoFill) once that text is
+                on screen. A fill past expiry reverts RequestExpired, so the page stops offering it
                 FILL_END_S before, for inclusion, and shows the gap as waiting ('expiring').
                 Tight settings never lose the window: start = min(that, expiry - 1),
                 end = min(expiry, max(start + 1, expiry - FILL_END_S))
-       expired  after expiry + CANCEL_PAD_S: only a cancel (refund) is possible; the page offers it */
+       expired  after expiry + CANCEL_PAD_S: only a cancel (refund) is possible; the page offers it
+                as "Get $X back" (an open) or "Try again" (a close: cancel, then a new request) */
   var FILL_END_S = 2, CANCEL_PAD_S = 1;
   function fillFrom() { return Math.min(house.minDelay + house.grace + CANCEL_PAD_S, house.expiry - 1); }
   function fillEnd() { return Math.min(house.expiry, Math.max(fillFrom() + 1, house.expiry - FILL_END_S)); }
+  /* soon: the last LATE_SHOW_MS of the keeper window (never before the expected fill). The card
+     already says "Taking longer than usual" then, so when the window opens the wallet prompt
+     (autoFill) goes out at once and still has a reason on screen. */
   function requestPhase(requestedAt) {
     var e = chainNow() - requestedAt, from = fillFrom(), end = fillEnd(), to = house.expiry + CANCEL_PAD_S;
-    if (e < from) return { phase: 'wait', left: from - e };
+    if (e < from) return { phase: 'wait', left: from - e, soon: e >= Math.max(from - LATE_SHOW_MS / 1000, fillSecs()) };
     if (e <= end) return { phase: 'fallback', left: end - e };
     if (e <= to) return { phase: 'wait', left: to - e, expiring: true };
     return { phase: 'expired', left: 0 };
   }
 
-  /* Status text and button for a pending request, by phase. */
-  function requestStatusText(ph, verb) {
-    if (ph.phase === 'wait') return (ph.expiring ? 'expiring' : verb) + '… ' + Math.max(1, Math.ceil(ph.left)) + 's';
-    if (ph.phase === 'fallback') return 'anyone can fill · ' + Math.max(0, Math.floor(ph.left)) + 's';
-    return 'expired';
-  }
-
-  function requestButtonText(ph) { return ph.phase === 'expired' ? 'Cancel' : ph.phase === 'fallback' ? 'Fill now' : ''; }
-
-  function requestButtonTitle(ph) {
-    if (ph.phase === 'fallback') return 'the keeper missed: until expiry anyone may fill this at the worse of the request-time and current oracle prints, and you cannot cancel; filling it yourself now ends that';
-    if (ph.phase === 'expired') return 'the request expired: cancel it to get the margin back';
-    return '';
+  /* What a progress card says for a request (open or close) by its phase. money: the amount the
+     card speaks of. req.busy: a fill or cancel transaction for it is out. */
+  function progressView(kind, req, money) {
+    var close = kind === 'close';
+    var verb = close ? 'Closing' : 'Opening';
+    var end = close ? 'Closed' : 'Open';
+    var sent = ['Sent', 'is-done'];
+    if (req.requestedAt == null) return { steps: [sent, [verb + ' at the oracle price…', 'is-on'], [end, '']] };
+    var ph = requestPhase(req.requestedAt);
+    if (ph.phase === 'wait' && !ph.expiring && !ph.soon) {
+      var left = req.requestedAt + fillSecs() - chainNow();
+      return { steps: [sent, [verb + ' at the oracle price… ' + (left > 0.5 ? Math.ceil(left) + 's' : 'any second now'), 'is-on'], [end, '']] };
+    }
+    if (ph.phase === 'fallback' || ph.phase === 'wait') {
+      var note;
+      if (req.busy) note = 'Asking your wallet to finish it…';
+      else if (ph.expiring) note = close ? 'Almost out of time. If it does not close, your position stays open and you can try again.' : 'Almost out of time. If it does not fill, your money comes back.';
+      else note = (autoFillEnabled() && !req.prompted ? 'Your wallet will ask you to finish it' + (ph.soon ? ' in a moment. ' : '. ') : '') + 'You get the worse of the price when you asked and the price now.';
+      return {
+        cls: 'is-late', late: ph.phase === 'fallback' || !!ph.soon,
+        steps: [sent, ['Taking longer than usual.', 'is-on is-warn'], [end, '']],
+        note: note, btn: ph.phase === 'fallback' && !req.busy ? 'Finish now' : '', btnCls: 'btn-primary'
+      };
+    }
+    if (close) {
+      return {
+        cls: 'is-bad', steps: [sent, ["Close didn't go through. Your position is still open.", 'is-on is-bad'], [end, 'is-skip']],
+        btn: req.busy ? '' : 'Try again', btnCls: 'go-close', note: req.busy ? 'Clearing the old request, then closing again…' : ''
+      };
+    }
+    return {
+      cls: 'is-bad', steps: [sent, ["Didn't fill. Your " + fmtUsdShort(money) + ' is safe.', 'is-on is-bad'], [end, 'is-skip']],
+      btn: req.busy ? '' : 'Get ' + fmtUsdShort(money) + ' back', btnCls: 'btn-primary', note: req.busy ? 'Getting it back…' : ''
+    };
   }
 
   /* The trader's standing consent to the automatic fallback fill (on unless switched off). */
@@ -2174,34 +2916,75 @@
     return null;
   }
 
+  /* A request is about to go late (requestPhase soon) or is late: its card says so; when no card
+     for it is on screen, a toast says it too, so the wallet never pops up without a reason in
+     view. autoFill asks only after this has run. cards: the elements that show this request. */
+  function noteLate(req, what, cards) {
+    if (req.lateToast) return;
+    req.lateToast = true;
+    req.lateSeen = Date.now();
+    if ((cards || []).some(inView)) return;
+    toast(what + ' is taking longer than usual. ' + (autoFillEnabled() ? 'Your wallet will ask you to finish it.' : 'Tap Finish now to finish it.'), 'warn');
+  }
+
+  /* An element the user can see right now: laid out, on screen, not in the folded-away sheet. */
+  function inView(n) {
+    if (!n || !n.getBoundingClientRect) return false;
+    var r = n.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight && getComputedStyle(n).visibility !== 'hidden';
+  }
+
+  /* The elements that show an open request: the ticket's progress card when it follows it, and
+     its card under Your positions. */
+  function openReqEls(r) {
+    var out = [];
+    if (tk.phase && tk.reqId === r.id) out.push($('ticketProgress'));
+    var host = $('posLines');
+    if (host) out.push(host.querySelector('.pos-card[data-req="' + r.id + '"]'));
+    return out;
+  }
+
+  function posCardEl(pid) {
+    var host = $('posLines');
+    return host ? host.querySelector('.pos-card[data-id="' + String(pid) + '"]') : null;
+  }
+
+  /* A trade's result toast is left out when a card on screen already says it, or while the ticket
+     sheet is up (the cards show it when it closes). */
+  function resultToast(cards, text, kind, link, ttl) {
+    if (ui.sheet || (cards || []).some(inView)) return null;
+    return toast(text, kind, link, ttl);
+  }
+
   /* The moment a request enters the fallback window, ask the wallet to fill it: from then on
      anyone may fill it at the trader-worse of p0 and the print of their choosing until expiry
      (52 s by default), and the trader cannot cancel; the trader's own worst-of fill ends that
-     option. One prompt per request (a rejected prompt leaves the Fill now button); one second
-     into the window so the transaction cannot land inside the keeper window; one wallet
-     transaction at a time. Runs on the countdown tick while anything is pending. */
+     option. One prompt per request (a rejected prompt leaves the Finish now button); only once
+     noteLate has put "Taking longer than usual" on screen, which it does LATE_SHOW_MS before the
+     window opens (requestPhase soon), so the prompt is not held back. The window itself starts a
+     second after the keeper window (CANCEL_PAD_S), so the transaction cannot land inside it. One
+     wallet transaction at a time. Runs on the countdown tick while anything is pending. */
   function autoFill() {
+    if (DEMO) return;
     if (state.busy || !autoFillEnabled() || !wallet.account) return;
     if (!sessionLive() && (!wallet.signer || wallet.chainId !== CHAIN_ID)) return;
     var from = fillFrom(), end = fillEnd();
     var now = chainNow();
+    var shown = function (q) { return !!q.lateSeen; };
     var opens = pendingOpenList();
     for (var i = 0; i < opens.length; i++) {
       var r = opens[i];
-      if (r.busy || r.prompted || r.requestedAt == null) continue;
+      if (r.busy || r.prompted || r.requestedAt == null || !shown(r)) continue;
       var e = now - r.requestedAt;
       if (e >= from && e <= end) { r.prompted = true; executeOpenNow(r); return; }
     }
     var pids = Object.keys(acct.closeReqs);
     for (var j = 0; j < pids.length; j++) {
       var cr = acct.closeReqs[pids[j]];
-      if (cr.busy || cr.prompted || cr.requestedAt == null) continue;
+      if (cr.busy || cr.prompted || cr.requestedAt == null || !shown(cr)) continue;
       var e2 = now - cr.requestedAt;
       if (e2 < from || e2 > end) continue;
-      var p = null;
-      for (var k = 0; k < acct.positions.length; k++) {
-        if (String(acct.positions[k].id) === pids[j]) { p = acct.positions[k]; break; }
-      }
+      var p = posById(pids[j]);
       if (!p) continue;
       cr.prompted = true;
       executeCloseNow(p);
@@ -2209,160 +2992,464 @@
     }
   }
 
-  /* One .pos-line per pending open request: sym, #r id, side+lev, margin, p0, status, [button]. */
-  function pendingOpenLine(r) {
-    var inst = state.byInstId[r.instrumentId];
-    var m = inst && inst.market ? inst.market : null;
-    var sz = m ? m.szDecimals : null;
-    var line = el('div', 'pos-line is-pending');
-    line.setAttribute('data-req', r.id);
-    line.appendChild(el('span', 'sym', m ? m.symbol : '#' + r.instrumentId));
-    line.appendChild(el('span', 'faint xs', '#r' + r.id));
-    line.appendChild(el('span', r.isLong ? 'pos' : 'neg', sideLev(r.isLong, r.leverage)));
-    var margin = el('span', null, fmtUsd(r.margin));
-    margin.title = 'margin · size ' + fmtUsd(r.margin * r.leverage);
-    line.appendChild(margin);
-    var px = el('span', null, fmtPrice(r.px0, sz));
-    px.title = 'oracle price when you asked';
-    line.appendChild(px);
-    var status = el('span', 'faint');
-    status.setAttribute('data-role', 'status');
-    line.appendChild(status);
-    line.appendChild(el('span', 'grow'));
-    var btn = el('button', 'btn btn-sm btn-ghost');
-    btn.type = 'button';
-    btn.setAttribute('data-role', 'action');
-    btn.addEventListener('click', function () {
-      var ph = requestPhase(r.requestedAt);
-      if (ph.phase === 'fallback') executeOpenNow(r);
-      else if (ph.phase === 'expired') cancelOpenNow(r);
-    });
-    line.appendChild(btn);
-    fillRequestStatus(line, r.requestedAt, 'filling');
-    return line;
+  /* ---- progress cards: the ticket's, a request still opening, a position closing ---- */
+
+  /* A card with a title, three steps, a note, up to two buttons and, on a late request, the "ask
+     my wallet" setting. The buttons call onBtn / onBtn2, which read the state at click time. */
+  function makeProg(title, onBtn, onBtn2) {
+    var box = el('div', 'prog');
+    var t = el('div', 'prog-title', title);
+    t.setAttribute('data-role', 'title');
+    box.appendChild(t);
+    var ol = el('ol', 'prog-steps');
+    for (var i = 0; i < 3; i++) ol.appendChild(el('li'));
+    box.appendChild(ol);
+    var note = el('div', 'prog-note');
+    note.setAttribute('data-role', 'note');
+    box.appendChild(note);
+    var row = el('div', 'prog-btns');
+    var b1 = el('button', 'btn');
+    b1.type = 'button'; b1.hidden = true; b1.setAttribute('data-role', 'b1');
+    if (onBtn) b1.addEventListener('click', onBtn);
+    row.appendChild(b1);
+    var b2 = el('button', 'btn btn-ghost');
+    b2.type = 'button'; b2.hidden = true; b2.setAttribute('data-role', 'b2');
+    if (onBtn2) b2.addEventListener('click', onBtn2);
+    row.appendChild(b2);
+    box.appendChild(row);
+    var auto = el('label', 'prog-auto');
+    auto.setAttribute('data-role', 'auto');
+    auto.hidden = true;
+    var chk = el('input');
+    chk.type = 'checkbox';
+    chk.setAttribute('data-autofill', '');
+    chk.checked = autoFillEnabled();
+    auto.appendChild(chk);
+    auto.appendChild(document.createTextNode('If a fill is slow, ask my wallet to finish it (recommended)'));
+    box.appendChild(auto);
+    return box;
   }
 
-  /* Fill the status span and the action button of a pending line from its phase. */
-  function fillRequestStatus(line, requestedAt, verb) {
-    var ph = requestPhase(requestedAt);
-    var status = line.querySelector('[data-role="status"]');
-    var btn = line.querySelector('[data-role="action"]');
-    if (status) {
-      status.textContent = requestStatusText(ph, verb);
-      status.className = ph.phase === 'wait' ? 'faint' : 'neg';
+  /* v: { title, cls, steps: [[text, cls] x3], note, btn, btnCls, btnFree, btn2, late } */
+  function setProg(box, v) {
+    box.className = 'prog' + (v.cls ? ' ' + v.cls : '');
+    if (v.title != null) setRole(box, 'title', v.title);
+    var lis = box.querySelectorAll('.prog-steps li');
+    for (var i = 0; i < lis.length; i++) {
+      var s = (v.steps && v.steps[i]) || ['', ''];
+      if (lis[i].textContent !== s[0]) lis[i].textContent = s[0];
+      if (lis[i].className !== (s[1] || '')) lis[i].className = s[1] || '';
     }
-    if (btn) {
-      var label = requestButtonText(ph);
-      btn.textContent = label;
-      btn.title = requestButtonTitle(ph);
-      btn.disabled = state.busy || !label;
-      if (label) btn.removeAttribute('hidden'); else btn.setAttribute('hidden', '');
+    setRole(box, 'note', v.note || '');
+    var b1 = box.querySelector('[data-role="b1"]');
+    if (b1) {
+      if (b1.textContent !== (v.btn || '')) b1.textContent = v.btn || '';
+      b1.hidden = !v.btn;
+      b1.className = 'btn' + (v.btnCls ? ' ' + v.btnCls : '');
+      b1.disabled = !v.btnFree && state.busy;
     }
+    var b2 = box.querySelector('[data-role="b2"]');
+    if (b2) { if (b2.textContent !== (v.btn2 || '')) b2.textContent = v.btn2 || ''; b2.hidden = !v.btn2; }
+    var auto = box.querySelector('[data-role="auto"]');
+    if (auto) auto.hidden = !v.late;
   }
 
-  /* One .pos-line per open position: sym, side+lev, margin, entry, bust, pnl, [Close]. With a
-     close request pending the Close button gives way to the request status and its button. */
-  function positionLine(p) {
+  /* A request still opening: a card with the steps; its button appears only when there is
+     something to do (Finish now when late, Get $X back when expired). */
+  function pendingOpenCard(r) {
+    var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
+    card.setAttribute('data-req', r.id);
+    card.title = 'Request #r' + r.id;
+    card.appendChild(makeProg('Opening ' + sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x · ' + fmtUsdShort(r.margin), function () { openReqAction(r); }));
+    updateOpenProg(card, r);
+    return card;
+  }
+
+  function updateOpenProg(card, r) {
+    var box = card.querySelector('.prog');
+    if (box) setProg(box, progressView('open', r, r.margin));
+  }
+
+  /* Finish now (late) or Get $X back (expired) on an open request, by its phase at click time. */
+  function openReqAction(r) {
+    if (!pend.opens[r.id] || r.busy || r.requestedAt == null) return;
+    var ph = requestPhase(r.requestedAt);
+    if (ph.phase === 'fallback') executeOpenNow(r);
+    else if (ph.phase === 'expired') cancelOpenNow(r);
+  }
+
+  /* One card per open position: side, coin, leverage, P&L in $ and %, entry, now, liquidation
+     (amber, then red, as it nears), amount put in and size; CLOSE POSITION across the bottom with
+     about what it gives back. With a close on its way the button becomes the progress card. */
+  function positionCard(p) {
     var m = positionMarket(p);
     var sz = m ? m.szDecimals : null;
-    var line = el('div', 'pos-line');
-    line.setAttribute('data-id', String(p.id));
-    line.appendChild(el('span', 'sym', m ? m.symbol : '#' + p.instrumentId));
-    line.appendChild(el('span', 'faint xs', '#' + p.id));
-    line.appendChild(el('span', p.isLong ? 'pos' : 'neg', sideLev(p.isLong, p.leverage)));
-    var margin = el('span', null, fmtUsd(p.margin));
-    margin.title = 'margin · size ' + fmtUsd(p.margin * p.leverage);
-    line.appendChild(margin);
-    var entry = el('span', null, fmtPrice(p.entry, sz));
-    entry.setAttribute('data-role', 'entry'); entry.title = 'entry';
-    line.appendChild(entry);
-    var bust = el('span', 'neg', fmtPrice(px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage)), sz));
-    bust.setAttribute('data-role', 'bust'); bust.title = 'bust';
-    line.appendChild(bust);
-    var pnl = el('span');
+    var card = el('div', 'pos-card ' + (p.isLong ? 'is-long' : 'is-short'));
+    card.setAttribute('data-id', String(p.id));
+    card.title = 'Position #' + p.id;
+    var head = el('div', 'pc-head');
+    var who = el('div', 'pc-who');
+    who.appendChild(el('span', 'pc-side', p.isLong ? 'LONG' : 'SHORT'));
+    who.appendChild(el('span', 'pc-sym', m ? m.symbol : 'Market ' + p.instrumentId));
+    who.appendChild(el('span', 'pc-lev', p.leverage + 'x'));
+    head.appendChild(who);
+    var pnl = el('span', 'pc-pnl', '—');
     pnl.setAttribute('data-role', 'pnl');
-    line.appendChild(pnl);
-    line.appendChild(el('span', 'grow'));
-    var cr = acct.closeReqs[String(p.id)];
-    if (cr) {
-      line.classList.add('is-pending');
-      var status = el('span', 'faint');
-      status.setAttribute('data-role', 'status');
-      line.appendChild(status);
-      var act = el('button', 'btn btn-sm btn-ghost');
-      act.type = 'button';
-      act.setAttribute('data-role', 'action');
-      act.addEventListener('click', function () {
-        var ph = requestPhase(cr.requestedAt);
-        if (ph.phase === 'fallback') executeCloseNow(p);
-        else if (ph.phase === 'expired') cancelCloseNow(p);
-      });
-      line.appendChild(act);
-      fillRequestStatus(line, cr.requestedAt, 'closing');
-    } else {
-      var btn = el('button', 'btn btn-sm btn-ghost', 'Close');
-      btn.type = 'button';
-      btn.setAttribute('data-id', String(p.id));
-      btn.disabled = state.busy;
-      btn.addEventListener('click', function () { submitClose(p); });
-      line.appendChild(btn);
+    head.appendChild(pnl);
+    card.appendChild(head);
+    var rows = el('div', 'pc-rows');
+    rows.appendChild(pcCell('Entry', fmtPrice(p.entry, sz)));
+    rows.appendChild(pcCell('Now', '—', 'now'));
+    rows.appendChild(pcCell('Liquidation', '—', 'liq', true));
+    rows.appendChild(pcCell('Put in', fmtUsd(p.margin)));
+    rows.appendChild(pcCell('Size', fmtUsd(p.margin * p.leverage)));
+    card.appendChild(rows);
+    var act = el('div', 'pc-act');
+    act.setAttribute('data-role', 'act');
+    card.appendChild(act);
+    fillCardAction(card, p);
+    fillPositionPnl(card, p);
+    return card;
+  }
+
+  function pcCell(k, v, role, wide) {
+    var c = el('div', 'pc-cell' + (wide ? ' is-wide' : ''));
+    c.appendChild(el('span', 'pc-k', k));
+    var s = el('span', 'pc-v', v);
+    if (role) s.setAttribute('data-role', role);
+    c.appendChild(s);
+    return c;
+  }
+
+  /* The bottom of a position card: CLOSE POSITION and its estimate; "Confirm in your wallet…"
+     while the wallet is up; the close's progress once it is filed. Rebuilt only when that mode
+     changes, so a button is never swapped out under a finger. */
+  function fillCardAction(card, p) {
+    var act = card.querySelector('[data-role="act"]');
+    if (!act) return;
+    var pid = String(p.id);
+    var cr = acct.closeReqs[pid];
+    /* retrying: Try again is clearing the expired request, then files a new one (closing takes
+       over the moment the wallet is asked); checking: the request is gone from chain and the
+       result is being read from the logs; settling: the logs say it closed */
+    var mode = ui.retrying[pid] && !ui.closing[pid] ? 'retrying' : cr ? 'req' : ui.closing[pid] ? 'wallet'
+      : ui.checking[pid] ? 'checking' : ui.settling[pid] ? 'settling' : 'idle';
+    if (act.getAttribute('data-mode') !== mode) {
+      act.setAttribute('data-mode', mode);
+      act.textContent = '';
+      if (mode === 'idle') {
+        var b = el('button', 'btn btn-block close-btn', 'CLOSE POSITION');
+        b.type = 'button';
+        b.addEventListener('click', function () { tourEvent('close'); submitClose(posById(pid) || p); });
+        act.appendChild(b);
+        var est = el('div', 'pc-est');
+        est.setAttribute('data-role', 'est');
+        act.appendChild(est);
+      } else {
+        act.appendChild(makeProg('Closing ' + posLabel(p), function () { closeReqAction(posById(pid) || p); }));
+      }
     }
-    fillPositionPnl(line, p);
-    return line;
+    if (mode === 'idle') {
+      var cb = act.querySelector('.close-btn');
+      if (cb) cb.disabled = state.busy;
+      return;
+    }
+    var box = act.querySelector('.prog');
+    if (!box) return;
+    if (mode === 'wallet') setProg(box, { steps: [[state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Closing at the oracle price', ''], ['Closed', '']] });
+    else if (mode === 'retrying') setProg(box, { steps: [['Clearing the old request…', 'is-on'], ['Closing again at the oracle price', ''], ['Closed', '']], note: 'Clearing the old request, then closing again. ' + (sessionLive() ? '' : 'Your wallet asks twice.') });
+    else if (mode === 'checking') setProg(box, CHECKING_VIEW);
+    else if (mode === 'settling') setProg(box, { cls: 'is-done', steps: [['Sent', 'is-done'], ['Closed at the oracle price', 'is-done'], ['Adding it to your balance…', 'is-on']] });
+    else setProg(box, progressView('close', cr, p.margin));
+  }
+
+  /* A close whose request is gone from chain, while the logs are read for how it ended. */
+  var CHECKING_VIEW = { steps: [['Sent', 'is-done'], ['Checking the result…', 'is-on'], ['Closed', '']] };
+
+  /* Finish now (late) or Try again (expired) on a close, by its phase at click time. */
+  function closeReqAction(p) {
+    var cr = acct.closeReqs[String(p.id)];
+    if (!cr || cr.busy) return;
+    var ph = requestPhase(cr.requestedAt);
+    if (ph.phase === 'fallback') executeCloseNow(p);
+    else if (ph.phase === 'expired') retryClose(p);
+  }
+
+  /* ---- results that stay where the position was: closed (about a minute), liquidated and
+     "while you were away" (until OK) ---- */
+
+  function addRecent(r) {
+    r.key = r.key || String(Date.now());
+    ui.recent = ui.recent.filter(function (x) { return x.key !== r.key; });
+    ui.recent.unshift(r);
+    if (ui.recent.length > 4) ui.recent.length = 4;
+    if (r.ttl) setTimeout(function () { dropRecent(r.key); }, r.ttl);
+    renderPositions();
+  }
+
+  function dropRecent(key) {
+    var n = ui.recent.length;
+    ui.recent = ui.recent.filter(function (x) { return x.key !== key; });
+    if (ui.recent.length !== n) renderPositions();
+  }
+
+  function recentCard(r) {
+    var card = el('div', 'result-card' + (r.cls ? ' ' + r.cls : ''));
+    card.setAttribute('data-recent', r.key);
+    card.appendChild(el('div', 'rc-title', r.title));
+    (r.lines || []).forEach(function (l) { card.appendChild(el('div', 'rc-line', l)); });
+    var row = el('div', 'rc-btns');
+    (r.buttons || []).forEach(function (b) {
+      var x = el('button', 'btn btn-sm', b.label);
+      x.type = 'button';
+      if (b.act) x.setAttribute('data-act', b.act);
+      x.addEventListener('click', b.fn);
+      row.appendChild(x);
+    });
+    var ok = el('button', 'btn btn-sm btn-ghost', 'OK');
+    ok.type = 'button';
+    ok.addEventListener('click', function () { dropRecent(r.key); });
+    row.appendChild(ok);
+    card.appendChild(row);
+    return card;
   }
 
   function pendingOpenList() {
     return Object.keys(pend.opens).map(function (k) { return pend.opens[k]; }).sort(function (a, b) { return Number(a.id) - Number(b.id); });
   }
 
+  /* What Your positions shows, top to bottom: result cards that belong to no position ("while you
+     were away"), requests still opening, then the positions newest first. A position's result card
+     (closed, liquidated) takes that position's place, before and after the position leaves the
+     list, and a close whose result is being read keeps a card there once the position is gone. */
+  function posItems() {
+    var items = [], slots = [], seen = {};
+    ui.recent.forEach(function (r) { if (r.pid == null) items.push({ kind: 'recent', r: r, key: 'r' + r.key }); });
+    pendingOpenList().slice().reverse().forEach(function (r) { items.push({ kind: 'open', r: r, key: 'o' + r.id }); });
+    ui.recent.forEach(function (r) {
+      if (r.pid == null || seen[r.pid]) return;
+      seen[r.pid] = true;
+      slots.push({ id: BigInt(r.pid), item: { kind: 'recent', r: r, key: 'r' + r.key } });
+    });
+    acct.positions.forEach(function (p) {
+      var pid = String(p.id);
+      if (seen[pid]) return;
+      seen[pid] = true;
+      slots.push({ id: BigInt(p.id), item: { kind: 'pos', p: p, key: 'p' + pid + ':' + String(p.entryPx18) } });
+    });
+    Object.keys(ui.checking).forEach(function (pid) {
+      if (seen[pid]) return;
+      seen[pid] = true;
+      slots.push({ id: BigInt(pid), item: { kind: 'checking', pid: pid, p: ui.checking[pid], key: 'k' + pid } });
+    });
+    slots.sort(function (a, b) { return a.id < b.id ? 1 : a.id > b.id ? -1 : 0; });
+    slots.forEach(function (s) { items.push(s.item); });
+    return items;
+  }
+
+  /* The shape of the positions list (which cards, in which order); the cards are rebuilt only
+     when it changes and updated in place otherwise. */
+  function posSigOf() {
+    var parts = [wallet.account || '-', acct.loaded ? 'L' : '-', hasExchange() ? 'X' : '-'];
+    posItems().forEach(function (it) { parts.push(it.key); });
+    return parts.join('|');
+  }
+
+  /* The card of a close being checked once its position has left the list. */
+  function checkingCard(pid, p) {
+    var card = el('div', 'pos-card is-pending' + (p && p !== true ? (p.isLong ? ' is-long' : ' is-short') : ''));
+    card.setAttribute('data-check', pid);
+    card.title = 'Position #' + pid;
+    var box = makeProg('Closing ' + (p && p !== true ? posLabel(p) : 'your position'));
+    setProg(box, CHECKING_VIEW);
+    card.appendChild(box);
+    return card;
+  }
+
+  function clearCards(host) {
+    Array.prototype.slice.call(host.children).forEach(function (c) { if (c.id !== 'posEmpty') host.removeChild(c); });
+  }
+
+  /* Your positions: result cards, requests still opening, then one card per position. On a phone
+     the panel moves above the chart while there is anything in it (.has-pos). */
   function renderPositions() {
     syncPositionLines();
     var host = $('posLines');
     var empty = $('posEmpty');
-    if (!host) return;
+    if (!host || !empty) return;
     var opens = pendingOpenList();
     var n = acct.positions.length + opens.length;
-    setText('posCount', n ? ' ' + n : '');
-    clearLines(host);
-    if (!wallet.account) { empty.textContent = 'Connect a wallet to see your positions.'; empty.removeAttribute('hidden'); return; }
-    if (!hasExchange()) { empty.textContent = 'Exchange address not configured.'; empty.removeAttribute('hidden'); return; }
-    if (!acct.loaded) { empty.textContent = 'Loading…'; empty.removeAttribute('hidden'); return; }
-    if (!n) { empty.textContent = 'No open positions.'; empty.removeAttribute('hidden'); return; }
-    empty.setAttribute('hidden', '');
+    setText('posCount', n ? ' (' + n + ')' : '');
+    var closing = Object.keys(ui.checking).length;
+    var layout = $('tradeLayout');
+    if (layout) layout.classList.toggle('has-pos', !!wallet.account && (n > 0 || closing > 0 || ui.recent.length > 0));
+    var closable = acct.positions.filter(function (p) { var k = String(p.id); return !acct.closeReqs[k] && !ui.closing[k] && !ui.settling[k]; }).length;
+    var ca = $('closeAllBtn');
+    if (ca) { ca.hidden = closable < 2; ca.disabled = state.busy; }
+    var sig = posSigOf();
+    if (sig === ui.posSig) { updateCards(); renderPosChip(); if (wallet.account) watchPending(); return; }
+    ui.posSig = sig;
+    clearCards(host);
+    renderPosChip();
+    if (!wallet.account) { empty.textContent = 'Connect a wallet to see your positions.'; empty.hidden = false; return; }
+    if (!hasExchange()) { empty.textContent = 'Trading is off on this copy of the site.'; empty.hidden = false; return; }
+    if (!acct.loaded) { empty.textContent = 'Loading your positions…'; empty.hidden = false; return; }
+    var items = posItems();
+    empty.textContent = 'No open positions. Pick BUY / LONG or SELL / SHORT to open one.';
+    empty.hidden = items.some(function (it) { return it.kind !== 'recent'; });
     var frag = document.createDocumentFragment();
-    opens.forEach(function (r) { frag.appendChild(pendingOpenLine(r)); });
-    acct.positions.forEach(function (p) { frag.appendChild(positionLine(p)); });
+    items.forEach(function (it) {
+      if (it.kind === 'recent') frag.appendChild(recentCard(it.r));
+      else if (it.kind === 'open') frag.appendChild(pendingOpenCard(it.r));
+      else if (it.kind === 'checking') frag.appendChild(checkingCard(it.pid, it.p));
+      else frag.appendChild(positionCard(it.p));
+    });
     host.appendChild(frag);
     watchPending();
   }
 
-  /* Cheap per-tick update of the price-dependent span without rebuilding lines. */
-  function updatePositionPrices() {
+  /* The cheap pass: prices, countdowns and buttons of the cards already there, in place. */
+  function updateCards() {
     var host = $('posLines');
-    if (!host || !acct.positions.length) return;
+    if (!host) return;
     acct.positions.forEach(function (p) {
-      var line = host.querySelector('.pos-line[data-id="' + String(p.id) + '"]');
-      if (line) fillPositionPnl(line, p);
+      var card = host.querySelector('.pos-card[data-id="' + String(p.id) + '"]');
+      if (card) { fillCardAction(card, p); fillPositionPnl(card, p); }
+    });
+    pendingOpenList().forEach(function (r) {
+      var card = host.querySelector('.pos-card[data-req="' + r.id + '"]');
+      if (card) updateOpenProg(card, r);
     });
   }
 
-  /* Countdown tick: the status text and button of every pending line, four times a second,
-     then the automatic fallback fill when a request has just left the keeper window. */
+  function updatePositionPrices() { updateCards(); }
+
+  /* Countdown tick, four times a second while anything is pending: a request that just went late
+     gets its toast, the cards and the ticket's progress card move on, then the wallet is asked to
+     finish a late request when the trader agreed to that. */
   function updatePendingLines() {
-    var host = $('posLines');
-    if (!host) return;
     pendingOpenList().forEach(function (r) {
-      var line = host.querySelector('.pos-line[data-req="' + r.id + '"]');
-      if (line) fillRequestStatus(line, r.requestedAt, 'filling');
+      if (r.requestedAt == null) return;
+      var ph = requestPhase(r.requestedAt);
+      if (ph.phase === 'fallback' || ph.soon) noteLate(r, 'Your ' + reqSym(r) + ' ' + sideWord(r.isLong).toLowerCase(), openReqEls(r));
     });
     Object.keys(acct.closeReqs).forEach(function (pid) {
-      var line = host.querySelector('.pos-line[data-id="' + pid + '"]');
-      if (line) fillRequestStatus(line, acct.closeReqs[pid].requestedAt, 'closing');
+      var cr = acct.closeReqs[pid];
+      if (cr.requestedAt == null) return;
+      var ph = requestPhase(cr.requestedAt);
+      if (ph.phase !== 'fallback' && !ph.soon) return;
+      var p = posById(pid);
+      noteLate(cr, 'Closing your ' + (p ? posLabel(p) : 'position'), [posCardEl(pid)]);
     });
+    updateCards();
+    renderTicketProgress(false);
     autoFill();
   }
 
+  /* ---- the ticket's progress card (tk) ---- */
+
+  function tkSet(phase, fields) {
+    tk.phase = phase;
+    if (fields) Object.keys(fields).forEach(function (k) { tk[k] = fields[k]; });
+    if (tk.timer) { clearTimeout(tk.timer); tk.timer = null; }
+    if (phase === 'opened') tk.timer = setTimeout(tkDoneOpened, 10000);
+    if (phase === 'error' || phase === 'unknown') tk.timer = setTimeout(function () { if (tk.phase === phase) tkReset(); }, 9000);
+    renderTicketProgress(true);
+    renderAction();
+  }
+
+  function tkReset() {
+    tk.phase = null; tk.reqId = null; tk.msg = '';
+    if (tk.timer) { clearTimeout(tk.timer); tk.timer = null; }
+    renderTicketProgress(true);
+    renderAction();
+  }
+
+  /* Ten seconds of "Open at": then the form again; on a phone the sheet closes onto the new card. */
+  function tkDoneOpened() {
+    if (tk.phase !== 'opened') return;
+    tkReset();
+    if (ui.sheet && !tour.on) showPositions();
+  }
+
+  function ticketView() {
+    var title = 'Opening ' + sideWord(tk.isLong) + ' ' + tk.sym + ' ' + tk.lev + 'x · ' + fmtUsdShort(tk.margin);
+    if (tk.phase === 'wallet') {
+      return {
+        title: title, steps: [[state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Opening at the oracle price', ''], ['Open', '']],
+        note: state.viaSession ? 'One-click is on: no wallet popup.' : 'Your wallet shows the trade. Nothing is sent until you confirm.'
+      };
+    }
+    if (tk.phase === 'req') {
+      var r = pend.opens[tk.reqId];
+      if (!r) return { title: title, steps: [['Sent', 'is-done'], ['Checking the result…', 'is-on'], ['Open', '']] };
+      var v = progressView('open', r, r.margin);
+      v.title = title;
+      return v;
+    }
+    if (tk.phase === 'opened') {
+      return {
+        cls: 'is-done', title: 'Opened ' + sideWord(tk.isLong) + ' ' + tk.sym + ' ' + tk.lev + 'x · ' + fmtUsdShort(tk.margin),
+        steps: [['Sent', 'is-done'], ['Filled at the oracle price', 'is-done'], ['Open at ' + fmtPrice(tk.entry, szOf(tk.sym)), 'is-done']],
+        btn: 'View position', btnFree: true, btn2: 'New trade'
+      };
+    }
+    if (tk.phase === 'refunded') return { cls: 'is-bad', title: title, steps: [['Sent', 'is-done'], [tk.msg, 'is-on is-bad'], ['Open', 'is-skip']], btn: 'OK', btnFree: true };
+    if (tk.phase === 'unknown') return { title: title, steps: [['Sent', 'is-done'], [tk.msg, 'is-on'], ['Open', '']], btn: 'OK', btnFree: true };
+    return { cls: 'is-bad', title: title, steps: [[tk.msg || 'That did not go through.', 'is-on is-bad'], ['Opening at the oracle price', 'is-skip'], ['Open', 'is-skip']], btn: 'OK', btnFree: true };
+  }
+
+  /* The progress card where OPEN POSITION was. rebuild: a new phase (fresh buttons). */
+  function renderTicketProgress(rebuild) {
+    var host = $('ticketProgress');
+    var btn = $('actionBtn');
+    if (!host) return;
+    /* phones: while a request is out the form folds away (trade.html), so the card sits right
+       under the direction buttons and its late / expired buttons stay on screen */
+    var tc = document.querySelector('.ticket');
+    if (tc) tc.classList.toggle('is-going', !!tk.phase);
+    if (!tk.phase) {
+      if (!host.hidden) { host.hidden = true; host.textContent = ''; }
+      if (btn) btn.hidden = false;
+      renderBarStatus(null);
+      return;
+    }
+    if (btn) btn.hidden = true;
+    host.hidden = false;
+    var box = host.querySelector('.prog');
+    if (rebuild || !box) {
+      host.textContent = '';
+      box = makeProg('', ticketBtn, function () { tkReset(); });
+      host.appendChild(box);
+    }
+    var v = ticketView();
+    var was = box.className;
+    setProg(box, v);
+    renderBarStatus(v);
+    /* a new phase or a new state (late, expired) in the sheet: keep the card in sight */
+    if ((rebuild || box.className !== was) && ui.sheet && host.scrollIntoView) host.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function ticketBtn() {
+    if (tk.phase === 'req') { var r = pend.opens[tk.reqId]; if (r) openReqAction(r); return; }
+    if (tk.phase === 'opened') { var id = tk.posId; tkReset(); showPositions(id ? '.pos-card[data-id="' + id + '"]' : null); return; }
+    tkReset();
+  }
+
+  /* Phones: the ticket's progress in one line over the bar while the sheet is closed. */
+  function renderBarStatus(v) {
+    var s = $('barStatus');
+    if (!s) return;
+    if (!v || ui.sheet) { s.hidden = true; return; }
+    var on = (v.steps || []).filter(function (x) { return /is-on/.test(x[1]); })[0];
+    var text = v.cls === 'is-done' ? v.steps[2][0] : (on ? on[0] : v.title);
+    s.hidden = false;
+    s.textContent = tk.sym + ' ' + sideWord(tk.isLong) + ': ' + text;
+    s.className = 'mbar-status' + (v.cls ? ' ' + v.cls : '');
+  }
+
   function onPrices() {
+    if (DEMO) demoOracle();
     var m = state.market;
     if (m) {
       var px = state.mids[m.coin];
@@ -2455,7 +3542,7 @@
   function connect() {
     return chooseWallet().then(function (eth) {
       if (eth) return connectWith(eth);
-      if (!walletList().length && !window.ethereum) toast('No wallet found. Open this page in a wallet browser or install a wallet extension.', 'err');
+      if (!walletList().length && !window.ethereum) openWalletApps();
     });
   }
 
@@ -2471,7 +3558,7 @@
       subscribeWallet(eth);
       return onChainChanged();
     }).then(function () {
-      if (wallet.chainId !== CHAIN_ID) return switchChain().then(function () { return onChainChanged(); }).catch(function (e) { toast(describeError(e), 'err'); });
+      if (wallet.chainId !== CHAIN_ID) return switchChain().then(function () { return onChainChanged(); }).catch(switchFailed);
     }).catch(function (e) {
       toast(describeError(e), 'err');
       renderWallet(); renderAction();
@@ -2482,7 +3569,7 @@
   function tryAutoConnect() {
     var E = window.ethers;
     var eth = getInjected();
-    if (!eth || !E) return;
+    if (!eth || !E) { tour.autoTried = true; return; }
     eth.request({ method: 'eth_accounts' }).then(function (accounts) {
       if (!accounts || !accounts.length) return;
       wallet.eth = eth;
@@ -2492,7 +3579,7 @@
         subscribeWallet(eth);
         return onChainChanged();
       });
-    }).catch(function () { /* stay disconnected */ });
+    }).catch(function () { /* stay disconnected */ }).then(function () { tour.autoTried = true; });
   }
 
   function subscribeWallet(eth) {
@@ -2522,8 +3609,11 @@
         wallet.signer = s;
       }).catch(function () { wallet.signer = null; }).then(function () {
         renderWallet(); renderAction(); renderStatus(); renderPositions(); renderRefer();
-        if (wallet.chainId !== CHAIN_ID) toast('Wallet is on chain ' + wallet.chainId + '. Switch to HyperEVM (999) to trade.', 'err');
+        if (wallet.chainId !== CHAIN_ID) toast('Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM: tap Switch to HyperEVM.', 'err');
         restorePendingOpens();
+        /* read the last block seen before refreshAccount moves it on */
+        scanAway(wallet.account);
+        maybeStartTour();
         return Promise.all([refreshAccount(), refreshWalletUsdc(), loadHistory(true), loadReferral(), refreshSession()]);
       });
     }
@@ -2553,14 +3643,24 @@
       return eth.request({ method: 'eth_chainId' });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
-      if (wallet.chainId !== CHAIN_ID) throw new Error('Wallet is still on chain ' + wallet.chainId + '.');
+      if (wallet.chainId !== CHAIN_ID) throw new Error('Your wallet is still on ' + chainName(wallet.chainId) + '.');
     });
+  }
+
+  /* A switch the wallet refused or could not make: say so, with the network to add by hand. */
+  function switchFailed(e) {
+    if (isUserRejection(e)) { toast('Your wallet stayed on ' + chainName(wallet.chainId) + '. Switch to HyperEVM to trade.', 'err'); return; }
+    toast(describeError(e) + ' To add HyperEVM by hand: chain id 999, RPC ' + ((cfg && cfg.rpcUrl) || DEFAULT_RPC) + ', currency HYPE, explorer ' + ((cfg && cfg.explorerUrl) || 'https://hyperevmscan.io') + '.', 'err', null, 20000);
   }
 
   function resetAccount() {
     acct.loaded = false; acct.available = 0; acct.marginInUse = 0; acct.pending = 0; acct.positions = []; acct.closeReqs = {}; acct.walletUsdc = 0; acct.allowance = 0;
+    acct.owner = null; acct.owed = 0; acct.owedAt = 0;
     syncPositionLines();
     pend.opens = {};
+    ui.closing = {}; ui.checking = {}; ui.settling = {}; ui.retrying = {}; ui.recent = []; ui.hypeWei = null; ui.posSig = '';
+    ui.owedSig = ''; ui.owedAt = 0;
+    if (tk.phase) tkReset();
     ref.addr = null; ref.locked = null; ref.referrer = null; ref.myCode = ''; ref.earned = null; ref.loaded = false;
     sess.key = null; sess.onchain = null; sess.gasWei = null; sess.loaded = false;
     hl.account = null; hl.proxy = null; hl.spotFreeWei = null; hl.perp6 = null; hl.evm6 = null;
@@ -2575,18 +3675,36 @@
     toast('Disconnected from this page. Your wallet may still list the site as connected.');
   }
 
+  /* The header: Connect, or the address (a tap opens Copy / explorer / Disconnect); Deposit and
+     Withdraw only once a wallet is connected. */
   function renderWallet() {
     var btn = $('connectBtn');
     if (!btn) return;
     if (wallet.account) {
       btn.textContent = shortAddr(wallet.account);
-      btn.title = wallet.account + ' · click to disconnect';
+      btn.title = wallet.account;
       btn.classList.toggle('btn-accent', wallet.chainId !== CHAIN_ID);
     } else {
       btn.textContent = 'Connect';
       btn.title = '';
       btn.classList.add('btn-accent');
     }
+    /* .btn uppercases; an address stays as written (0xde00…, not 0XDE00…) */
+    btn.style.textTransform = wallet.account ? 'none' : '';
+    ['depositBtn', 'withdrawBtn'].forEach(function (id) { var b = $(id); if (b) b.hidden = !wallet.account; });
+    var strip = $('acctStrip');
+    if (strip) strip.hidden = !wallet.account;
+    var mini = $('acctMini');
+    if (mini) mini.hidden = !wallet.account;
+  }
+
+  /* Your address: copy it, see it on the explorer, or disconnect (no longer one tap away). */
+  function openAccountMenu() {
+    if (!wallet.account) return;
+    setText('acctTitle', shortAddr(wallet.account));
+    var ex = $('amExplorer');
+    if (ex) ex.href = explorer('address', wallet.account);
+    openDialog('acctModal');
   }
 
   /* ---- error decoding ------------------------------------------------------------ */
@@ -2617,51 +3735,54 @@
     return data;
   }
 
+  /* What a revert means, in the words a trader would use. Admin-only errors keep their short
+     technical text (nobody trading meets them). KeeperWindow and TooEarly never reach the
+     trader: the fill paths retry on them. */
   var FRIENDLY = {
-    Unauthorized: function () { return 'Not authorised for this action.'; },
+    Unauthorized: function () { return 'Not allowed from this wallet.'; },
     ZeroAddress: function () { return 'Zero address.'; },
-    ZeroAmount: function () { return 'Amount must be more than zero.'; },
-    UnknownInstrument: function (a) { return 'Unknown market #' + a[0] + '.'; },
-    MarketRetired: function () { return 'Market retired: closes only.'; },
-    OpensPausedGlobally: function () { return 'Opens are paused on every market.'; },
-    OpensPausedForMarket: function () { return 'Opens are paused on this market.'; },
-    MarginBelowMinimum: function () { return 'Margin is below the minimum ' + MIN_MARGIN + ' USDC.'; },
-    LeverageOutOfRange: function () { return 'Leverage is over this market\'s cap.'; },
-    OiCapExceeded: function () { return 'No OI headroom on this side.'; },
-    PositionTooLarge: function () { return 'Over the per-position notional cap.'; },
-    OpensPausedByBreaker: function () { return 'Opens are paused: the LP loss breaker is tripped.'; },
-    BreakerNotTripped: function () { return 'The LP breaker is not tripped.'; },
+    ZeroAmount: function () { return 'Enter an amount above zero.'; },
+    UnknownInstrument: function () { return 'That market is not on Confetti yet.'; },
+    MarketRetired: function () { return 'This market is closed for new trades. You can still close.'; },
+    OpensPausedGlobally: function () { return 'New trades are paused for now. You can still close.'; },
+    OpensPausedForMarket: function () { return 'New trades on this market are paused for now. You can still close.'; },
+    MarginBelowMinimum: function () { return 'Minimum is $' + MIN_MARGIN + '.'; },
+    LeverageOutOfRange: function () { return 'That leverage is over this market\'s limit.'; },
+    OiCapExceeded: function () { return 'This market is full on that side right now. Lower the amount or leverage.'; },
+    PositionTooLarge: function () { return 'Too big for this market. Lower the amount or leverage.'; },
+    OpensPausedByBreaker: function () { return 'New trades are paused for now. You can still close.'; },
+    BreakerNotTripped: function () { return 'The loss breaker is not tripped.'; },
     FeedAlive: function (a) { return 'Market #' + a[0] + ' still has a live price feed; retire it normally.'; },
-    InsufficientBalance: function (a) { return 'Insufficient exchange balance: available ' + fmtUsd(usd6ToNum(a[0])) + ', needed ' + fmtUsd(usd6ToNum(a[1])) + '.'; },
-    UnknownPosition: function (a) { return 'Position #' + a[0] + ' does not exist (already closed or liquidated).'; },
-    NotPositionOwner: function (a) { return 'Position #' + a[0] + ' is not owned by this wallet.'; },
-    NotLiquidatable: function (a) { return 'Position #' + a[0] + ' is not at its bust price (' + fmtPrice(px18ToNum(a[1])) + ' vs ' + fmtPrice(px18ToNum(a[2])) + ').'; },
+    InsufficientBalance: function (a) { return 'Not enough balance: you have ' + fmtUsd(usd6ToNum(a[0])) + ', this needs ' + fmtUsd(usd6ToNum(a[1])) + '.'; },
+    UnknownPosition: function () { return 'That position is already closed or liquidated.'; },
+    NotPositionOwner: function () { return 'That position belongs to another wallet.'; },
+    NotLiquidatable: function () { return 'That position is not at its liquidation price.'; },
     InvalidTier: function (a) { return 'Invalid tier ' + a[0] + '.'; },
     ParamOutOfBounds: function (a) { return 'Parameter out of bounds (' + a[1] + ').'; },
-    QueueEmpty: function () { return 'The payout queue is empty.'; },
-    QueueNotEmpty: function () { return 'Not allowed while the payout queue is active.'; },
+    QueueEmpty: function () { return 'No wins are owed right now.'; },
+    QueueNotEmpty: function () { return 'Not allowed while wins are owed.'; },
     NothingToPush: function () { return 'Nothing to push right now.'; },
-    UnknownRequest: function () { return 'No such request: it was already filled, refunded or cancelled.'; },
-    TooEarly: function () { return 'Too early: the fill window has not opened yet.'; },
-    KeeperWindow: function () { return 'Keeper window: wait a few seconds, then fill.'; },
-    RequestExpired: function () { return 'The request expired: cancel it for the refund.'; },
-    RequestNotExpired: function () { return 'The request has not expired yet.'; },
-    CloseAlreadyPending: function () { return 'A close is already pending on this position.'; },
-    PriceJumped: function () { return 'The oracle jumped too far since the request.'; },
-    EntryBusted: function () { return 'The fill would already be past its bust price; the request is refunded.'; },
-    MigrationPending: function () { return 'Opens start after the v2 migration.'; },
-    FeedUnavailable: function (a) { return 'Price feed unavailable for market #' + a[0] + '. Try again in a moment.'; },
-    ZeroPrice: function (a) { return 'Price feed returned zero for market #' + a[0] + '.'; },
+    UnknownRequest: function () { return 'Already done: it was filled, refunded or cancelled.'; },
+    TooEarly: function () { return 'Almost: try again in a second.'; },
+    KeeperWindow: function () { return 'Almost: try again in a second.'; },
+    RequestExpired: function () { return 'It ran out of time. Get your money back from its card.'; },
+    RequestNotExpired: function () { return 'Not out of time yet: give it a few more seconds.'; },
+    CloseAlreadyPending: function () { return 'This position is already closing.'; },
+    PriceJumped: function () { return 'The price moved too fast to fill. Your money is back in your balance.'; },
+    EntryBusted: function () { return 'The price passed your liquidation price before the fill. Your money is back in your balance.'; },
+    MigrationPending: function () { return 'New trades start after the move to the new exchange.'; },
+    FeedUnavailable: function () { return 'The price feed is down for a moment. Try again shortly.'; },
+    ZeroPrice: function () { return 'The price feed is down for a moment. Try again shortly.'; },
     ClampOutOfBounds: function (a) { return 'Clamp ' + a[0] + ' bps is out of bounds.'; },
     InvalidCode: function () { return 'Codes are 3 to 16 characters: a-z, 0-9, underscore.'; },
     CodeTaken: function (a) { return 'Code "' + a[0] + '" is taken.'; },
     AlreadyRegistered: function () { return 'This wallet already has a code.'; },
     NotExchange: function () { return 'Exchange only.'; },
     OwnableUnauthorizedAccount: function () { return 'Owner only.'; },
-    ReentrancyGuardReentrantCall: function () { return 'Reentrant call blocked.'; },
-    SafeERC20FailedOperation: function () { return 'USDC transfer failed.'; },
-    ERC20InsufficientAllowance: function (a) { return 'USDC allowance too low: approved ' + fmtUsd(usd6ToNum(a[1])) + ', needed ' + fmtUsd(usd6ToNum(a[2])) + '.'; },
-    ERC20InsufficientBalance: function (a) { return 'Wallet USDC too low: balance ' + fmtUsd(usd6ToNum(a[1])) + ', needed ' + fmtUsd(usd6ToNum(a[2])) + '.'; },
+    ReentrancyGuardReentrantCall: function () { return 'That didn\'t go through. Your balance is unchanged.'; },
+    SafeERC20FailedOperation: function () { return 'The USDC transfer failed. Your balance is unchanged.'; },
+    ERC20InsufficientAllowance: function (a) { return 'USDC not approved for that much: approved ' + fmtUsd(usd6ToNum(a[1])) + ', needed ' + fmtUsd(usd6ToNum(a[2])) + '.'; },
+    ERC20InsufficientBalance: function (a) { return 'Your wallet has ' + fmtUsd(usd6ToNum(a[1])) + ' USDC; this needs ' + fmtUsd(usd6ToNum(a[2])) + '.'; },
     BadExpiry: function () { return 'Session length out of range (up to 30 days).'; },
     ZeroMarginCap: function () { return 'Set a cap per trade.'; },
     KeyInUse: function () { return 'That session key serves another wallet.'; },
@@ -2669,7 +3790,7 @@
     BadKeySignature: function () { return 'The session key\'s signature did not match.'; },
     NoSession: function () { return 'No one-click session.'; },
     SessionExpired: function () { return 'The one-click session expired.'; },
-    MarginAboveSessionCap: function (a) { return 'Margin ' + fmtUsd(usd6ToNum(a[0])) + ' is above the session cap ' + fmtUsd(usd6ToNum(a[1])) + '.'; },
+    MarginAboveSessionCap: function (a) { return 'Amount ' + fmtUsd(usd6ToNum(a[0])) + ' is above the one-click cap ' + fmtUsd(usd6ToNum(a[1])) + '.'; },
     NotYours: function () { return 'Not your request.'; },
     NotTrader: function () { return 'Only the trader may do that.'; }
   };
@@ -2679,21 +3800,22 @@
     try { if (f) return f(args || []); } catch (e) { /* fall through */ }
     var list = [];
     try { list = Array.from(args || []).map(function (x) { return String(x); }); } catch (e) { /* ignore */ }
-    return 'Reverted: ' + name + '(' + list.join(', ') + ')';
+    console.warn('revert ' + name + '(' + list.join(', ') + ')');
+    return 'That didn\'t go through. Your balance is unchanged.';
   }
 
-  /* Short text for the `reason` selector of a refund or cancel event. */
+  /* Short text for the `reason` selector of a refund or cancel event ("Didn't open: ..."). */
   var REASONS = {
-    RequestExpired: 'expired', PriceJumped: 'price jumped', EntryBusted: 'fill past bust', MarketRetired: 'market retired',
-    OpensPausedGlobally: 'opens paused', OpensPausedForMarket: 'opens paused', OpensPausedByBreaker: 'breaker tripped',
-    LeverageOutOfRange: 'leverage over the cap', PositionTooLarge: 'over the position cap', OiCapExceeded: 'no OI headroom',
-    MarginBelowMinimum: 'margin below minimum', UnknownPosition: 'liquidated first'
+    RequestExpired: 'it ran out of time', PriceJumped: 'the price moved too fast', EntryBusted: 'the price passed your liquidation price',
+    MarketRetired: 'the market closed', OpensPausedGlobally: 'trading paused', OpensPausedForMarket: 'trading paused',
+    OpensPausedByBreaker: 'trading paused', LeverageOutOfRange: 'leverage over the limit', PositionTooLarge: 'too big for this market',
+    OiCapExceeded: 'the market is full on that side', MarginBelowMinimum: 'under the $' + MIN_MARGIN + ' minimum', UnknownPosition: 'liquidated first'
   };
 
   function reasonText(selector) {
     var name = null;
     try { var f = exIface && exIface.getError(selector); if (f) name = f.name; } catch (e) { /* unknown selector */ }
-    if (!name) return String(selector || '').slice(0, 10);
+    if (!name) return 'for a reason the page could not read';
     return REASONS[name] || name;
   }
 
@@ -2703,19 +3825,17 @@
     if (p) return friendly(p.name, p.args);
     try {
       if (data.slice(0, 10) === '0x08c379a0') {
-        return 'Reverted: ' + E.AbiCoder.defaultAbiCoder().decode(['string'], '0x' + data.slice(10))[0];
-      }
-      if (data.slice(0, 10) === '0x4e487b71') {
-        return 'Reverted: panic 0x' + E.AbiCoder.defaultAbiCoder().decode(['uint256'], '0x' + data.slice(10))[0].toString(16);
+        return 'That didn\'t go through: ' + E.AbiCoder.defaultAbiCoder().decode(['string'], '0x' + data.slice(10))[0];
       }
     } catch (e) { /* ignore */ }
-    return 'Reverted with data ' + data.slice(0, 10) + '…';
+    console.warn('revert data ' + data);
+    return 'That didn\'t go through. Your balance is unchanged.';
   }
 
   function describeError(err) {
-    if (!err) return 'Unknown error.';
+    if (!err) return 'Something went wrong.';
     if (typeof err === 'string') return err;
-    if (isUserRejection(err)) return 'Rejected in wallet.';
+    if (isUserRejection(err)) return 'You cancelled in your wallet. Nothing was sent.';
     var data = revertData(err);
     if (data) return decodeRevert(data);
     if (err.revert && err.revert.name) return friendly(err.revert.name, err.revert.args);
@@ -2726,8 +3846,8 @@
       return false;
     });
     if (!text) text = String(err.message || err);
-    text = text.replace(/\s*\(.*action=.*$/s, '').replace(/^execution reverted:?\s*/i, 'Reverted: ');
-    if (/insufficient funds/i.test(text)) return 'Not enough HYPE for gas.';
+    text = text.replace(/\s*\(.*action=.*$/s, '').replace(/^execution reverted:?\s*/i, 'That didn\'t go through: ');
+    if (/insufficient funds/i.test(text)) return HYPE_NOTE;
     return text.length > 220 ? text.slice(0, 220) + '…' : text;
   }
 
@@ -2744,24 +3864,28 @@
   function exchangeWrite() { return new window.ethers.Contract(cfg.contracts.exchange, EXCHANGE_ABI, wallet.signer); }
   function usdcWrite() { return new window.ethers.Contract(USDC, ERC20_ABI, wallet.signer); }
 
+  /* One wallet transaction at a time: while one is out the other buttons that send wait. */
   function setBusy(on) {
     state.busy = !!on;
     if (!on) state.viaSession = false;
     renderAction();
-    var closes = document.querySelectorAll('#posLines .btn');
-    for (var i = 0; i < closes.length; i++) closes[i].disabled = state.busy;
+    updateCards();
+    var ca = $('closeAllBtn');
+    if (ca) ca.disabled = state.busy;
     ['depositSubmit', 'withdrawSubmit', 'sessionSubmit'].forEach(function (id) { var b = $(id); if (b) b.disabled = state.busy; });
     renderSession(); renderDepositModal();
   }
 
-  function txLink(hash) { return { href: explorer('tx', hash), label: shortAddr(hash) }; }
+  function txLink(hash) { return DEMO ? null : { href: explorer('tx', hash), label: 'view' }; }
 
-  /* Dry-run with eth_call for a decoded revert reason, send, then wait for one confirmation. */
-  function sendTx(desc, method, args) {
+  /* Dry-run with eth_call for a decoded revert reason, send, then wait for one confirmation.
+     quiet: no "waiting for confirmation" toast (trades: their progress card says it). */
+  function sendTx(desc, method, args, quiet) {
+    if (DEMO) return Promise.reject(new Error('Demo: nothing is sent.'));
     return method.staticCall.apply(method, args).then(function () {
       return method.apply(null, args);
     }).then(function (tx) {
-      var pending = toast(desc + ' sent, waiting for confirmation…', 'pending', txLink(tx.hash), 0);
+      var pending = quiet ? null : toast(desc + ': sent, waiting for the chain…', 'pending', txLink(tx.hash), 0);
       return tx.wait().then(function (rc) {
         dismissToast(pending);
         if (!rc || rc.status !== 1) throw new Error(desc + ' reverted on chain.');
@@ -2782,6 +3906,7 @@
   }
 
   function afterTx() {
+    if (DEMO) { demoRefresh(); return Promise.resolve(); }
     return Promise.all([refreshAccount(), refreshWalletUsdc(), refreshHouse(), refreshMarketChain(), loadReferral()]).then(function () {
       return loadHistory(true);
     });
@@ -2829,6 +3954,7 @@
   }
 
   function refreshSession() {
+    if (DEMO) { renderSession(); return Promise.resolve(); }
     if (!read.router || !wallet.account) { sess.onchain = null; sess.loaded = false; renderSession(); return Promise.resolve(); }
     var a = wallet.account;
     loadSessionKey();
@@ -2847,6 +3973,8 @@
   }
 
   function renderSession() {
+    var row = $('sessionRow');
+    if (row) row.hidden = !(read.router && wallet.account);
     var btn = $('sessionBtn'), rv = $('sessionRevoke'), st = $('sessionState');
     if (!btn || !st) return;
     var s = sess.onchain;
@@ -2889,6 +4017,7 @@
      the key signs the router's authorizationDigest (EIP-191 over the 32 bytes) to prove the
      wallet holds it. */
   function submitAuthorize(capUsd, days) {
+    if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
     if (!read.router) return Promise.resolve();
     var E = window.ethers;
@@ -2926,6 +4055,7 @@
   /* revoke() from the wallet when the router holds a session, then the key's leftover HYPE back
      to the wallet (signed by the key), then the key leaves localStorage. */
   function submitRevoke() {
+    if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
     if (!wallet.account || !read.router) return Promise.resolve();
     var a = wallet.account;
     setBusy(true);
@@ -2995,72 +4125,88 @@
   function walletTrade(desc, kind, args) {
     return Promise.resolve().then(function () {
       requireSigner();
-      return sendTx(desc, exchangeWrite()[kind], args);
+      return sendTx(desc, exchangeWrite()[kind], args, true);
     });
   }
 
   /* Send a trading call (an Exchange function name and its wallet arguments): through the
      session key when it carries the call, else from the wallet. A session the router refuses
      before anything is sent (no session, expired, over the cap) or a key out of gas falls back to
-     the wallet once; an on-chain revert never does (the call already ran). */
+     the wallet once; an on-chain revert never does (the call already ran). Trades send quietly:
+     the progress card where the user clicked says what is happening, not a toast. */
   function sendTrade(desc, kind, args) {
+    if (DEMO) return demoTx(kind, args);
     if (!sessionCarries(kind, args)) return walletTrade(desc, kind, args);
     var E = window.ethers;
     var target = kind === 'executeOpen' || kind === 'executeClose'
       ? new E.Contract(cfg.contracts.exchange, EXCHANGE_ABI, sess.key)
       : new E.Contract(read.router.target, ROUTER_ABI, sess.key);
     var sargs = kind === 'requestOpen' ? args.slice(0, 4) : args;
-    state.viaSession = true; renderAction();
-    return sendTx(desc, target[kind], sargs).catch(function (e) {
+    state.viaSession = true; renderAction(); updateCards();
+    return sendTx(desc, target[kind], sargs, true).catch(function (e) {
       if (!SESSION_ERRORS[revertName(e)] && !isGasShortfall(e)) throw e;
-      state.viaSession = false; renderAction();
+      state.viaSession = false; renderAction(); updateCards();
       return refreshSession().then(function () { return walletTrade(desc, kind, args); });
     });
   }
 
   /* A trading action may start: a live session, or a wallet that can sign. */
   function tradeReady() {
+    if (DEMO) return true;
     if (sessionLive() && !house.usdcBad && hasExchange()) return true;
     try { requireSigner(); return true; } catch (e) { toast(e.message, 'err'); return false; }
   }
 
-  /* Step one of an open: file the request. The margin leaves the available balance and the
-     request shows under Positions as "filling…"; a keeper fills it a few seconds later. */
+  /* Step one of an open: file the request. OPEN POSITION turns into the progress card at once
+     (Confirm in your wallet, then Sent and the countdown to the fill), never back to the button
+     in between; the request also shows under Your positions as a card. A keeper fills it a few
+     seconds later. busy is released as soon as the request is mined, not after the reads. */
   function submitOpen() {
     var m = state.market;
     if (!tradeReady()) return;
     if (!m || m.instrumentId == null) return;
-    var margin6 = numToUsd6(form.margin);
+    var margin = form.margin;
+    var margin6 = numToUsd6(margin);
     var isLong = form.side === 'long';
     var lev = form.lev;
-    var desc = (isLong ? 'Buy ' : 'Sell ') + m.symbol + ' x' + lev;
+    var desc = sideWord(isLong) + ' ' + m.symbol + ' ' + lev + 'x';
+    var maxed = form.maxed;
+    var released = false;
+    function release() { if (!released) { released = true; setBusy(false); } }
     setBusy(true);
+    tkSet('wallet', { reqId: null, isLong: isLong, sym: m.symbol, lev: lev, margin: margin });
     sendTrade(desc, 'requestOpen', [m.instrumentId, isLong, margin6, lev, referrerArg()]).then(function (rc) {
       var ev = receiptEvents(rc, 'OpenRequested')[0];
       if (ev) {
         var a = ev.args;
+        var id = String(a.requestId);
         trackOpenRequest({
-          id: String(a.requestId), instrumentId: Number(a.instrumentId), isLong: !!a.isLong,
+          id: id, instrumentId: Number(a.instrumentId), isLong: !!a.isLong,
           margin: usd6ToNum(a.marginUsdc), leverage: Number(a.leverage), px0: px18ToNum(a.px0),
-          requestedAt: null, block: Number(rc.blockNumber)
+          requestedAt: null, block: Number(rc.blockNumber), localAt: Date.now()
         });
-        toast('Asked: ' + (isLong ? 'long ' : 'short ') + m.symbol + ' x' + lev + ', margin ' + fmtUsd(form.margin) + '. Filling in about ' + (house.minDelay + 1) + ' s.', 'ok', txLink(rc.hash));
+        tkSet('req', { reqId: id });
+        /* the next visit starts from this amount; a Max amount (the whole balance) is not kept,
+           so a later all-in trade still goes through Max and its check */
+        if (!maxed) lsSet(LS.amount, String(margin));
+        tourEvent('submit');
       } else {
-        toast(desc + ' confirmed.', 'ok', txLink(rc.hash));
+        tkSet('error', { msg: 'Sent, but the page could not read the request. Your positions show the result.' });
       }
+      release();
       return afterTx();
     }).catch(function (e) {
-      toast(desc + ' failed: ' + describeError(e), 'err');
-    }).then(function () { setBusy(false); });
+      tkSet('error', { msg: describeError(e) });
+    }).then(release);
   }
 
   /* The fallback fill (after the keeper window, before expiry): the session key, else the wallet. */
   function executeOpenNow(r) {
     if (!tradeReady()) return;
-    var inst = state.byInstId[r.instrumentId];
-    var desc = 'Fill #r' + r.id + (inst && inst.market ? ' ' + inst.market.symbol : '');
+    var desc = 'Finish ' + reqSym(r) + ' ' + sideWord(r.isLong).toLowerCase();
     setBusy(true);
     r.busy = true; /* the poll leaves it alone while the transaction is out */
+    updatePendingLines();
     sendTrade(desc, 'executeOpen', [BigInt(r.id)]).then(function (rc) {
       reportOpenOutcome(r, rc.logs || [], rc.hash);
       untrackOpenRequest(r.id);
@@ -3072,56 +4218,66 @@
       if (name === 'KeeperWindow' || name === 'TooEarly') { r.prompted = false; return; }
       /* someone else filled or refunded it first: the poll reports what happened */
       if (name === 'UnknownRequest') return;
-      toast(desc + ' failed: ' + describeError(e), 'err');
+      toast('Could not finish your ' + reqSym(r) + ' order: ' + describeError(e), 'err');
     }).then(function () { setBusy(false); });
   }
 
-  /* Refund of an expired open request. */
+  /* Refund of an expired open request: "Get $X back". */
   function cancelOpenNow(r) {
     if (!tradeReady()) return;
-    var desc = 'Cancel #r' + r.id;
+    var desc = 'Get ' + fmtUsdShort(r.margin) + ' back';
     setBusy(true);
     r.busy = true;
+    updatePendingLines();
     sendTrade(desc, 'cancelOpen', [BigInt(r.id)]).then(function (rc) {
-      toast('Refunded #r' + r.id + ': ' + fmtUsd(r.margin) + ' back to available.', 'ok', txLink(rc.hash));
+      var mine = tk.phase && tk.reqId === r.id;
+      if (mine) tkSet('refunded', { msg: "Didn't fill. Your " + fmtUsdShort(r.margin) + ' is back in your balance.' });
+      resultToast(mine ? [$('ticketProgress')] : [], 'Your ' + fmtUsd(r.margin) + ' is back in your balance.', 'ok', txLink(rc.hash));
       untrackOpenRequest(r.id);
       return afterTx();
     }).catch(function (e) {
       r.busy = false;
-      toast(desc + ' failed: ' + describeError(e), 'err');
+      toast('Could not get it back yet: ' + describeError(e), 'err');
     }).then(function () { setBusy(false); });
   }
 
-  /* Step one of a close: file the request; the position line shows "closing…". */
+  /* Step one of a close: file the request. The card's CLOSE POSITION turns into its progress
+     (Confirm in your wallet, Closing at the oracle price, Closed); the result card follows. */
   function submitClose(pos) {
+    if (state.busy) return Promise.resolve(false);
     if (!tradeReady()) return Promise.resolve(false);
-    var m = positionMarket(pos);
-    var desc = 'Close #' + pos.id + (m ? ' ' + m.symbol : '');
+    var pid = String(pos.id);
+    if (acct.closeReqs[pid] || ui.closing[pid]) return Promise.resolve(false);
+    var desc = 'Close ' + posLabel(pos);
+    var released = false;
+    function release() { if (!released) { released = true; delete ui.closing[pid]; setBusy(false); renderPositions(); } }
+    ui.closing[pid] = true;
     setBusy(true);
+    renderPositions();
     return sendTrade(desc, 'requestClose', [pos.id]).then(function (rc) {
       var ev = receiptEvents(rc, 'CloseRequested')[0];
-      acct.closeReqs[String(pos.id)] = {
-        requestedAt: chainNow(), px0: ev ? px18ToNum(ev.args.px0) : NaN, block: Number(rc.blockNumber)
+      acct.closeReqs[pid] = {
+        requestedAt: chainNow(), px0: ev ? px18ToNum(ev.args.px0) : NaN, block: Number(rc.blockNumber), localAt: Date.now()
       };
-      toast('Closing #' + pos.id + (m ? ' ' + m.symbol : '') + ' in about ' + (house.minDelay + 1) + ' s.', 'ok', txLink(rc.hash));
-      renderPositions();
+      release();
       return afterTx().then(function () { return true; });
     }).catch(function (e) {
-      toast(desc + ' failed: ' + describeError(e), 'err');
+      toast('Your ' + posLabel(pos) + ' is still open: ' + describeError(e), 'err');
       return false;
-    }).then(function (ok) { setBusy(false); return ok; });
+    }).then(function (ok) { release(); return ok; });
   }
 
   /* The fallback close fill: the session key, else the wallet. */
   function executeCloseNow(pos) {
     if (!tradeReady()) return;
-    var m = positionMarket(pos);
-    var desc = 'Fill close #' + pos.id + (m ? ' ' + m.symbol : '');
+    var desc = 'Finish closing ' + posLabel(pos);
     var cr = acct.closeReqs[String(pos.id)];
     setBusy(true);
     if (cr) cr.busy = true;
+    updatePendingLines();
     sendTrade(desc, 'executeClose', [pos.id]).then(function (rc) {
-      reportCloseOutcome(pos.id, rc.logs || [], rc.hash);
+      ui.settling[String(pos.id)] = true;
+      reportCloseOutcome(pos.id, rc.logs || [], rc.hash, pos);
       delete acct.closeReqs[String(pos.id)];
       return afterTx();
     }).catch(function (e) {
@@ -3129,40 +4285,77 @@
       var name = revertName(e);
       if (name === 'KeeperWindow' || name === 'TooEarly') { if (cr) cr.prompted = false; return; }
       if (name === 'UnknownRequest') return; /* closed, liquidated or cancelled first: the poll reports it */
-      toast(desc + ' failed: ' + describeError(e), 'err');
+      toast('Could not finish closing your ' + posLabel(pos) + ': ' + describeError(e), 'err');
     }).then(function () { setBusy(false); });
   }
 
-  /* Drop an expired close request; the position stays open. */
-  function cancelCloseNow(pos) {
-    if (!tradeReady()) return;
-    var desc = 'Cancel close #' + pos.id;
+  /* Drop an expired close request; the position stays open. Resolves true when it was dropped.
+     light: only the account is read again before resolving (Try again closes straight after and
+     its close runs the full read). */
+  function cancelCloseNow(pos, light) {
+    if (!tradeReady()) return Promise.resolve(false);
+    var desc = 'Clear the close of ' + posLabel(pos);
     var cr = acct.closeReqs[String(pos.id)];
     setBusy(true);
     if (cr) cr.busy = true;
-    sendTrade(desc, 'cancelClose', [pos.id]).then(function (rc) {
-      toast('Close request on #' + pos.id + ' cancelled; the position stays open.', 'ok', txLink(rc.hash));
+    updatePendingLines();
+    return sendTrade(desc, 'cancelClose', [pos.id]).then(function (rc) {
       delete acct.closeReqs[String(pos.id)];
-      return afterTx();
+      return (light ? refreshAccount() : afterTx()).then(function () { return true; }, function () { return true; });
     }).catch(function (e) {
       if (cr) cr.busy = false;
-      toast(desc + ' failed: ' + describeError(e), 'err');
-    }).then(function () { setBusy(false); });
+      toast('Could not clear the old close yet: ' + describeError(e), 'err');
+      return false;
+    }).then(function (ok) { setBusy(false); return ok; });
   }
 
+  /* "Close didn't go through. [Try again]": clear the expired request, then close again. The card
+     says so the whole time ("Clearing the old request, then closing again…"), then follows the new
+     close; nothing flashes back to an idle button in between. */
+  function retryClose(pos) {
+    var pid = String(pos.id);
+    if (ui.retrying[pid] || state.busy) return;
+    ui.retrying[pid] = true;
+    renderPositions();
+    cancelCloseNow(pos, true).then(function (ok) {
+      var now = ok ? posById(pid) : null;
+      var go = now ? submitClose(now) : Promise.resolve(false);
+      delete ui.retrying[pid];
+      renderPositions();
+      return go.then(function (sent) { if (ok && !sent) return afterTx(); });
+    });
+  }
+
+  /* Close all, after one check: "Close 3 positions? You get back about $38.40." Then one close
+     at a time, in order; the first that does not go through stops the rest. */
   function closeAll() {
-    if (state.busy || !acct.positions.length) return;
-    var list = acct.positions.filter(function (p) { return !acct.closeReqs[String(p.id)]; });
+    if (state.busy) return;
+    var list = acct.positions.filter(function (p) { var k = String(p.id); return !acct.closeReqs[k] && !ui.closing[k] && !ui.settling[k]; });
     if (!list.length) return;
-    (function next(i) {
-      if (i >= list.length) return;
-      submitClose(list[i]).then(function (ok) { if (ok) next(i + 1); else toast('Close all stopped at #' + list[i].id + '.', 'err'); });
-    })(0);
+    var back = 0;
+    list.forEach(function (p) { var e = positionEstimate(p); if (e && isFinite(e.payout)) back += e.payout; });
+    askConfirm({
+      title: 'Close ' + list.length + ' position' + (list.length === 1 ? '' : 's') + '?',
+      lines: [
+        'You get back about ' + fmtUsd(back) + '.',
+        'Each one closes at the oracle price in about ' + fillSecs() + ' s.' + (sessionLive() ? '' : ' Your wallet asks once for each.')
+      ],
+      ok: 'Close all', okClass: 'go-close', back: 'Keep open'
+    }).then(function (yes) {
+      /* a fill or a refund may have taken the wallet while the check was up */
+      if (!yes || state.busy) return;
+      (function next(i) {
+        if (i >= list.length) return;
+        var p = posById(list[i].id);
+        if (!p) { next(i + 1); return; }
+        submitClose(p).then(function (ok) { if (ok) next(i + 1); else if (i + 1 < list.length) toast('Close all stopped at ' + posLabel(p) + '. The rest are still open.', 'err'); });
+      })(0);
+    });
   }
 
   /* ---- pending requests: tracking, watching, outcomes --------------------------- */
 
-  function pendingKey() { return wallet.account ? LS.pending + wallet.account.toLowerCase() : null; }
+  function pendingKey() { return wallet.account && !DEMO ? LS.pending + wallet.account.toLowerCase() : null; }
 
   function savePendingIds() {
     var k = pendingKey();
@@ -3172,6 +4365,7 @@
   function trackOpenRequest(r) {
     pend.opens[r.id] = r;
     savePendingIds();
+    if (r.requestedAt == null && DEMO) r.requestedAt = chainNow();
     if (r.requestedAt == null) {
       /* the request's own timestamp from chain, so the countdown runs on the chain clock */
       read.exchange.openRequest(BigInt(r.id)).then(function (q) {
@@ -3191,6 +4385,7 @@
 
   /* After a reload: the request ids this account was watching, verified on chain. */
   function restorePendingOpens() {
+    if (DEMO) return;
     var k = pendingKey();
     if (!k || !read.exchange) return;
     var ids = [];
@@ -3229,6 +4424,7 @@
      margin sat under "Margin in Use" with no way back but a manual cancelOpen. One walk at a
      time; the deepest block reached is remembered per account so the poll does not re-walk. */
   function discoverPendingOpens() {
+    if (DEMO) return Promise.resolve();
     if (!wallet.account || !read.exchange || !read.logProvider || !exIface || pend.scanning) return Promise.resolve();
     if (acct.pending <= trackedPending() + 1e-6) return Promise.resolve();
     var E = window.ethers;
@@ -3288,39 +4484,58 @@
     if (!pend.tick) pend.tick = setInterval(updatePendingLines, COUNTDOWN_MS);
   }
 
+  /* A request that reads as empty is taken for gone only once the read node has passed the block
+     it was mined in, and not in the first seconds after this page filed it: the receipt comes from
+     the wallet's RPC, and the read node can be a block or two behind it, when an empty read means
+     "not there yet", not "filled". */
+  var GONE_AFTER_MS = 4000;
+  function readPast(q, latest) {
+    if (q.block != null && !(latest > q.block)) return false;
+    if (q.localAt && Date.now() - q.localAt < GONE_AFTER_MS) return false;
+    return true;
+  }
+
   function tickPending() {
+    if (DEMO) { demoTickPending(); return; }
     if (pend.inFlight || !read.exchange || !wallet.account) return;
     var ex = read.exchange;
     var account = wallet.account;
     pend.inFlight = true;
-    var opens = pendingOpenList();
-    var closes = Object.keys(acct.closeReqs);
-    var reads = [read.provider.getBlock('latest').then(noteBlock).catch(function () {})];
-    opens.forEach(function (r) {
-      if (r.busy) return;
-      reads.push(ex.openRequest(BigInt(r.id)).then(function (q) {
-        if (wallet.account !== account || !pend.opens[r.id] || r.busy) return;
-        if (q && q.trader !== ZERO) { r.requestedAt = Number(q.requestedAt); return; }
-        /* gone: filled or refunded by the keeper (or anyone). Say which. */
-        delete pend.opens[r.id];
-        savePendingIds();
-        return resolveOpenOutcome(r, 0);
-      }).catch(function () {}));
-    });
-    closes.forEach(function (pid) {
-      var cr = acct.closeReqs[pid];
-      if (cr.busy) return;
-      reads.push(ex.closeRequest(BigInt(pid)).then(function (q) {
-        if (wallet.account !== account || !acct.closeReqs[pid] || cr.busy) return;
-        if (q && Number(q.requestedAt) > 0) { cr.requestedAt = Number(q.requestedAt); return; }
-        delete acct.closeReqs[pid];
-        return resolveCloseOutcome(pid, cr, 0);
-      }).catch(function () {}));
-    });
-    Promise.all(reads).then(function () {
+    /* the latest block first, then the requests: an empty read counts only past their block */
+    read.provider.getBlock('latest').then(function (b) { noteBlock(b); return b ? Number(b.number) : null; }, function () { return null; }).then(function (latest) {
+      if (latest == null) latest = house.block;
+      var reads = [];
+      pendingOpenList().forEach(function (r) {
+        if (r.busy) return;
+        reads.push(ex.openRequest(BigInt(r.id)).then(function (q) {
+          if (wallet.account !== account || !pend.opens[r.id] || r.busy) return;
+          if (q && q.trader !== ZERO) { r.requestedAt = Number(q.requestedAt); return; }
+          if (!readPast(r, latest)) return;
+          /* gone: filled or refunded by the keeper (or anyone). Say which. */
+          delete pend.opens[r.id];
+          savePendingIds();
+          return resolveOpenOutcome(r, 0);
+        }).catch(function () {}));
+      });
+      Object.keys(acct.closeReqs).forEach(function (pid) {
+        var cr = acct.closeReqs[pid];
+        if (cr.busy) return;
+        reads.push(ex.closeRequest(BigInt(pid)).then(function (q) {
+          if (wallet.account !== account || acct.closeReqs[pid] !== cr || cr.busy) return;
+          if (q && Number(q.requestedAt) > 0) { cr.requestedAt = Number(q.requestedAt); return; }
+          if (!readPast(cr, latest)) return;
+          /* gone from chain: the card says "Checking the result…" until the logs say how it ended
+             (settling, "Adding it to your balance…", only once they say it closed) */
+          ui.checking[pid] = posById(pid) || true;
+          delete acct.closeReqs[pid];
+          return resolveCloseOutcome(pid, cr, 0);
+        }).catch(function () {}));
+      });
+      return Promise.all(reads);
+    }).then(function () {
       pend.inFlight = false;
       if (wallet.account === account) { renderPositions(); updatePendingLines(); }
-    });
+    }, function () { pend.inFlight = false; });
   }
 
   function topicId(x) { return window.ethers.toBeHex(BigInt(x), 32); }
@@ -3354,26 +4569,44 @@
       reportOpenOutcome(r, raw, hits[0].tx);
     }).catch(function () {
       if (attempt + 1 < OUTCOME_TRIES) return new Promise(function (ok) { setTimeout(ok, PENDING_POLL_MS); }).then(function () { return resolveOpenOutcome(r, attempt + 1); });
-      toast('Request #r' + r.id + ' is done; see History.', null);
+      /* the logs never answered: the card says so where the button was (not a silent reset) */
+      if (tk.phase && tk.reqId === r.id) tkSet('unknown', { msg: 'No longer pending. Your positions and History show how it went.' });
+      else toast('Your ' + reqSym(r) + ' order is no longer pending. Your positions and History show how it went.', null);
     }).then(function () { return afterTx(); });
   }
 
-  /* Toast for the logs of an open request's end: a fill or a refund. */
+  /* An open request's end: a fill (the ticket's card says "Open at", the position's card
+     appears) or a refund (the card says why and that the money is back). */
   function reportOpenOutcome(r, logs, txHash) {
-    var inst = state.byInstId[r.instrumentId];
-    var sym = inst && inst.market ? inst.market.symbol : '#' + r.instrumentId;
-    var sz = inst && inst.market ? inst.market.szDecimals : null;
+    var sym = reqSym(r);
+    var sz = szOf(sym);
     var hits = parsedLogs(logs);
     var opened = hits.filter(function (p) { return p.name === 'PositionOpened' && String(p.args.requestId) === r.id; })[0];
     var refunded = hits.filter(function (p) { return p.name === 'OpenRequestCancelled' && String(p.args.requestId) === r.id; })[0];
     var link = txHash ? txLink(txHash) : null;
+    var mine = !!tk.phase && tk.reqId === r.id;
+    var shows = mine ? [$('ticketProgress'), $('barStatus')] : [];
     if (opened) {
-      toast('Filled #' + String(opened.args.positionId) + ': ' + (r.isLong ? 'long ' : 'short ') + sym + ' x' + r.leverage + ', entry ' + fmtPrice(px18ToNum(opened.args.entryPx18), sz) + '.', 'ok', link);
+      var entry = px18ToNum(opened.args.entryPx18);
+      if (mine) tkSet('opened', { entry: entry, posId: String(opened.args.positionId) });
+      resultToast(shows, 'Opened ' + sideWord(r.isLong) + ' ' + sym + ' ' + r.leverage + 'x at ' + fmtPrice(entry, sz) + '.', 'ok', link);
+      tourEvent('opened');
     } else if (refunded) {
-      toast('Refunded #r' + r.id + ' (' + reasonText(refunded.args.reason) + '): ' + fmtUsd(r.margin) + ' back to available.', 'err', link);
+      var why = refundWhy(refunded.args.reason, sym, r.isLong);
+      if (mine) tkSet('refunded', { msg: "Didn't open: " + why + '. Your ' + fmtUsdShort(r.margin) + ' is back in your balance.' });
+      resultToast(shows, "Didn't open: " + why + '. ' + fmtUsd(r.margin) + ' is back in your balance.', 'err', link);
     } else {
-      toast('Request #r' + r.id + ' done.', null, link);
+      toast('Your ' + sym + ' order is done.', null, link);
+      if (tk.reqId === r.id) tkReset();
     }
+  }
+
+  /* Why a request was refunded, said about this coin and side. */
+  function refundWhy(selector, sym, isLong) {
+    var name = null;
+    try { var f = exIface && exIface.getError(selector); if (f) name = f.name; } catch (e) { /* unknown selector */ }
+    if (name === 'OiCapExceeded') return sym + ' ' + (isLong ? 'longs' : 'shorts') + ' are full right now';
+    return reasonText(selector);
   }
 
   /* What happened to a close request that disappeared: the position closed, was liquidated,
@@ -3382,60 +4615,98 @@
     var prov = read.logProvider;
     var from = cr && cr.block != null ? cr.block : Math.max(0, (house.block || 0) - PENDING_SCAN_BLOCKS);
     var t = function (n) { return exIface.getEvent(n).topicHash; };
+    var pos = posById(pid);
     return prov.getLogs({
       address: cfg.contracts.exchange, fromBlock: from, toBlock: 'latest',
       topics: [[t('PositionClosed'), t('PositionLiquidated'), t('CloseRequestCancelled')], topicId(pid)]
     }).then(function (logs) {
       var hits = parsedLogs(logs);
       if (!hits.length) throw new Error('not yet');
-      reportCloseOutcome(pid, logs, hits[hits.length - 1].tx);
+      reportCloseOutcome(pid, logs, hits[hits.length - 1].tx, pos);
     }).catch(function () {
       if (attempt + 1 < OUTCOME_TRIES) return new Promise(function (ok) { setTimeout(ok, PENDING_POLL_MS); }).then(function () { return resolveCloseOutcome(pid, cr, attempt + 1); });
-      toast('Close of #' + pid + ' is done; see History.', null);
+      /* the logs never answered: the next account read shows where the position stands */
+      delete ui.checking[String(pid)];
+      delete ui.settling[String(pid)];
+      renderPositions();
+      if (!ui.reported[String(pid)]) toast('Your close request is no longer pending. Your positions and History show the result.', null);
     }).then(function () { return afterTx(); });
   }
 
-  function reportCloseOutcome(pid, logs, txHash) {
-    var hits = parsedLogs(logs).filter(function (p) { return String(p.args.positionId) === String(pid); });
+  /* A close's end, as a card where the position was (and a toast): closed (P&L, what came back,
+     anything owed, FETTI, Withdraw and Share), liquidated (stays until OK), or a close that did
+     not go through (the position stays open). pos: the position as last read, when known. */
+  function reportCloseOutcome(pid, logs, txHash, pos) {
+    pid = String(pid);
+    pos = pos || posById(pid);
+    var hits = parsedLogs(logs).filter(function (p) { return String(p.args.positionId) === pid; });
     var closed = hits.filter(function (p) { return p.name === 'PositionClosed'; })[0];
     var liq = hits.filter(function (p) { return p.name === 'PositionLiquidated'; })[0];
     var cancelled = hits.filter(function (p) { return p.name === 'CloseRequestCancelled'; })[0];
     var link = txHash ? txLink(txHash) : null;
+    var label = pos ? posLabel(pos) : 'position';
+    var m = pos ? positionMarket(pos) : null;
+    var sz = m ? m.szDecimals : null;
+    /* reported once: the poll, the account read, the vanished lookup and a fill's own receipt
+       can each get here; the second report stays quiet */
+    var again = ui.reported[pid] === true && (closed || liq);
+    delete ui.checking[pid];
+    if (again) { renderPositions(); return; }
+    if (closed || liq) ui.reported[pid] = true;
     if (closed) {
+      ui.settling[pid] = true;
       var a = closed.args;
       var pnl = usd6ToNum(a.pnlUsdc);
-      var msg = 'Closed #' + pid + ' at ' + fmtPrice(px18ToNum(a.exitPx18)) + ': PnL ' + fmtUsd(pnl, true) + ', paid ' + fmtUsd(usd6ToNum(a.payoutUsdc));
-      if (a.queuedUsdc > 0n) msg += ', queued ' + fmtUsd(usd6ToNum(a.queuedUsdc));
-      if (a.confettiMinted > 0n) msg += ', ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI minted';
+      var paid = usd6ToNum(a.payoutUsdc);
+      var exit = fmtPrice(px18ToNum(a.exitPx18), sz);
+      var lines = ['Closed at ' + exit + ' · ' + fmtUsd(pnl, true) + ' · ' + fmtUsd(paid) + ' is back in your balance'];
+      if (a.queuedUsdc > 0n) lines.push(fmtUsd(usd6ToNum(a.queuedUsdc)) + ' more is owed to you, paid automatically.');
+      if (a.confettiMinted > 0n) lines.push('You got ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI' + (pnl < 0 ? ' for the loss.' : '.'));
       var win = pnl > 0 && !!window.ConfettiShare;
-      var tst = toast(msg + '.', pnl >= 0 ? 'ok' : 'err', link, win ? 30000 : null);
+      var openShare = function () { window.ConfettiShare.open(shareTrade(pid, a, closed.block, pos)); };
+      var buttons = [{ label: 'Withdraw', act: 'withdraw', fn: function () { tourEvent('withdraw'); openWithdraw(); } }];
+      if (win) buttons.push({ label: 'Share', fn: openShare });
+      addRecent({ key: 'c' + pid, pid: pid, cls: pnl >= 0 ? 'is-win' : 'is-loss', title: 'Closed ' + label, lines: lines, buttons: buttons, ttl: 60000 });
+      /* the result card says all of it (with Share); a toast only when that card is out of sight */
+      var tst = resultToast([recentEl('c' + pid)], 'Closed ' + label + ': ' + fmtUsd(pnl, true) + '. ' + fmtUsd(paid) + ' is back in your balance.', pnl >= 0 ? 'ok' : 'err', link, win ? 30000 : null);
       if (win && tst) {
-        /* the position as last read: the account refresh after this report drops it */
-        var pos = acct.positions.filter(function (p) { return String(p.id) === String(pid); })[0] || null;
         var share = el('button', 'btn btn-sm', 'Share your win');
         share.type = 'button';
         share.addEventListener('click', function (ev) {
           ev.stopPropagation();
           dismissToast(tst);
-          window.ConfettiShare.open(shareTrade(pid, a, closed.block, pos));
+          openShare();
         });
         tst.appendChild(document.createTextNode(' '));
         tst.appendChild(share);
       }
+      tourEvent('closed');
     } else if (liq) {
-      toast('Liquidated #' + pid + ' at ' + fmtPrice(px18ToNum(liq.args.exitPx18)) + ': margin ' + fmtUsd(usd6ToNum(liq.args.marginUsdc)) + ' gone' + (liq.args.confettiMinted > 0n ? ', ' + fmtInt(tokenToNum(liq.args.confettiMinted)) + ' FETTI minted' : '') + '.', 'err', link);
+      var lost = usd6ToNum(liq.args.marginUsdc);
+      var llines = ['Your ' + label + ' was liquidated at ' + fmtPrice(px18ToNum(liq.args.exitPx18), sz) + '. Your ' + fmtUsdShort(lost) + ' is gone.'];
+      if (liq.args.confettiMinted > 0n) llines.push('You got ' + fmtInt(tokenToNum(liq.args.confettiMinted)) + ' FETTI for the loss.');
+      addRecent({ key: 'l' + pid, pid: pid, cls: 'is-loss', title: 'Liquidated', lines: llines });
+      resultToast([recentEl('l' + pid)], 'Your ' + label + ' was liquidated. Your ' + fmtUsdShort(lost) + ' is gone.', 'err', link);
     } else if (cancelled) {
-      toast('Close request on #' + pid + ' ' + reasonText(cancelled.args.reason) + '; the position stays open.', 'err', link);
+      delete ui.settling[pid];
+      toast('Your ' + label + " close didn't go through (" + reasonText(cancelled.args.reason) + '). The position is still open.', 'err', link);
     } else {
-      toast('Close of #' + pid + ' done.', null, link);
+      toast('Your ' + label + ' close is done.', null, link);
     }
+    renderPositions();
+  }
+
+  /* A result card on the page, by its key. */
+  function recentEl(key) {
+    var host = $('posLines');
+    return host ? host.querySelector('[data-recent="' + key + '"]') : null;
   }
 
   /* ---- share a winning close (share.js) ----------------------------------------------------------- */
 
   /* A block's timestamp; one retry (the public RPC rate-limits), then null: the card goes without its chart */
   function blockTime(block) {
-    if (block == null) return Promise.resolve(Math.floor(Date.now() / 1000));
+    if (DEMO || block == null) return Promise.resolve(Math.floor(Date.now() / 1000));
     if (hist.blockTs[block]) return Promise.resolve(hist.blockTs[block]);
     function get() {
       return read.provider.getBlock(block).then(function (b) {
@@ -3500,39 +4771,48 @@
     });
   }
 
+  /* Add USDC from this wallet: approve the exact amount when the allowance is short (step 1 of
+     2), then deposit (step 2 of 2). The dialog's button names the step it is on. */
+  var dep = { step: null, two: false, amount: 0 };
+
   function submitDeposit(amount) {
+    if (DEMO) return demoDeposit(amount);
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
     if (!isAddr(usdcAddress())) { toast('USDC address unknown.', 'err'); return Promise.resolve(); }
     var amount6 = numToUsd6(amount);
     var usdc = usdcWrite();
     var ex = exchangeWrite();
     var spender = cfg.contracts.exchange;
+    dep.amount = amount; dep.two = false; dep.step = null;
     setBusy(true);
     return usdc.allowance(wallet.account, spender).then(function (allowance) {
       if (allowance >= amount6) return null;
-      return sendTx('Approve ' + fmtUsd(amount) + ' USDC', usdc.approve, [spender, amount6]);
+      dep.two = true; dep.step = 'approve'; renderDepositSubmit();
+      return sendTx('Approve USDC (1 of 2)', usdc.approve, [spender, amount6]);
     }).then(function () {
-      return sendTx('Deposit ' + fmtUsd(amount), ex.deposit, [amount6]);
+      dep.step = 'deposit'; renderDepositSubmit();
+      return sendTx('Deposit ' + fmtUsd(amount) + (dep.two ? ' (2 of 2)' : ''), ex.deposit, [amount6]);
     }).then(function (rc) {
-      toast('Deposited ' + fmtUsd(amount) + ' into your exchange balance.', 'ok', txLink(rc.hash));
+      toast('Deposited ' + fmtUsd(amount) + '. Pick BUY / LONG or SELL / SHORT.', 'ok', txLink(rc.hash));
       closeDialog('depositModal');
       return afterTx();
     }).catch(function (e) {
-      toast('Deposit failed: ' + describeError(e), 'err');
-    }).then(function () { setBusy(false); });
+      toast('Deposit didn\'t go through: ' + describeError(e), 'err');
+    }).then(function () { dep.step = null; setBusy(false); });
   }
 
   function submitWithdraw(amount) {
+    if (DEMO) return demoWithdraw(amount);
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
     var amount6 = numToUsd6(amount);
     var ex = exchangeWrite();
     setBusy(true);
     return sendTx('Withdraw ' + fmtUsd(amount), ex.withdraw, [amount6]).then(function (rc) {
-      toast('Withdrew ' + fmtUsd(amount) + ' to your wallet.', 'ok', txLink(rc.hash));
+      toast('Sent ' + fmtUsd(amount) + ' to your wallet.', 'ok', txLink(rc.hash));
       closeDialog('withdrawModal');
       return afterTx();
     }).catch(function (e) {
-      toast('Withdraw failed: ' + describeError(e), 'err');
+      toast('Withdraw didn\'t go through: ' + describeError(e), 'err');
     }).then(function () { setBusy(false); });
   }
 
@@ -3552,15 +4832,16 @@
      spot USDC sent to HyperEVM and Core perp USDC moved to spot (both 8 dec). */
   function sweepText(s) {
     var parts = [];
-    if (s.dep > 0) parts.push(fmtUsd(s.dep / 1e6) + ' deposited');
+    if (s.dep > 0) parts.push(fmtUsd(s.dep / 1e6) + ' added to your balance');
     if (s.bridged > 0) parts.push(fmtUsd(s.bridged / 1e8) + ' on its way from Hyperliquid');
     if (s.perp > 0) parts.push(fmtUsd(s.perp / 1e8) + ' moved from perp to spot');
-    return parts.length ? parts.join(' · ') : 'nothing to move';
+    return parts.length ? parts.join(' · ') : 'nothing to move yet';
   }
 
   /* The proxy and what waits on it: Core spot (precompile 0x801, total - hold), Core perp
      withdrawable (0x803) and HyperEVM USDC on the proxy. A read that fails leaves its field null. */
   function refreshProxy() {
+    if (DEMO) { renderDepositModal(); return Promise.resolve(); }
     var a = wallet.account;
     if (!read.factory || !a) { hl.account = null; hl.proxy = null; renderDepositModal(); return Promise.resolve(); }
     var E = window.ethers;
@@ -3588,14 +4869,15 @@
 
   /* factory.sweep(trader) from the wallet, after an eth_call that says it would move something. */
   function submitSweep() {
+    if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
     var a = wallet.account;
     if (!read.factory || !a) return Promise.resolve();
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
     var f = new window.ethers.Contract(read.factory.target, FACTORY_ABI, wallet.signer);
     setBusy(true);
     return f.sweep.staticCall(a).then(function (r) {
-      if (BigInt(r[0]) === 0n && BigInt(r[1]) === 0n && BigInt(r[2]) === 0n) { toast('Nothing to sweep yet.'); return null; }
-      return sendTx('Sweep', f.sweep, [a]);
+      if (BigInt(r[0]) === 0n && BigInt(r[1]) === 0n && BigInt(r[2]) === 0n) { toast('Nothing has arrived from Hyperliquid yet.'); return null; }
+      return sendTx('Add to my balance', f.sweep, [a]);
     }).then(function (rc) {
       if (!rc) return null;
       var s = { at: Math.floor(Date.now() / 1000), dep: 0, bridged: 0, perp: 0 };
@@ -3606,10 +4888,13 @@
         } catch (e) { /* another contract's log */ }
       });
       if (wallet.account === a) lsSet(sweepStoreKey(), JSON.stringify(s));
-      toast('Sweep: ' + sweepText(s) + (s.bridged > 0 || s.perp > 0 ? '. Sweep again in a few seconds.' : '.'), 'ok', txLink(rc.hash));
+      var moving = (s.bridged || 0) / 1e8 + (s.perp || 0) / 1e8;
+      toast(moving > 0
+        ? fmtUsd(moving) + ' is on its way. It finishes by itself, or press Add to my balance again in a few seconds.'
+        : sweepText(s) + '.', 'ok', txLink(rc.hash));
       return afterTx();
     }).catch(function (e) {
-      toast('Sweep failed: ' + describeError(e), 'err');
+      toast('Add to my balance did not go through: ' + describeError(e), 'err');
     }).then(function () { setBusy(false); return refreshProxy(); });
   }
 
@@ -3622,14 +4907,14 @@
     var copy = $('hlCopy'); if (copy) copy.disabled = !on;
     var sweep = $('hlSweep'); if (sweep) sweep.disabled = !on || state.busy;
     var readable = on && (hl.spotFreeWei != null || hl.perp6 != null);
-    setText('hlPendingKey', readable || !on ? 'Pending' : 'Last sweep');
+    setText('hlPendingKey', readable || !on ? 'Waiting' : 'Last arrived');
     var val = '—', title = '';
     if (readable) {
       var spot = hl.spotFreeWei != null && hl.spotFreeWei > CORE_FEE_RESERVE_WEI ? hl.spotFreeWei - CORE_FEE_RESERVE_WEI : 0n;
       var perp = hl.perp6 || 0n, evm = hl.evm6 || 0n;
       var total = Number(spot) / 1e8 + Number(perp) / 1e6 + Number(evm) / 1e6;
       var moves = spot >= MIN_BRIDGE_WEI || perp >= MIN_PERP_USD || evm > 0n;
-      val = fmtUsd(total) + (total > 0 && !moves ? ' · under 1 USDC, waits' : '');
+      val = fmtUsd(total) + (total > 0 && !moves ? ' · under 1 USDC waits for more' : '');
       title = 'Hyperliquid spot ' + fmtUsd(Number(spot) / 1e8) + ' · perp ' + fmtUsd(Number(perp) / 1e6) + ' · HyperEVM ' + fmtUsd(Number(evm) / 1e6);
     } else if (on) {
       var s = lastSweep();
@@ -3654,46 +4939,104 @@
     if (typeof d.close === 'function' && d.open) d.close(); else d.removeAttribute('open');
   }
 
+  /* Add USDC: where is it (this wallet, or Hyperliquid), then the steps for that place. The HYPE
+     line comes first when the wallet has too little for gas. */
   function openDeposit() {
     if (!wallet.account) { connect(); return; }
-    if (wallet.chainId !== CHAIN_ID) { toast('Switch the wallet to HyperEVM first.', 'err'); return; }
-    if (!hasExchange()) { toast('Exchange address not configured.', 'err'); return; }
+    if (wallet.chainId !== CHAIN_ID) { toast('Switch your wallet to HyperEVM first.', 'err'); return; }
+    if (!hasExchange()) { toast('Trading is off on this copy of the site.', 'err'); return; }
+    var hint = $('depositHint');
+    if (hint) hint.classList.remove('is-err');
+    setDepWhere(acct.walletUsdc >= 1 || !read.factory ? 'wallet' : 'hl');
     renderDepositModal();
     openDialog('depositModal');
     refreshWalletUsdc();
     refreshProxy();
     var inp = $('depositAmount'); if (inp) { inp.value = ''; inp.focus(); }
+    renderDepositSubmit();
+  }
+
+  function setDepWhere(where) {
+    var seg = $('depWhere');
+    if (seg) Array.prototype.forEach.call(seg.querySelectorAll('[data-where]'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-where') === where ? 'true' : 'false'); });
+    var w = $('depFromWallet'), h = $('depFromHl');
+    if (w) w.hidden = where !== 'wallet';
+    if (h) h.hidden = where !== 'hl';
   }
 
   function openWithdraw() {
     if (!wallet.account) { connect(); return; }
-    if (wallet.chainId !== CHAIN_ID) { toast('Switch the wallet to HyperEVM first.', 'err'); return; }
-    if (!hasExchange()) { toast('Exchange address not configured.', 'err'); return; }
+    if (wallet.chainId !== CHAIN_ID) { toast('Switch your wallet to HyperEVM first.', 'err'); return; }
+    if (!hasExchange()) { toast('Trading is off on this copy of the site.', 'err'); return; }
+    var hint = $('withdrawHint');
+    if (hint) { hint.classList.remove('is-err'); hint.textContent = 'Withdraw your balance. Money in open trades comes back when you close.'; }
     renderWithdrawModal();
     openDialog('withdrawModal');
     var inp = $('withdrawAmount'); if (inp) { inp.value = ''; inp.focus(); }
+    renderWithdrawSubmit();
   }
 
   function renderDepositModal() {
     setText('depWallet', wallet.account ? fmtUsd(acct.walletUsdc) : '—');
     setText('depAvailable', acct.loaded ? fmtUsd(acct.available) : '—');
-    setText('depAllowance', wallet.account ? fmtUsd(acct.allowance) : '—');
+    var hype = $('depHype');
+    if (hype) hype.hidden = !(wallet.account && ui.hypeWei != null && ui.hypeWei < HYPE_LOW_WEI);
+    renderDepositSubmit();
     renderHyperliquid();
   }
 
+  /* The deposit button names its step: Approve USDC (1 of 2) when the allowance is short, then
+     Deposit $50 (2 of 2); Deposit $50 when one step is enough. */
+  function renderDepositSubmit() {
+    var b = $('depositSubmit');
+    if (!b) return;
+    var inp = $('depositAmount');
+    var v = inp ? Number(inp.value) : NaN;
+    var amt = dep.step ? dep.amount : v;
+    var label;
+    if (dep.step === 'approve') label = 'Approve USDC (1 of 2)';
+    else if (dep.step === 'deposit') label = 'Deposit ' + fmtUsdShort(amt) + (dep.two ? ' (2 of 2)' : '');
+    else if (isFinite(v) && v > 0 && acct.allowance + 1e-9 < v) label = 'Approve USDC (1 of 2)';
+    else label = isFinite(v) && v > 0 ? 'Deposit ' + fmtUsdShort(v) : 'Deposit';
+    if (b.textContent !== label) b.textContent = label;
+    var hint = $('depositHint');
+    if (hint && !hint.classList.contains('is-err') && !dep.step) {
+      hint.textContent = isFinite(v) && v > 0 && acct.allowance + 1e-9 >= v ? 'One step: deposit.' : 'The first time takes two steps: approve USDC, then deposit it.';
+    }
+  }
+
   function renderWithdrawModal() {
+    setText('wdTo', wallet.account ? 'To ' + shortAddr(wallet.account) + ' on HyperEVM' : 'To your wallet on HyperEVM');
     setText('wdAvailable', acct.loaded ? fmtUsd(acct.available) : '—');
-    setText('wdMargin', acct.loaded ? fmtUsd(acct.marginInUse) : '—');
+    setText('wdMargin', acct.loaded ? fmtUsd(acct.marginInUse + acct.pending) : '—');
+    renderWithdrawSubmit();
+  }
+
+  function renderWithdrawSubmit() {
+    var b = $('withdrawSubmit');
+    if (!b) return;
+    var inp = $('withdrawAmount');
+    var v = inp ? Number(inp.value) : NaN;
+    b.textContent = isFinite(v) && v > 0 ? 'Withdraw ' + fmtUsd(v) : 'Withdraw';
+  }
+
+  function copyText(text, done) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { toast(text); });
+    else toast(text);
   }
 
   function initDialogs() {
-    ['depositModal', 'withdrawModal', 'sessionModal'].forEach(function (id) {
+    ['depositModal', 'withdrawModal', 'sessionModal', 'confirmModal', 'walletAppModal', 'acctModal'].forEach(function (id) {
       var d = $(id);
       if (!d) return;
       var closers = d.querySelectorAll('[data-close]');
       for (var i = 0; i < closers.length; i++) closers[i].addEventListener('click', function () { closeDialog(id); });
       d.addEventListener('click', function (ev) { if (ev.target === d) closeDialog(id); });
     });
+    /* the check: OK resolves true; any other way out (Back, the cross, Esc, outside) false */
+    var cf = $('confirmForm'), cm = $('confirmModal');
+    if (cf) cf.addEventListener('submit', function (ev) { ev.preventDefault(); if (confirmDone) confirmDone(true); });
+    if (cm) cm.addEventListener('close', function () { if (confirmDone) confirmDone(false); });
     var depForm = $('depositForm');
     if (depForm) {
       depForm.addEventListener('submit', function (ev) {
@@ -3702,13 +5045,20 @@
         var v = Number($('depositAmount').value);
         var hint = $('depositHint');
         if (!isFinite(v) || v <= 0) { hint.textContent = 'Enter an amount.'; hint.classList.add('is-err'); return; }
-        if (v > acct.walletUsdc + 1e-9) { hint.textContent = 'More than the wallet holds (' + fmtUsd(acct.walletUsdc) + ').'; hint.classList.add('is-err'); return; }
+        if (v > acct.walletUsdc + 1e-9) { hint.textContent = 'More than your wallet has (' + fmtUsd(acct.walletUsdc) + ').'; hint.classList.add('is-err'); return; }
         hint.classList.remove('is-err');
-        hint.textContent = acct.allowance >= v ? 'Allowance covers it: one transaction.' : 'Two transactions: approve exactly ' + fmtUsd(v) + ', then deposit.';
+        hint.textContent = acct.allowance >= v ? 'Confirm the deposit in your wallet.' : 'Two steps in your wallet: approve exactly ' + fmtUsd(v) + ', then deposit it.';
         submitDeposit(v);
       });
       $('depMax').addEventListener('click', function () {
         $('depositAmount').value = String(Math.floor(acct.walletUsdc * 100) / 100);
+        renderDepositSubmit();
+      });
+      $('depositAmount').addEventListener('input', function () { $('depositHint').classList.remove('is-err'); renderDepositSubmit(); });
+      var where = $('depWhere');
+      if (where) where.addEventListener('click', function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest('[data-where]') : null;
+        if (b) setDepWhere(b.getAttribute('data-where'));
       });
     }
     var wdForm = $('withdrawForm');
@@ -3719,13 +5069,15 @@
         var v = Number($('withdrawAmount').value);
         var hint = $('withdrawHint');
         if (!isFinite(v) || v <= 0) { hint.textContent = 'Enter an amount.'; hint.classList.add('is-err'); return; }
-        if (v > acct.available + 1e-9) { hint.textContent = 'More than your available balance (' + fmtUsd(acct.available) + ').'; hint.classList.add('is-err'); return; }
+        if (v > acct.available + 1e-9) { hint.textContent = 'More than your balance (' + fmtUsd(acct.available) + '). Money in open trades comes back when you close.'; hint.classList.add('is-err'); return; }
         hint.classList.remove('is-err');
         submitWithdraw(v);
       });
       $('wdMax').addEventListener('click', function () {
         $('withdrawAmount').value = String(Math.floor(acct.available * 1e6) / 1e6);
+        renderWithdrawSubmit();
       });
+      $('withdrawAmount').addEventListener('input', renderWithdrawSubmit);
     }
     var hlSweep = $('hlSweep');
     if (hlSweep) hlSweep.addEventListener('click', function () { if (!state.busy) submitSweep(); });
@@ -3734,11 +5086,20 @@
       hlCopy.addEventListener('click', function () {
         if (!hl.proxy) return;
         var addr = hl.proxy;
-        var done = function () { toast('Copied ' + addr); };
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(addr).then(done, function () { toast(addr); });
-        else toast(addr);
+        copyText(addr, function () { toast('Copied your deposit address ' + shortAddr(addr) + '.'); });
       });
     }
+    var waCopy = $('waCopy');
+    if (waCopy) waCopy.addEventListener('click', function () {
+      var link = waCopy.getAttribute('data-link') || SITE_URL + 'trade.html';
+      copyText(link, function () { toast('Copied. Paste it into your wallet app\'s browser.'); });
+    });
+    var amCopy = $('amCopy');
+    if (amCopy) amCopy.addEventListener('click', function () {
+      if (wallet.account) copyText(wallet.account, function () { toast('Copied ' + shortAddr(wallet.account) + '.'); });
+    });
+    var amOut = $('amDisconnect');
+    if (amOut) amOut.addEventListener('click', function () { closeDialog('acctModal'); disconnect(); });
     var sForm = $('sessionForm');
     if (sForm) {
       sForm.addEventListener('submit', function (ev) {
@@ -3784,6 +5145,7 @@
   }
 
   function refreshConfVol() {
+    if (DEMO) { setText('chipConfVol', '$12,480'); return; }
     if (cvol.busy || document.hidden || !read.logProvider || !exIface || !hasExchange()) return;
     var prov = read.logProvider;
     var topic = exIface.getEvent('PositionOpened').topicHash;
@@ -3817,7 +5179,7 @@
   /* ---- history (Exchange events via eth_getLogs) ------------------------------------ */
 
   function freshHistory() {
-    return { rows: [], seen: {}, openedMarket: {}, openedSide: {}, scannedFrom: null, scannedTo: null, loading: false, done: false, chunked: false, blockTs: {} };
+    return { rows: [], seen: {}, openedMarket: {}, openedSide: {}, openedEntry: {}, scannedFrom: null, scannedTo: null, loading: false, done: false, chunked: false, blockTs: {} };
   }
 
   var hist = freshHistory();
@@ -3844,6 +5206,7 @@
       if (p.name === 'PositionOpened') {
         hist.openedMarket[String(p.args.positionId)] = Number(p.args.instrumentId);
         hist.openedSide[String(p.args.positionId)] = sideLev(p.args.isLong, p.args.leverage);
+        hist.openedEntry[String(p.args.positionId)] = px18ToNum(p.args.entryPx18);
       }
       hist.rows.push({ name: p.name, args: p.args, block: Number(log.blockNumber), index: Number(log.index), tx: log.transactionHash });
     });
@@ -3851,7 +5214,7 @@
   }
 
   function loadHistory(reset) {
-    if (!wallet.account || !read.exchange || !read.logProvider) { renderHistory(); return Promise.resolve(); }
+    if (DEMO || !wallet.account || !read.exchange || !read.logProvider) { renderHistory(); return Promise.resolve(); }
     if (reset) hist = freshHistory();
     if (hist.loading || hist.done) { renderHistory(); return Promise.resolve(); }
     hist.loading = true;
@@ -3876,7 +5239,7 @@
       p = scanChunks(prov, hist.scannedFrom - 1, deploy);
     }
     return p.catch(function (e) {
-      toast('History: ' + describeError(e), 'err');
+      toast('Could not load all of your history: ' + describeError(e), 'err');
     }).then(function () {
       if (wallet.account !== account) return;
       hist.loading = false;
@@ -3904,60 +5267,63 @@
     return step();
   }
 
-  /* Structured fields for one history line. amount is already signed; signed=false shows it plain. */
+  /* Structured fields for one history line, in plain words, details inline. amount is already
+     signed; signed=false shows it plain. A close names its entry and exit when the open is loaded. */
   function describeRow(r) {
     var a = r.args;
-    var d = { label: r.name.toLowerCase(), market: null, id: null, side: null, amount: null, signed: true, details: '' };
-    function sym(instId) { var inst = state.byInstId[instId]; return inst && inst.market ? inst.market.symbol : '#' + instId; }
+    var d = { label: r.name, market: null, id: null, side: null, amount: null, signed: true, details: '' };
+    function sym(instId) { var inst = state.byInstId[instId]; return inst && inst.market ? inst.market.symbol : 'Market ' + instId; }
     function pid() { d.id = String(a.positionId); var mi = hist.openedMarket[d.id]; d.market = mi != null ? sym(mi) : null; d.side = hist.openedSide[d.id] || null; }
+    function szFor() { var mi = hist.openedMarket[d.id]; var inst = mi != null ? state.byInstId[mi] : null; return inst && inst.market ? inst.market.szDecimals : null; }
+    var fetti = function (n) { return n > 0n ? ' · ' + fmtInt(tokenToNum(n)) + ' FETTI' : ''; };
     switch (r.name) {
       case 'Deposited':
-        d.label = 'deposit';
+        d.label = 'Deposit';
         d.amount = usd6ToNum(a.amountUsdc);
         if (a.payer.toLowerCase() !== wallet.account.toLowerCase()) d.details = 'from ' + shortAddr(a.payer);
         break;
       case 'Withdrawn':
-        d.label = 'withdraw';
+        d.label = 'Withdrawal';
         d.amount = -usd6ToNum(a.amountUsdc);
         break;
       case 'PositionOpened':
-        d.label = 'opened';
+        d.label = 'Opened';
         d.id = String(a.positionId);
         d.market = sym(Number(a.instrumentId));
         d.side = sideLev(a.isLong, a.leverage);
         d.amount = usd6ToNum(a.marginUsdc); d.signed = false;
-        d.details = 'margin ' + fmtUsd(usd6ToNum(a.marginUsdc)) + ' · entry ' + fmtPrice(px18ToNum(a.entryPx18));
+        d.details = 'put in · at ' + fmtPrice(px18ToNum(a.entryPx18), szFor());
         break;
       case 'PositionClosed':
-        d.label = 'closed';
+        d.label = 'Closed';
         pid();
         d.amount = usd6ToNum(a.pnlUsdc);
-        d.details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · paid ' + fmtUsd(usd6ToNum(a.payoutUsdc));
-        if (a.queuedUsdc > 0n) d.details += ' · queued ' + fmtUsd(usd6ToNum(a.queuedUsdc));
+        var en = hist.openedEntry[d.id];
+        d.details = (en ? fmtPrice(en, szFor()) + ' → ' : 'at ') + fmtPrice(px18ToNum(a.exitPx18), szFor()) + ' · ' + fmtUsd(usd6ToNum(a.payoutUsdc)) + ' back';
         if (a.feeUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6ToNum(a.feeUsdc));
-        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI';
+        if (a.queuedUsdc > 0n) d.details += ' · ' + fmtUsd(usd6ToNum(a.queuedUsdc)) + ' owed';
+        d.details += fetti(a.confettiMinted);
         break;
       case 'PositionLiquidated':
-        d.label = 'liquidated';
+        d.label = 'Liquidated';
         pid();
         d.amount = -usd6ToNum(a.marginUsdc);
-        d.details = 'exit ' + fmtPrice(px18ToNum(a.exitPx18)) + ' · bounty ' + fmtUsd(usd6ToNum(a.bountyUsdc)) + ' to ' + shortAddr(a.liquidator);
-        if (a.confettiMinted > 0n) d.details += ' · ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI';
+        d.details = 'at ' + fmtPrice(px18ToNum(a.exitPx18), szFor()) + fetti(a.confettiMinted);
         break;
       case 'QueueAppended':
-        d.label = 'queued';
+        d.label = 'Win owed';
         d.amount = usd6ToNum(a.amountUsdc); d.signed = false;
-        d.details = 'entry #' + a.index + ' · owed';
+        d.details = 'paid automatically';
         break;
       case 'QueuePaid':
-        d.label = 'queue paid';
+        d.label = 'Owed win paid';
         d.amount = usd6ToNum(a.paidUsdc);
-        d.details = 'entry #' + a.index + ' · ' + fmtUsd(usd6ToNum(a.remainingUsdc)) + ' remaining';
+        if (a.remainingUsdc > 0n) d.details = fmtUsd(usd6ToNum(a.remainingUsdc)) + ' still owed';
         break;
       case 'OpenRequestCancelled':
-        d.label = 'refunded';
+        d.label = 'Refunded';
         d.id = 'r' + String(a.requestId);
-        d.details = reasonText(a.reason);
+        d.details = "didn't open: " + reasonText(a.reason);
         break;
     }
     return d;
@@ -3968,25 +5334,24 @@
     return (ts ? fmtTime(ts) + ' · ' : '') + 'block ' + fmtInt(block);
   }
 
-  /* One .pos-line per event: time, event, market, side+lev, signed amount, tx. */
+  /* One line per event, wrapping on a phone: time, what, coin, side and leverage, amount,
+     details, view (the transaction). Ids stay in the hover text. */
   function historyLine(r) {
     var d = describeRow(r);
-    var line = el('div', 'pos-line');
-    if (d.details) line.title = d.details;
+    var line = el('div', 'pos-line hist-line');
+    if (d.id) line.title = (d.id.charAt(0) === 'r' ? 'Request #' : 'Position #') + d.id.replace(/^r/, '');
     var time = el('span', 'faint', fmtClock(hist.blockTs[r.block]));
     time.setAttribute('data-block', String(r.block));
     time.title = blockTitle(r.block);
     line.appendChild(time);
-    line.appendChild(el('span', null, d.label));
+    line.appendChild(el('span', 'hist-what', d.label));
     if (d.market) line.appendChild(el('span', 'sym', d.market));
-    if (d.id) line.appendChild(el('span', 'faint xs', '#' + d.id));
-    if (d.side) line.appendChild(el('span', d.side.charAt(0) === 'l' ? 'pos' : 'neg', d.side));
+    if (d.side) line.appendChild(el('span', /^Long/.test(d.side) ? 'pos' : 'neg', d.side));
     if (d.amount != null) {
       var cls = d.signed ? (d.amount > 0 ? 'pos' : d.amount < 0 ? 'neg' : '') : '';
       line.appendChild(el('span', cls || null, fmtUsd(d.amount, d.signed)));
-    } else if (d.details) {
-      line.appendChild(el('span', 'faint', d.details));
     }
+    if (d.details) line.appendChild(el('span', 'faint hist-detail', d.details));
     if (r.name === 'PositionClosed' && d.amount > 0 && window.ConfettiShare) {
       var share = el('a', 'faint', 'share');
       share.href = '#'; share.setAttribute('role', 'button'); share.title = 'Share your win';
@@ -3997,9 +5362,11 @@
       line.appendChild(share);
     }
     line.appendChild(el('span', 'grow'));
-    var a = el('a', 'faint', shortAddr(r.tx));
-    a.href = explorer('tx', r.tx); a.target = '_blank'; a.rel = 'noopener'; a.title = r.tx;
-    line.appendChild(a);
+    if (r.tx && !DEMO) {
+      var a = el('a', 'faint', 'view');
+      a.href = explorer('tx', r.tx); a.target = '_blank'; a.rel = 'noopener'; a.title = r.tx;
+      line.appendChild(a);
+    }
     return line;
   }
 
@@ -4007,12 +5374,11 @@
     var host = $('histLines');
     var empty = $('histEmpty');
     var more = $('histMoreBtn');
-    var range = $('histRange');
     if (!host) return;
     clearLines(host);
-    if (!wallet.account) { empty.textContent = 'Connect a wallet to load your history.'; empty.removeAttribute('hidden'); }
-    else if (!hasExchange()) { empty.textContent = 'Exchange address not configured.'; empty.removeAttribute('hidden'); }
-    else if (!hist.rows.length) { empty.textContent = hist.loading ? 'Scanning events…' : 'No events found in the scanned range.'; empty.removeAttribute('hidden'); }
+    if (!wallet.account) { empty.textContent = 'Connect a wallet to see your history.'; empty.removeAttribute('hidden'); }
+    else if (!hasExchange()) { empty.textContent = 'Trading is off on this copy of the site.'; empty.removeAttribute('hidden'); }
+    else if (!hist.rows.length) { empty.textContent = hist.loading ? 'Loading your history…' : 'No trades yet.'; empty.removeAttribute('hidden'); }
     else empty.setAttribute('hidden', '');
 
     var foot = host.querySelector('.hist-foot');
@@ -4023,14 +5389,7 @@
     if (more) {
       more.disabled = hist.loading || hist.done || !wallet.account || !hasExchange();
       more.textContent = hist.loading ? 'Loading…' : (hist.done ? 'All loaded' : 'Load older');
-    }
-    if (range) {
-      if (hist.scannedTo == null) range.textContent = '';
-      else {
-        var txt = 'scanned blocks ' + fmtInt(hist.scannedFrom) + ' to ' + fmtInt(hist.scannedTo) + (hist.chunked ? ' (chunked)' : '');
-        if (!(Number(cfg.deployBlock) > 0)) txt += ' · set deployBlock in config.json to bound the scan';
-        range.textContent = txt;
-      }
+      more.hidden = hist.done && !hist.loading;
     }
   }
 
@@ -4077,19 +5436,11 @@
     setText('stWalletChain', wallet.account ? (wallet.chainId === CHAIN_ID ? 'HyperEVM · 999' : String(wallet.chainId) + ' (wrong chain)') : '—');
     renderV2Link();
 
-    setText('stLp', house.lp != null ? fmtUsd(house.lp) : '—');
-    setText('stFeePool', house.feePool != null ? fmtUsd(house.feePool) : '—');
-    setText('stQueued', house.queued != null ? fmtUsd(house.queued) : '—');
-    setText('stQueueLen', house.queueLen != null ? fmtInt(house.queueLen - house.queueHead) + ' live · ' + fmtInt(house.queueLen) + ' ever' : '—');
-    renderHouseLine();
     setText('stPaused', read.exchange ? (house.globalPaused || house.breakerTripped ? 'yes' : 'no') : '—');
     setText('stBreaker', read.exchange ? (house.breakerTripped ? 'tripped · opens paused' : house.breakerBps != null && house.breakerBps >= 10000 ? 'off' : 'armed') : '—');
     setText('stFee', read.exchange && house.feeRate != null ? feePctText() : '—');
-    setText('stWindows', read.exchange ? house.minDelay + ' s wait · ' + house.grace + ' s keeper · ' + house.expiry + ' s expiry' : '—');
-    setText('stJump', read.exchange && house.maxJumpBps != null ? (house.maxJumpBps / 100).toFixed(house.maxJumpBps % 100 ? 2 : 0) + '%' : '—');
     setText('stStakerShare', read.exchange && house.stakerShareBps != null ? (house.stakerShareBps / 100).toFixed(0) + '%' : '—');
     setText('stRefShare', read.exchange && house.referralShareBps != null ? (house.referralShareBps / 100).toFixed(0) + '%' : '—');
-    setText('finePrint', 'Fills at the oracle price, a few seconds after you click. Wins pay the impact haircut plus a ' + feePctText() + ' fee.');
     setText('stInstCount', house.instCount != null ? String(house.instCount) : '—');
     var kc = $('stKeeper');
     if (kc) {
@@ -4116,17 +5467,15 @@
     var inst = m && m.inst;
     if (inst) {
       setText('stInst', '#' + inst.id + ' · HL ' + inst.hlAssetIndex + ' · sz ' + inst.szDecimals + ' · tier ' + tierLetter(m) + (inst.retired ? ' · retired' : inst.opensPaused ? ' · paused' : ''));
-      setText('stMaxLev', 'x' + inst.maxLeverage);
-      setText('stBand', inst.deadbandBps + ' bps');
-      setText('stCurve', (inst.baseRate * 100).toFixed(0) + '% · ' + fmtInt(inst.rateMultiplier) + ' · $' + fmtInt(inst.referenceNotional) + ' · ' + fmtInt(inst.positionMultiplier));
+      setText('stMaxLev', inst.maxLeverage + 'x');
       setText('stCaps', fmtUsdCompact(inst.longCap) + ' / ' + fmtUsdCompact(inst.shortCap));
-      setText('stPosCap', fmtUsdCompact(inst.maxNotional) + ' · x' + inst.payoutCapX);
+      setText('stPosCap', fmtUsdCompact(inst.maxNotional) + ' · ' + inst.payoutCapX + 'x');
       var opx = house.oraclePxById[inst.id];
       setText('stOraclePx', inst.retired ? fmtPrice(inst.frozenPx, m.szDecimals) + ' (frozen)' : (opx != null ? fmtPrice(opx, m.szDecimals) : '—'));
     } else {
       setText('stInst', m ? (hasExchange() ? (state.instrumentsLoaded ? 'not on chain yet' : 'loading…') : 'HL ' + m.hlAssetIndex + ' · tier ' + m.tier) : '—');
-      setText('stMaxLev', m && !hasExchange() ? 'x' + maxLev(m) : '—');
-      setText('stBand', '—'); setText('stCurve', '—'); setText('stCaps', '—'); setText('stPosCap', '—'); setText('stOraclePx', '—');
+      setText('stMaxLev', m && !hasExchange() ? maxLev(m) + 'x' : '—');
+      setText('stCaps', '—'); setText('stPosCap', '—'); setText('stOraclePx', '—');
     }
   }
 
@@ -4146,6 +5495,7 @@
   /* The account's referral state: own code and earnings, locked referrer, and the stored
      code's address for the next requestOpen. */
   function loadReferral() {
+    if (DEMO) { renderRefer(); return Promise.resolve(); }
     var rc = referralsRead();
     if (!rc || !wallet.account) { renderRefer(); return Promise.resolve(); }
     var a = wallet.account;
@@ -4214,6 +5564,7 @@
   }
 
   function submitRegister(code) {
+    if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
     var addr = house.unpinned.referrals ? null : cfg.contracts.referrals;
     if (!isAddr(addr)) { toast('Referrals address unknown.', 'err'); return Promise.resolve(); }
@@ -4275,17 +5626,21 @@
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].addEventListener('click', function (ev) { show(ev.currentTarget.getAttribute('data-tab')); });
     }
+    /* Your positions is its own panel now (always in view); the tabs are History and Refer */
     var saved = lsGet(LS.tab);
-    show(saved === 'history' || saved === 'status' || saved === 'refer' ? saved : 'positions');
+    show(saved === 'refer' ? 'refer' : 'history');
     var more = $('histMoreBtn');
     if (more) more.addEventListener('click', function () { loadHistory(false); });
     var closeAllBtn = $('closeAllBtn');
     if (closeAllBtn) closeAllBtn.addEventListener('click', closeAll);
-    var auto = $('autoFillChk');
-    if (auto) {
-      auto.checked = autoFillEnabled();
-      auto.addEventListener('change', function () { lsSet(LS.autoFill, auto.checked ? '1' : '0'); });
-    }
+    /* the old Status tab: Contracts & status, a closed box under the page, opened from the footer */
+    var link = $('statusLink'), box = $('statusBox');
+    if (link && box) link.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      box.open = true;
+      renderStatus();
+      if (box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
   }
 
   function toast(text, kind, link, ttlMs) {
@@ -4316,7 +5671,10 @@
     ensureChain: function () {
       return wallet.chainId === CHAIN_ID ? Promise.resolve() : switchChain().then(function () { return onChainChanged(); });
     },
-    request: function (payload) { return (wallet.eth || getInjected()).request(payload); }
+    request: function (payload) {
+      var eth = wallet.eth || getInjected();
+      return eth ? eth.request(payload) : Promise.reject(new Error('No wallet in this browser.'));
+    }
   };
 
   function initTheme() {
@@ -4336,15 +5694,556 @@
 
   function initHeader() {
     $('connectBtn').addEventListener('click', function () {
-      if (wallet.account) disconnect(); else connect();
+      if (DEMO) { toast('Demo account: nothing here is real and nothing is sent.'); return; }
+      if (wallet.account) openAccountMenu(); else connect();
     });
     $('depositBtn').addEventListener('click', openDeposit);
-    $('withdrawBtn').addEventListener('click', openWithdraw);
+    $('withdrawBtn').addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
+    var ad = $('acctDeposit');
+    if (ad) ad.addEventListener('click', openDeposit);
+    var aw = $('acctWithdraw');
+    if (aw) aw.addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
+    var mini = $('acctMini');
+    if (mini) {
+      var md = mini.querySelector('.js-dep'), mw = mini.querySelector('.js-wd');
+      if (md) md.addEventListener('click', openDeposit);
+      if (mw) mw.addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
+    }
+    /* phones: the nav folds into Menu */
+    var nt = $('navToggle'), hd = $('siteHeader');
+    if (nt && hd) nt.addEventListener('click', function () {
+      var open = !hd.classList.contains('nav-open');
+      hd.classList.toggle('nav-open', open);
+      nt.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    var tb = $('tourBtn');
+    if (tb) tb.addEventListener('click', function () { startTour(0); });
+  }
+
+  /* ---- the first-trade tour -----------------------------------------------------------------
+     Coach marks on the real buttons, shown once per wallet (LS.tour) and replayable from "? How to
+     trade". A visitor gets steps 1-6 and the tour waits at OPEN POSITION for a wallet; it picks up
+     there when one connects. Each step rings one element and moves on when the user uses
+     it (or presses Next). Esc skips, Enter is Next. The card sits above or below the ring, never on
+     it; on a phone the ticket's steps open the ticket sheet first. A step whose element is not
+     there yet (nothing opened) explains itself in a card in the middle of the screen. */
+
+  /* The position the tour talks about: the one just opened when there is one, else the first. */
+  function firstCard() {
+    var host = $('posLines');
+    if (!host) return null;
+    var fresh = tk.posId ? host.querySelector('.pos-card[data-id="' + tk.posId + '"]') : null;
+    return fresh || host.querySelector('.pos-card:not(.is-pending)');
+  }
+
+  /* "Tap" on a touch layout, "Click" with a mouse. */
+  function tapWord() { return isSheetMode() ? 'Tap' : 'Click'; }
+
+  var TOUR = [
+    { id: 'coin', on: 'market', sheet: false, title: 'Pick a coin',
+      target: function () { return $('marketBtn'); },
+      text: function () { return tapWord() + ' here to choose what to trade.' + (state.market ? ' ' + state.market.symbol + ' is picked for you.' : ''); } },
+    { id: 'side', on: 'side', title: 'Up or down?',
+      target: function () { return isSheetMode() && !ui.sheet ? $('mbarPair') : $('sidePair'); },
+      text: function () { return 'BUY / LONG if you think the price goes up. SELL / SHORT if you think it goes down. You win when it moves your way. ' + tapWord() + ' one.'; } },
+    { id: 'amount', on: 'amount', sheet: true, title: 'Amount',
+      target: function () { return $('amountBox'); },
+      text: function () { return 'What you put in. It is also the most you can lose on this trade. Start small: $10.'; } },
+    { id: 'lev', on: 'lev', sheet: true, title: 'Leverage',
+      target: function () { return $('levBox'); },
+      text: function () {
+        var amt = isFinite(form.margin) && form.margin > 0 ? fmtUsdShort(form.margin) : 'amount';
+        var w = $('moveWin');
+        var pays = w && w.textContent !== '—' ? ', a 1% move your way pays about ' + w.textContent : '';
+        return 'Leverage multiplies your result. At ' + form.lev + 'x' + pays + '. A ' + fmtMove(bustMovePct(form.lev)) + '% move against you hits the liquidation price and your ' + amt + ' is gone. Higher leverage, smaller move.';
+      } },
+    { id: 'preview', sheet: true, title: 'Your trade in dollars',
+      target: function () { return $('previewBox'); },
+      text: function () { return 'How big the position is, what a 1% move pays you, and the price it opens near. Each direction button shows its liquidation price.'; } },
+    { id: 'open', on: 'submit', sheet: true, title: 'OPEN POSITION',
+      target: function () { return tk.phase ? $('ticketProgress') : $('actionBtn'); },
+      text: function () {
+        if (!wallet.account) return 'Connect your wallet to keep going. This button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Then it says OPEN POSITION.';
+        var b = $('actionBtn');
+        var ready = b && !b.disabled && /OPEN POSITION/i.test(b.textContent);
+        return ready ? tapWord() + ' OPEN POSITION. Your wallet shows the trade and asks you to confirm.'
+          : 'Until you are set up, this button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Then it says OPEN POSITION.';
+      } },
+    { id: 'fill', on: 'opened', sheet: true, title: 'About 6 seconds',
+      target: function () { return tk.phase ? $('ticketProgress') : null; },
+      text: function () {
+        return tk.phase ? 'Your order is sent. It fills at the market price in about ' + fillSecs() + ' seconds. Watch it here: Sent, Opening, Open.'
+          : 'When you open a trade, the button turns into this progress card: Sent, then Opening (about ' + fillSecs() + ' s), then Open at the price you got.';
+      } },
+    { id: 'card', sheet: false, title: 'Your position',
+      target: firstCard,
+      text: function () {
+        return 'Every open position gets a card' + (isSheetMode() ? ' at the top of the page' : ' under the chart') + ': profit or loss in $ and %, the price you got in at, the price now, and the liquidation price. It turns amber, then red, as the price gets close.';
+      } },
+    /* moves on when the close's result is in (reportCloseOutcome), not on the tap, so the card's
+       Closing steps and its "Closed … back in your balance" stay in view */
+    { id: 'close', on: 'closed', sheet: false, title: 'CLOSE POSITION',
+      target: function () { var c = firstCard(); return c ? c.querySelector('.close-btn') || c.querySelector('[data-role="act"]') : null; },
+      text: function () { return tapWord() + ' CLOSE POSITION any time to take your money out. Under it: about what you get back. It closes at the market price in about ' + fillSecs() + ' s, right here on the card.'; } },
+    /* the result card's own Withdraw when there is one; else the account line's (on a phone the
+       copy at the top of Your positions): the sheet stays shut */
+    { id: 'withdraw', on: 'withdraw', sheet: false, title: 'Withdraw',
+      target: function () {
+        if (!wallet.account) return null;
+        var r = document.querySelector('#posLines .result-card [data-act="withdraw"]');
+        if (r) return r;
+        return isSheetMode() ? document.querySelector('#acctMini .js-wd') : $('acctWithdraw');
+      },
+      text: function () { return 'Withdraw sends your Confetti balance back to your wallet. That is every button. Replay this from "' + (isSheetMode() ? '? Help' : '? How to trade') + '".'; } }
+  ];
+
+  /* auto: the keys (a wallet's, or 'visitor') the tour already started for on its own this visit;
+     autoTried: the silent reconnect has had its answer (a visitor's tour waits for it, so a
+     returning wallet is not taken for a visitor); waited: how often the visitor's start waited */
+  var tour = { on: false, i: 0, auto: {}, autoTried: false, waited: 0, ring: null, dim: null, card: null, timer: null, scrolled: -1 };
+
+  /* Stored per wallet ('1' once it ended) and for 'visitor': 'part' once a visitor reached OPEN
+     POSITION (their tour picks up there when a wallet connects), 'skip' when they skipped it. */
+  function tourKey() { return LS.tour + (wallet.account ? wallet.account.toLowerCase() : 'visitor'); }
+  /* the OPEN POSITION step, where a visitor's tour waits for a wallet */
+  var TOUR_OPEN = (function () { for (var i = 0; i < TOUR.length; i++) if (TOUR[i].id === 'open') return i; return 5; })();
+
+  /* Seen by this wallet (a visitor's tour never counts for a wallet's first trade). */
+  function tourSeen() { return lsGet(tourKey()) === '1'; }
+
+  function maybeStartTour() {
+    if (DEMO || tour.on) return;
+    var v = lsGet(LS.tour + 'visitor');
+    var key = tourKey();
+    if (tour.auto[key] || v === 'skip') return;
+    if (wallet.account ? tourSeen() : !!v) return;
+    if (!wallet.account && !tour.autoTried && getInjected() && tour.waited++ < 8) { setTimeout(maybeStartTour, 1000); return; }
+    if (document.querySelector('dialog[open]')) { setTimeout(maybeStartTour, 3000); return; }
+    tour.auto[key] = true;
+    startTour(wallet.account && v === 'part' ? TOUR_OPEN : 0);
+  }
+
+  function startTour(at) {
+    if (tour.on) return;
+    tour.on = true; tour.i = at > 0 ? at : 0;
+    buildTour();
+    showTourStep();
+    tour.timer = setInterval(placeTour, 250);
+    window.addEventListener('resize', placeTour);
+    window.addEventListener('scroll', placeTour, true);
+    document.addEventListener('keydown', tourKeys, true);
+  }
+
+  /* Skip or Done. A wallet's tour is remembered for that wallet; a visitor's Skip for this browser
+     (a visitor never gets past OPEN POSITION: that step waits for a wallet). */
+  function endTour() {
+    if (!tour.on) return;
+    tour.on = false;
+    if (wallet.account) lsSet(tourKey(), '1');
+    else lsSet(LS.tour + 'visitor', 'skip');
+    if (tour.timer) { clearInterval(tour.timer); tour.timer = null; }
+    window.removeEventListener('resize', placeTour);
+    window.removeEventListener('scroll', placeTour, true);
+    document.removeEventListener('keydown', tourKeys, true);
+    [tour.ring, tour.dim, tour.card].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+    tour.ring = null; tour.dim = null; tour.card = null;
+  }
+
+  function buildTour() {
+    tour.dim = el('div', 'coach-dim');
+    tour.dim.hidden = true;
+    tour.ring = el('div', 'coach-ring');
+    tour.ring.hidden = true;
+    var c = el('div', 'coach-card');
+    c.setAttribute('role', 'dialog');
+    c.setAttribute('aria-label', 'How to trade');
+    c.setAttribute('aria-live', 'polite');
+    [['count', 'coach-count'], ['title', 'coach-title'], ['text', 'coach-text']].forEach(function (r) {
+      var n = el('div', r[1]);
+      n.setAttribute('data-role', r[0]);
+      c.appendChild(n);
+    });
+    var row = el('div', 'coach-btns');
+    var skip = el('button', 'btn btn-sm btn-ghost', 'Skip tour');
+    skip.type = 'button';
+    skip.addEventListener('click', function () { endTour(); });
+    var back = el('button', 'btn btn-sm', 'Back');
+    back.type = 'button';
+    back.setAttribute('data-role', 'back');
+    back.addEventListener('click', function () { tourGo(tour.i - 1); });
+    var next = el('button', 'btn btn-sm btn-primary', 'Next');
+    next.type = 'button';
+    next.setAttribute('data-role', 'next');
+    next.addEventListener('click', function () { tourGo(tour.i + 1); });
+    row.appendChild(skip);
+    row.appendChild(el('span', 'grow'));
+    row.appendChild(back);
+    row.appendChild(next);
+    c.appendChild(row);
+    tour.card = c;
+    document.body.appendChild(tour.dim);
+    document.body.appendChild(tour.ring);
+    document.body.appendChild(c);
+  }
+
+  /* A visitor's tour waits at OPEN POSITION for a wallet. */
+  function tourWaits() { return tour.i === TOUR_OPEN && !wallet.account; }
+
+  function tourGo(i) {
+    if (!tour.on) return;
+    if (i > tour.i && tourWaits()) return;
+    if (i >= TOUR.length) { endTour(); return; }
+    tour.i = Math.max(0, i);
+    showTourStep();
+  }
+
+  function showTourStep() {
+    var s = TOUR[tour.i];
+    if (isSheetMode()) { if (s.sheet === true) openSheet(); else if (s.sheet === false) closeSheet(); }
+    setRole(tour.card, 'count', 'Step ' + (tour.i + 1) + ' of ' + TOUR.length);
+    setRole(tour.card, 'title', s.title);
+    setRole(tour.card, 'text', s.text());
+    var back = tour.card.querySelector('[data-role="back"]');
+    if (back) back.hidden = tour.i === 0;
+    setRole(tour.card, 'next', tour.i === TOUR.length - 1 ? 'Done' : 'Next');
+    tour.scrolled = -1;
+    placeTour();
+    if (tour.i === TOUR_OPEN && !wallet.account) lsSet(LS.tour + 'visitor', lsGet(LS.tour + 'visitor') === 'skip' ? 'skip' : 'part');
+    var next = tour.card.querySelector('[data-role="next"]');
+    try { next.focus({ preventScroll: true }); } catch (e) { /* focus is a convenience */ }
+  }
+
+  /* Ring the step's element and put the card above or below it (whichever side fits), clamped to
+     the screen. Re-run four times a second and on scroll / resize, so a sheet sliding in, a card
+     appearing or a scroll keeps the ring on its element. */
+  function placeTour() {
+    if (!tour.on || !tour.card) return;
+    var s = TOUR[tour.i];
+    if (!s) return;
+    setRole(tour.card, 'text', s.text());
+    /* a visitor at OPEN POSITION: no Next until a wallet is connected */
+    var nx = tour.card.querySelector('[data-role="next"]');
+    if (nx) nx.hidden = tourWaits();
+    if (document.querySelector('dialog[open]')) { tour.card.hidden = true; tour.ring.hidden = true; tour.dim.hidden = true; return; }
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var t = s.target();
+    var r = t && t.getClientRects().length ? t.getBoundingClientRect() : null;
+    if (r && (r.width < 1 || r.height < 1)) r = null;
+    tour.card.hidden = false;
+    var cw = tour.card.offsetWidth, ch = tour.card.offsetHeight;
+    if (!r) {
+      tour.ring.hidden = true;
+      tour.dim.hidden = false;
+      tour.card.style.left = Math.max(12, Math.round((vw - cw) / 2)) + 'px';
+      tour.card.style.top = Math.max(12, Math.round((vh - ch) / 2)) + 'px';
+      return;
+    }
+    if (tour.scrolled !== tour.i && (r.top < 48 || r.bottom > vh - 8) && t.scrollIntoView) {
+      tour.scrolled = tour.i;
+      t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    var box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    var menu = $('marketMenu');
+    var menuOpen = s.id === 'coin' && menu && !menu.hidden;
+    if (menuOpen) {
+      var mr = menu.getBoundingClientRect();
+      box = { left: Math.min(box.left, mr.left), top: Math.min(box.top, mr.top), right: Math.max(box.right, mr.right), bottom: Math.max(box.bottom, mr.bottom) };
+    }
+    var pad = 6, gap = 10;
+    tour.dim.hidden = true;
+    tour.ring.hidden = false;
+    tour.ring.style.left = Math.round(box.left - pad) + 'px';
+    tour.ring.style.top = Math.round(box.top - pad) + 'px';
+    tour.ring.style.width = Math.round(box.right - box.left + 2 * pad) + 'px';
+    tour.ring.style.height = Math.round(box.bottom - box.top + 2 * pad) + 'px';
+    /* the coin list is open: the user is choosing; the card waits */
+    if (menuOpen) { tour.card.hidden = true; return; }
+    var below = vh - (box.bottom + pad + gap), above = box.top - pad - gap;
+    var top;
+    if (below >= ch + 8) top = box.bottom + pad + gap;
+    else if (above >= ch + 8) top = box.top - pad - gap - ch;
+    else top = below >= above ? Math.min(vh - ch - 8, box.bottom + pad + gap) : Math.max(8, box.top - pad - gap - ch);
+    var left = clamp(Math.round((box.left + box.right) / 2 - cw / 2), 12, Math.max(12, vw - cw - 12));
+    tour.card.style.left = left + 'px';
+    tour.card.style.top = Math.round(top) + 'px';
+  }
+
+  function tourKeys(ev) {
+    if (!tour.on) return;
+    /* Esc meant for a dialog (Add USDC, the checks) or the coin list closes that, not the tour */
+    if (document.querySelector('dialog[open]')) return;
+    var mm = $('marketMenu');
+    if (ev.key === 'Escape' && mm && !mm.hidden) return;
+    if (ev.key === 'Escape') { endTour(); ev.stopPropagation(); return; }
+    if (ev.key !== 'Enter') return;
+    var a = document.activeElement;
+    if (a && tour.card && tour.card.contains(a)) return; /* the focused coach button takes it */
+    if (a && /^(INPUT|TEXTAREA|SELECT|BUTTON|A|SUMMARY)$/.test(a.tagName)) return;
+    ev.preventDefault();
+    tourGo(tour.i + 1);
+  }
+
+  /* The page tells the tour what the user just did; the step waiting for it moves on. A fill
+     lands on the position card step, wherever the tour is between OPEN POSITION and the fill. */
+  function tourEvent(name) {
+    if (!tour.on) return;
+    var s = TOUR[tour.i];
+    if (!s) return;
+    var at = tour.i;
+    if (name === 'opened' && (s.id === 'open' || s.id === 'fill')) {
+      var card = 0;
+      TOUR.forEach(function (x, k) { if (x.id === 'card') card = k; });
+      setTimeout(function () { if (tour.on && tour.i === at) tourGo(card); }, 900);
+      return;
+    }
+    if (s.on !== name) return;
+    setTimeout(function () { if (tour.on && tour.i === at) tourGo(at + 1); }, 450);
+  }
+
+  /* ---- local demo (DEMO: localhost or 127.0.0.1 with ?demo=...) ------------------------------
+     A pretend funded account with no wallet and no chain: balance $50, DOGE long 20x and WIF
+     short 50x priced off the live Hyperliquid feed, the WIF close pending (held, so it runs
+     Closing, then Taking longer than usual, then Didn't go through). Every transaction is
+     simulated here (demoTx) and answers with the exchange's own event logs, so the page's real
+     code reads them. None of this runs unless DEMO is set. */
+
+  var demo = { nextReq: 900, nextPos: 70, block: 1000, hold: {}, closed: {}, n: 0 };
+  var DEMO_FALLBACK_PX = { DOGE: 0.2, WIF: 1.0 };
+
+  function toPx18(x) { return BigInt(Math.round(x * 1e12)) * 1000000n; }
+
+  function demoHash() { demo.n += 1; return '0x' + ('de' + String(demo.n)).padStart(64, '0'); }
+
+  function demoLog(name, values, hash) {
+    var enc = exIface.encodeEventLog(name, values);
+    demo.block += 1;
+    return { topics: enc.topics, data: enc.data, transactionHash: hash, blockNumber: demo.block, index: 0 };
+  }
+
+  /* A demo event into History, stamped now. */
+  function demoRecord(log) {
+    hist.blockTs[log.blockNumber] = Math.floor(Date.now() / 1000);
+    addLogs([log]);
+    renderHistory();
+  }
+
+  /* Every config market marked launch is "on chain" with the live market's terms (200x win cap,
+     5% fee, the published impact curve); the rest are Coming soon. */
+  function demoInsts() {
+    var tiers = (cfg && cfg.tiers) || {};
+    state.byInstId = {};
+    state.markets.forEach(function (m, i) {
+      m.inst = null; m.instrumentId = null;
+      if (!m.launch) return;
+      var t = tiers[m.tier] || {};
+      var inst = {
+        id: i, hlAssetIndex: m.hlAssetIndex, szDecimals: m.szDecimals, tier: Number(t.code) || 0,
+        maxLeverage: m.maxLeverage || 1, deadbandBps: Number(t.deadbandBps) || 1, clampBps: Number(t.clampBps) || 5,
+        baseRate: 0.1, rateMultiplier: 15000, referenceNotional: 20000, positionMultiplier: 130000000,
+        longCap: 1000000, shortCap: 1000000, maxNotional: 1000000, payoutCapX: 200,
+        opensPaused: false, retired: false, frozenPx: 0, market: m
+      };
+      m.inst = inst; m.instrumentId = i; state.byInstId[i] = inst;
+      house.oi[m.symbol] = { long: 1950, short: 640 };
+    });
+    state.instrumentsLoaded = true;
+    hbots.loaded = true;
+  }
+
+  /* The demo settles on the live mid (the real page reads the chain's oracle). */
+  function demoOracle() {
+    state.markets.forEach(function (m) {
+      var px = state.mids[m.coin];
+      if (m.instrumentId != null && px > 0) house.oraclePxById[m.instrumentId] = px;
+    });
+  }
+
+  function demoBoot() {
+    if (!window.ethers || !exIface) { toast('The demo needs ethers.js, which did not load.', 'err', null, 0); return; }
+    demoInsts();
+    house.feePool = 0; house.queued = 0; house.queueLen = 2; house.queueHead = 2; house.feeRate = 0.05;
+    house.instCount = Object.keys(state.byInstId).length; house.breakerBps = 10000;
+    house.block = demo.block; house.blockAt = Date.now();
+    wallet.account = window.ethers.getAddress('0xde00000000000000000000000000000000000001');
+    wallet.chainId = CHAIN_ID;
+    acct.walletUsdc = 120; acct.allowance = 0;
+    ui.hypeWei = 50000000000000000n;
+    ref.loaded = true; ref.locked = true;
+    if (state.market) selectMarket(state.market.symbol);
+    renderWallet(); renderAccount(); renderPositions(); renderAction(); renderStatus(); renderRefer(); renderSession(); buildMarketMenu();
+    toast('Demo: a pretend account on this computer. Nothing is sent.', null, null, 6000);
+    demoWhenPriced(demoSeed);
+  }
+
+  function demoWhenPriced(fn) {
+    var t0 = Date.now();
+    (function wait() {
+      var ok = ['DOGE', 'WIF'].every(function (s) { var m = state.bySym[s]; return m && state.mids[m.coin] > 0; });
+      if (ok || Date.now() - t0 > 6000) {
+        ['DOGE', 'WIF'].forEach(function (s) { var m = state.bySym[s]; if (m && !(state.mids[m.coin] > 0)) state.mids[m.coin] = DEMO_FALLBACK_PX[s]; });
+        demoOracle();
+        fn();
+        return;
+      }
+      setTimeout(wait, 250);
+    })();
+  }
+
+  function demoPos(m, isLong, margin, lev, entry) {
+    var px18 = toPx18(entry);
+    return {
+      id: BigInt(demo.nextPos++), instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev,
+      entry: px18ToNum(px18), entryPx18: px18, openedAt: Math.floor(Date.now() / 1000) - 900,
+      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, feeBps: 500, preview: null
+    };
+  }
+
+  function demoSeed() {
+    var doge = state.bySym.DOGE, wif = state.bySym.WIF;
+    if (!doge || !wif || doge.instrumentId == null || wif.instrumentId == null) return;
+    var pd = state.mids[doge.coin], pw = state.mids[wif.coin];
+    var p1 = demoPos(doge, true, 10, 20, pd * 0.994);   /* in profit */
+    var p2 = demoPos(wif, false, 10, 50, pw * 0.989);   /* a loss, its liquidation getting close (amber) */
+    acct.positions = [p1, p2];
+    acct.available = 50; acct.marginInUse = 20; acct.pending = 0; acct.loaded = true; acct.owner = wallet.account;
+    var wpid = String(p2.id);
+    acct.closeReqs[wpid] = { requestedAt: chainNow() - 1, px0: pw, block: demo.block, busy: false };
+    demo.hold['c' + wpid] = true;
+    hist = freshHistory();
+    var now = Math.floor(Date.now() / 1000);
+    [[demoLog('Deposited', [wallet.account, wallet.account, numToUsd6(70)], demoHash()), 3600],
+     [demoLog('PositionOpened', [p1.id, wallet.account, p1.instrumentId, true, numToUsd6(10), 20, p1.entryPx18, 41n], demoHash()), 900],
+     [demoLog('PositionOpened', [p2.id, wallet.account, p2.instrumentId, false, numToUsd6(10), 50, p2.entryPx18, 42n], demoHash()), 600]
+    ].forEach(function (x) { hist.blockTs[x[0].blockNumber] = now - x[1]; addLogs([x[0]]); });
+    hist.done = true;
+    if (DEMO === 'pending') {
+      /* an open request the ticket follows, held: Opening, then late, then expired */
+      var id = String(demo.nextReq++);
+      pend.opens[id] = { id: id, instrumentId: doge.instrumentId, isLong: true, margin: 10, leverage: 20, px0: pd, requestedAt: chainNow() - 1, block: demo.block };
+      demo.hold['o' + id] = true;
+      acct.available -= 10; acct.pending = 10;
+      tkSet('req', { reqId: id, isLong: true, sym: doge.symbol, lev: 20, margin: 10 });
+      openSheet();
+    }
+    renderAccount(); renderPositions(); renderAction(); renderForm(); renderHistory();
+    if (DEMO === 'tour') setTimeout(startTour, 600);
+  }
+
+  /* A simulated transaction: about a second "in the wallet", then the state change and the
+     event logs the exchange would emit. */
+  function demoTx(kind, args) {
+    return new Promise(function (ok) { setTimeout(ok, 900); }).then(function () {
+      var hash = demoHash();
+      var logs = [];
+      if (kind === 'requestOpen') {
+        var inst = state.byInstId[Number(args[0])];
+        var margin = usd6ToNum(args[2]);
+        if (!inst || margin > acct.available + 1e-9) throw new Error('Not enough balance in the demo.');
+        acct.available -= margin; acct.pending += margin;
+        logs.push(demoLog('OpenRequested', [BigInt(demo.nextReq++), wallet.account, Number(args[0]), !!args[1], args[2], Number(args[3]), toPx18(oraclePriceFor(inst.market)), ZERO], hash));
+      } else if (kind === 'executeOpen') {
+        var r = pend.opens[String(args[0])];
+        if (r) logs = demoFillOpen(r, hash);
+      } else if (kind === 'cancelOpen') {
+        var r2 = pend.opens[String(args[0])];
+        if (r2) { acct.available += r2.margin; acct.pending = Math.max(0, acct.pending - r2.margin); }
+      } else if (kind === 'requestClose') {
+        var p = posById(args[0]);
+        logs.push(demoLog('CloseRequested', [BigInt(args[0]), wallet.account, toPx18(p ? closePriceFor(p) : 1)], hash));
+      } else if (kind === 'executeClose') {
+        logs = demoFillClose(String(args[0]), hash);
+      } else if (kind === 'cancelClose') {
+        delete demo.hold['c' + String(args[0])];
+      }
+      return { hash: hash, blockNumber: demo.block, status: 1, logs: logs };
+    });
+  }
+
+  function demoFillOpen(r, hash) {
+    var inst = state.byInstId[r.instrumentId];
+    var p = demoPos(inst.market, r.isLong, r.margin, r.leverage, oraclePriceFor(inst.market));
+    acct.pending = Math.max(0, acct.pending - r.margin);
+    acct.marginInUse += r.margin;
+    acct.positions.push(p);
+    var log = demoLog('PositionOpened', [p.id, wallet.account, r.instrumentId, r.isLong, numToUsd6(r.margin), r.leverage, p.entryPx18, BigInt(r.id)], hash);
+    demoRecord(log);
+    return [log];
+  }
+
+  function demoFillClose(pid, hash) {
+    var p = posById(pid);
+    if (!p || demo.closed[pid]) return [];
+    var est = positionEstimate(p);
+    var px = closePriceFor(p);
+    demo.closed[pid] = true;
+    acct.marginInUse = Math.max(0, acct.marginInUse - p.margin);
+    acct.available += est.payout;
+    var minted = est.pnl < 0 ? BigInt(Math.round(-est.pnl * 100)) * 10000000000000000n : 0n;
+    var log = demoLog('PositionClosed', [BigInt(pid), wallet.account, toPx18(px), BigInt(Math.round(est.pnl * 1e6)), BigInt(Math.round(est.fee * 1e6)), BigInt(Math.round(est.payout * 1e6)), 0n, minted], hash);
+    demoRecord(log);
+    return [log];
+  }
+
+  /* The demo's "account read": closed positions leave, everything redraws. */
+  function demoRefresh() {
+    if (!DEMO) return;
+    acct.positions = acct.positions.filter(function (p) { return !demo.closed[String(p.id)]; });
+    Object.keys(ui.settling).forEach(function (k) { if (demo.closed[k]) delete ui.settling[k]; });
+    renderAccount(); renderPositions(); renderAction(); renderForm();
+  }
+
+  /* The demo keeper: fills whatever is not held once its ~6 s are up. */
+  function demoTickPending() {
+    var now = chainNow();
+    pendingOpenList().forEach(function (r) {
+      if (r.busy || demo.hold['o' + r.id] || now - r.requestedAt < fillSecs()) return;
+      var hash = demoHash();
+      var logs = demoFillOpen(r, hash);
+      delete pend.opens[r.id];
+      reportOpenOutcome(r, logs, hash);
+    });
+    Object.keys(acct.closeReqs).forEach(function (pid) {
+      var cr = acct.closeReqs[pid];
+      if (cr.busy || demo.hold['c' + pid] || now - cr.requestedAt < fillSecs()) return;
+      var hash = demoHash();
+      var pos = posById(pid);
+      var logs = demoFillClose(pid, hash);
+      ui.settling[pid] = true;
+      delete acct.closeReqs[pid];
+      reportCloseOutcome(pid, logs, hash, pos);
+      setTimeout(demoRefresh, 1200);
+    });
+    renderPositions(); renderAccount(); updatePendingLines();
+  }
+
+  function demoDeposit(amount) {
+    setBusy(true);
+    return new Promise(function (ok) { setTimeout(ok, 900); }).then(function () {
+      acct.walletUsdc = Math.max(0, acct.walletUsdc - amount);
+      acct.available += amount;
+      demoRecord(demoLog('Deposited', [wallet.account, wallet.account, numToUsd6(amount)], demoHash()));
+      toast('Deposited ' + fmtUsd(amount) + '. Pick BUY / LONG or SELL / SHORT.', 'ok');
+      closeDialog('depositModal');
+      demoRefresh();
+    }).then(function () { setBusy(false); });
+  }
+
+  function demoWithdraw(amount) {
+    setBusy(true);
+    return new Promise(function (ok) { setTimeout(ok, 900); }).then(function () {
+      acct.available = Math.max(0, acct.available - amount);
+      acct.walletUsdc += amount;
+      demoRecord(demoLog('Withdrawn', [wallet.account, numToUsd6(amount)], demoHash()));
+      toast('Sent ' + fmtUsd(amount) + ' to your wallet.', 'ok');
+      closeDialog('withdrawModal');
+      demoRefresh();
+    }).then(function () { setBusy(false); });
   }
 
   /* ---- polling and init --------------------------------------------------------------- */
 
   function tickChain() {
+    if (DEMO) { demoRefresh(); return; }
     if (document.hidden) return;
     refreshHouse();
     refreshMarketChain();
@@ -4401,7 +6300,9 @@
     setInterval(function () { if (!document.hidden) loadCandles(); }, CANDLES_EVERY_MS);
     document.addEventListener('visibilitychange', onVisibility);
 
-    if (read.provider) {
+    if (DEMO) {
+      demoBoot();
+    } else if (read.provider) {
       var boot = read.exchange ? loadHouseAddresses().then(loadInstruments) : Promise.resolve();
       boot.then(function () {
         refreshHouse();
@@ -4419,6 +6320,9 @@
         setTimeout(tryAutoConnect, 50);
       });
     }
+    /* the first-trade tour: once the silent reconnect has had its chance, for a visitor or a
+       wallet that has not seen it (a wallet connecting later starts it from onChainChanged) */
+    if (!DEMO) setTimeout(maybeStartTour, 2500);
   }
 
   function init() {
