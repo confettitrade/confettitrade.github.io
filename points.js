@@ -990,7 +990,7 @@
     // column C: leaderboard
     var rows = board(), top = rows.slice(0, 50);
     // the header adds up what the board lists (house wallets are left off the board, so they are left out of the total too)
-    var listed = rows.reduce(function (s, r) { return s + r.t; }, 0);
+    var listed = rows.reduce(function (s, r) { return s + Math.floor(r.t + 1e-9); }, 0);   // the same whole points each row shows
     var lh = '<h3>Leaderboard <i>' + fmt(rows.length) + ' wallet' + (rows.length === 1 ? '' : 's') + ' · ' + fmt(listed) + ' points</i></h3><ol class="pts-board">';
     top.forEach(function (r, idx) {
       var you = S.view && r.a === S.view;
