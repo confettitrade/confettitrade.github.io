@@ -142,6 +142,8 @@
 .pts-bar:hover .pts-bar-cta { background: var(--pos); color: var(--pts-bar-bg, #e6f0e8); }
 @media (prefers-color-scheme: dark) { .pts-bar, .pts-bar:hover { --pts-bar-bg: #16261d; } }
 html[data-theme="night"] .pts-bar, html[data-theme="night"] .pts-bar:hover, html.night .pts-bar, html.night .pts-bar:hover { --pts-bar-bg: #16261d; }
+/* the tagline only shows where it fits whole (it was cut to "Referrals pay the m..." around 800 px) */
+@media (max-width: 1023px) { .pts-bar .pts-bar-note { display: none; } }
 @media (max-width: 640px) {
   .pts-bar { gap: 10px; padding: 0 12px; min-height: 40px; }
   .pts-bar .pts-bar-label { font-size: 19px; }
