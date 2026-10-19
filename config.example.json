@@ -1,6 +1,7 @@
 {
   "$comment": "Copy this file to config.json next to trade.html and fill in the contract addresses after deployment. instrumentIds are NOT stored here: trade.js reads instrumentCount()/instrument(i) from the Exchange and matches each on-chain instrument to a market below by hlAssetIndex, so the deploy order never has to be mirrored by hand. Markets that are not on chain yet show as 'soon' in the selector. szDecimals and hlAssetIndex were read from the Hyperliquid 'meta' endpoint on 12 Oct 2026 and agree with docs/DESIGN.md section 4.",
 
+  "version": 4,
   "chainId": 999,
   "chainIdHex": "0x3e7",
   "chainName": "HyperEVM",
@@ -13,17 +14,21 @@
 
   "contracts": {
     "exchange": "0x0000000000000000000000000000000000000000",
+    "exchangeExt": "0x0000000000000000000000000000000000000000",
     "usdc": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
     "oracle": "0x0000000000000000000000000000000000000000",
     "confetti": "0x0000000000000000000000000000000000000000",
-    "tokenomics": "0x0000000000000000000000000000000000000000",
     "staking": "0x0000000000000000000000000000000000000000",
     "referrals": "0x0000000000000000000000000000000000000000",
-    "priceSource": "0xFaF573187824D176fc74d1de91a072eb6ffa8494",
+    "priceSource": "0x0000000000000000000000000000000000000000",
     "marketRules": "0x0000000000000000000000000000000000000000",
     "sessionRouter": "0x0000000000000000000000000000000000000000",
     "depositFactory": "0x0000000000000000000000000000000000000000",
-    "v2Exchange": "0x257d667a52b282ac0b4c001fd437522bf6b9cbe2"
+    "v2Exchange": "0x257d667a52b282ac0b4c001fd437522bf6b9cbe2",
+    "v3Exchange": "0x723943c8fdd71e0e670b18d15be737222f3a0810",
+    "v3Confetti": "0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2",
+    "v3Staking": "0x167549bb697f96ee19e0ffbfa5ab5f6487f10051",
+    "v3Referrals": "0xdf0c59514877f38a7b59bd7db1422217ab25714b"
   },
   "swap": {
     "router": "0xb4a9c4e6ea8e2191d2fa5b380452a634fb21240a",
@@ -34,15 +39,19 @@
   "houseBots": [],
   "pointsRelay": "",
   "deployBlock": 0,
+  "v3DeployBlock": 48797405,
   "v2DeployBlock": 48404443,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,
 
-  "minMarginUsdc": 10,
+  "$settings": "Stand-ins until the page reads the live values from the exchange (minMarginUsdc(), winFeeBps(), lossFeeBps(), borrowFreeHours(), maxWinBps()).",
+  "minMarginUsdc": 5,
   "bustBufferPct": 95,
   "bustGapBps": 5,
-  "winFeeBps": 500,
-  "lossFeeBps": 500,
+  "winFeeBps": 750,
+  "lossFeeBps": 0,
+  "borrowFreeHours": 1,
+  "maxWinBps": 2500,
 
   "impactDefaults": {
     "$comment": "Used for PnL estimates only until the live curve is read from instrument(id). positionMultiplier 130,000,000 reproduces the published 88% / 74% kept-gain targets (1% / 0.1% move).",

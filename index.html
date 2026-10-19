@@ -477,7 +477,8 @@
               <p class="dl" id="capLine" hidden></p>
               <p class="dl tp-amber" id="queueLine" hidden>The house is paying earlier winners first. A win right now may be paid later.</p>
               <p class="dl" id="keptShare">Small wins are trimmed.</p>
-              <p class="dl" id="feeLine">Fee: 5% of winnings</p>
+              <p class="dl" id="feeLine">Fee: — of winnings</p>
+              <p class="dl" id="borrowLine">Borrow: —</p>
               <p class="dl" id="posCapLine">Biggest position: —</p>
               <p class="dl">Hyperliquid 24h volume <b id="chipVol">—</b></p>
               <p class="dl">Every trade fills at the oracle price a few seconds after you click. Prices on the chart come from Hyperliquid.</p>
@@ -544,7 +545,10 @@
           <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="stWallet">not connected</span></div>
           <div class="kv"><span class="kv-key">Wallet chain</span><span class="kv-val" id="stWalletChain">—</span></div>
           <h4>Rules</h4>
-          <div class="kv"><span class="kv-key">Fee rate</span><span class="kv-val" id="stFee">—</span></div>
+          <div class="kv"><span class="kv-key">Win fee</span><span class="kv-val" id="stFee">—</span></div>
+          <div class="kv"><span class="kv-key">Loss fee</span><span class="kv-val" id="stLossFee">—</span></div>
+          <div class="kv"><span class="kv-key">Borrow-free hours</span><span class="kv-val" id="stFreeHours">—</span></div>
+          <div class="kv"><span class="kv-key">Minimum trade</span><span class="kv-val" id="stMinMargin">—</span></div>
           <div class="kv"><span class="kv-key">To stakers</span><span class="kv-val" id="stStakerShare">—</span></div>
           <div class="kv"><span class="kv-key">To referrers</span><span class="kv-val" id="stRefShare">—</span></div>
           <div class="kv"><span class="kv-key">New trades paused</span><span class="kv-val" id="stPaused">—</span></div>
@@ -555,10 +559,10 @@
         <div>
           <h4>Contracts</h4>
           <div class="kv"><span class="kv-key">Exchange</span><span class="kv-val" id="stExchange">—</span></div>
+          <div class="kv"><span class="kv-key">Exchange extension</span><span class="kv-val" id="stExchangeExt">—</span></div>
           <div class="kv"><span class="kv-key">USDC</span><span class="kv-val" id="stUsdc">—</span></div>
           <div class="kv"><span class="kv-key">Oracle</span><span class="kv-val" id="stOracle">—</span></div>
           <div class="kv"><span class="kv-key">FETTI</span><span class="kv-val" id="stConfetti">—</span></div>
-          <div class="kv"><span class="kv-key">Tokenomics</span><span class="kv-val" id="stTokenomics">—</span></div>
           <div class="kv"><span class="kv-key">Staking</span><span class="kv-val" id="stStaking">—</span></div>
           <div class="kv"><span class="kv-key">Referrals</span><span class="kv-val" id="stReferrals">—</span></div>
           <div class="kv"><span class="kv-key">Session router</span><span class="kv-val" id="stRouter">—</span></div>
@@ -568,7 +572,8 @@
           <div class="kv"><span class="kv-key">Market id</span><span class="kv-val" id="stInst">—</span></div>
           <div class="kv"><span class="kv-key">Max leverage</span><span class="kv-val" id="stMaxLev">—</span></div>
           <div class="kv"><span class="kv-key">Max open bets long / short</span><span class="kv-val" id="stCaps">—</span></div>
-          <div class="kv"><span class="kv-key">Biggest position · win cap</span><span class="kv-val" id="stPosCap">—</span></div>
+          <div class="kv"><span class="kv-key">Biggest position now long / short</span><span class="kv-val" id="stPosCap">—</span></div>
+          <div class="kv"><span class="kv-key">Entry spread · borrow per hour</span><span class="kv-val" id="stMarketFees">—</span></div>
           <div class="kv"><span class="kv-key">Oracle price</span><span class="kv-val" id="stOraclePx">—</span></div>
         </div>
       </div>

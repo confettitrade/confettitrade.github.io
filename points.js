@@ -253,6 +253,11 @@
     '0x2682e1f684e3e147d98092851958f214e94786046406bb4487f09758818c4fc7': 'open',
     '0xdf970ab523e009ea6752d30592f57ba858bbcba00e98d99bc3f277ffa32dae76': 'close',
     '0xd2dd1a738a1eebcc2e8a445ee8749ca54296b00bce8cf25d819eca9244e319a0': 'liq',
+    /* v4 Exchange: PositionOpened / Closed gain keeperFill (Closed's confettiMinted became borrowUsdc),
+       PositionLiquidated drops confettiMinted; the words read below keep their offsets */
+    '0xe3198cf2a81ef680e264c567b19609c810aeead02f89fce56620453ae4c62b9a': 'open',
+    '0xf21c97f1434e8d81efa2f3955bb54d0d18472c1eaf6eb644a1a44f82d7ae9302': 'close',
+    '0x04f15ca23238701937eb24acb2db7745e8d9f6d4bf40bfecdee7f25883542f37': 'liq',
     '0xd07860d38e071bfab5c5f262789fd0c4e15fe7dad8e287f47ff0e962d71092a4': 'code',
     '0x0a721ab4682ceb61c7e4d264ef879fc419a6d764b136e7d96ef54b2053c75673': 'paid',
     '0x5f7165288eef601591cf549e15ff19ef9060b7f71b9c115be946fa1fe7ebf68a': 'refset',
@@ -261,13 +266,19 @@
     '0x7854bf0fa996684a07445d1f0eef8519c916412e98160206439c9c82fa566a69': 'xfer'
   };
   var TOPIC_LIST = Object.keys(TOPICS);
+  /* position ids per generation, as ops/points/indexer.py keeps them: v4 "4:<id>", v3 the plain number */
+  var V4_TOPICS = {
+    '0xe3198cf2a81ef680e264c567b19609c810aeead02f89fce56620453ae4c62b9a': 1,
+    '0xf21c97f1434e8d81efa2f3955bb54d0d18472c1eaf6eb644a1a44f82d7ae9302': 1,
+    '0x04f15ca23238701937eb24acb2db7745e8d9f6d4bf40bfecdee7f25883542f37': 1
+  };
   var ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
   var SNAP_EVERY_MS = 120000;
   var POLL_MS = 2500;
   var BASE_URL = 'https://confetti.trade/?ref=';
 
   var CHAIN_HEX = '0x3e7';
-  var TRANSFER_SELECTOR = '0xa9059cbb';   // transfer(address,uint256)
+  var TRANSFER_SELECTOR = '0xfa537391';   // PointsRelay.sendPoints(address,uint256)
   var S = {
     relay: '', house: {}, sendBusy: false, todayShown: undefined,
     cfg: null, rules: null, snap: null, eng: null,
@@ -326,6 +337,7 @@
   function sword(data, i) { var v = word(data, i); return v >= (1n << 255n) ? v - (1n << 256n) : v; }
   function taddr(t) { return '0x' + t.slice(26).toLowerCase(); }
   function tint(t) { return Number(BigInt(t)); }
+  function pidOf(lg) { return V4_TOPICS[lg.topics[0]] ? '4:' + tint(lg.topics[1]) : tint(lg.topics[1]); }
   function usd(b) { return Number(b) / 1e6; }
 
   function decodeLog(lg) {
@@ -335,9 +347,9 @@
     var ev = { k: k, b: parseInt(lg.blockNumber, 16), i: parseInt(lg.logIndex, 16) };
     if (k === 'dep') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
     else if (k === 'wd') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
-    else if (k === 'open') { ev.id = tint(lg.topics[1]); ev.a = taddr(lg.topics[2]); ev.x = tint(lg.topics[3]); ev.m = usd(word(d, 1)); ev.l = Number(word(d, 2)); }
-    else if (k === 'close') { ev.id = tint(lg.topics[1]); ev.a = taddr(lg.topics[2]); ev.p = Number(sword(d, 1)) / 1e6; ev.f = usd(word(d, 2)); }
-    else if (k === 'liq') { ev.id = tint(lg.topics[1]); ev.a = taddr(lg.topics[2]); ev.r = taddr(lg.topics[3]); ev.m = usd(word(d, 1)); }
+    else if (k === 'open') { ev.id = pidOf(lg); ev.a = taddr(lg.topics[2]); ev.x = tint(lg.topics[3]); ev.m = usd(word(d, 1)); ev.l = Number(word(d, 2)); }
+    else if (k === 'close') { ev.id = pidOf(lg); ev.a = taddr(lg.topics[2]); ev.p = Number(sword(d, 1)) / 1e6; ev.f = usd(word(d, 2)); }
+    else if (k === 'liq') { ev.id = pidOf(lg); ev.a = taddr(lg.topics[2]); ev.r = taddr(lg.topics[3]); ev.m = usd(word(d, 1)); }
     else if (k === 'code') {
       ev.a = taddr(lg.topics[1]);
       var len = Number(word(d, 1));
@@ -366,8 +378,12 @@
 
   function fetchLogs(from, to) {
     var c = S.cfg.contracts;
-    var addrs = [c.exchange, c.referrals, c.staking].map(function (x) { return x.toLowerCase(); });
+    /* a v4 config also names the v3 contracts (v3Exchange / v3Referrals / v3Staking): they are followed too */
+    var addrs = [c.exchange, c.referrals, c.staking, c.v3Exchange, c.v3Referrals, c.v3Staking]
+      .filter(function (x) { return ADDR_RE.test(String(x || '')) && !/^0x0{40}$/.test(x); })
+      .map(function (x) { return x.toLowerCase(); });
     if (S.relay) addrs.push(S.relay);
+    if (!addrs.length) return Promise.resolve([]);
     var all = [];
     function step(start) {
       if (start > to) return Promise.resolve(all);

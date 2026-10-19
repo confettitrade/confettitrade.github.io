@@ -92,22 +92,26 @@
      pages' CSP allows exactly these hosts. */
   /* ---- BEGIN PINNED CONTRACTS (ops/write_config.py) ---- */
   var CONTRACTS = {
-    exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
+    exchange: '',
+    exchangeExt: '',
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
-    oracle: '0x6c68f03d3b17ceed7955c13a3373cc186cdf9d1f',
-    confetti: '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2',
-    tokenomics: '0xcfd4d15d4c7b4a60e8a008e23cc9fa5eba1784be',
-    staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
-    referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b',
-    priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494',
-    marketRules: '0x51cbb4d222d50536785013e2afc27b5a13d53a45',
-    sessionRouter: '0x42e2e55d7ea4cb4956e2f702bda59e15d8ce05fd',
-    depositFactory: '0xc6b54a4aac8180ca51bbbd394e4fb6a79f60dc97',
-    v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2'
+    oracle: '',
+    confetti: '',
+    staking: '',
+    referrals: '',
+    priceSource: '',
+    marketRules: '',
+    sessionRouter: '',
+    depositFactory: '',
+    v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
+    v3Exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
+    v3Confetti: '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2',
+    v3Staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
+    v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b'
   };
   /* ---- END PINNED CONTRACTS ---- */
   var USDC = CONTRACTS.usdc;
-  var CHECKED = ['usdc', 'oracle', 'confetti', 'tokenomics', 'staking', 'referrals', 'sessionRouter', 'marketRules'];
+  var CHECKED = ['usdc', 'oracle', 'staking', 'referrals', 'sessionRouter', 'marketRules', 'extension'];
   /* the CHECKED addresses this page sends transactions to (usdc has its own refusal: usdcBad) */
   var TX_TARGETS = { referrals: 'Refer', sessionRouter: 'One-click' };
   var RPC_HOSTS = ['rpc.hyperliquid.xyz', 'hyperliquid.drpc.org', 'rpc.purroofgroup.com'];
@@ -117,17 +121,16 @@
   /* One-time acceptance of terms.html, kept in localStorage; the order button waits for it. */
   var TERMS_KEY = 'confetti.terms';
 
-  /* Fixed protocol constants (IExchange header). Config may restate them but cannot change the contract. */
-  var MIN_MARGIN = 10;
+  /* Fixed protocol constants (ImpactLib). Config may restate them but cannot change the contract. */
   /* Bust move = the smaller of 95% of 1/leverage and 1/leverage - BUST_GAP_BPS (ImpactLib):
      5 bps at 1000x, 15 at 500x, 35 at 250x; the 95% rule binds at 100x and below. */
   var BUST_BUFFER_PCT = 95;
   var BUST_GAP_BPS = 5;
-  /* Fee rate on wins, losses and liquidations. The owner can set it from 0 to 5% (never above).
-     The rate (like the market's deadband and payout cap) is stamped on each position at open,
-     so an open position's preview uses its own stamped terms (positions() returns them); the
-     order form uses the live feeBps() once refreshHouse has read it, and the 5% cap until then. */
-  var DEFAULT_FEE_RATE = 0.05;
+  /* Owner settings (minMarginUsdc, winFeeBps, lossFeeBps, borrowFreeHours, maxWinBps) are read
+     from the exchange by refreshHouse; until the first read the page uses config.json's restated
+     values (minMarginUsdc, winFeeBps, lossFeeBps, borrowFreeHours, maxWinBps). The win / loss fee,
+     the deadband, the entry spread, the borrow rate and the maximum profit are stamped on each
+     position at open, so an open position's preview uses its own stamped terms (positions()). */
 
   /* One-click trading (SessionRouter). The wallet sends this much HYPE with authorize; the router
      forwards it to the session key for gas. Below SESSION_MIN_GAS the key is treated as dry and the
@@ -277,7 +280,6 @@
 
   function usd6ToNum(x) { return Number(x) / 1e6; }
   function px18ToNum(x) { return Number(x) / 1e18; }
-  function tokenToNum(x) { return Number(x) / 1e18; }
 
   function numToUsd6(v) {
     /* round half-up to the micro-USDC the contract works in */
@@ -363,20 +365,23 @@
     'function balanceOf(address user) view returns (uint256 availableUsdc)',
     'function marginInUse(address user) view returns (uint256 usdc)',
     'function pendingOf(address user) view returns (uint256 usdc)',
-    'function positions(uint256 positionId) view returns (tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint64 openedAt, uint16 deadbandBps, uint16 payoutCapX, uint16 feeBps))',
+    'function positions(uint256 positionId) view returns (tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint96 maxProfitUsdc, uint256 entryPx18, uint64 openedAt, uint16 deadbandBps, uint16 payoutCapX, uint16 winFeeBps, uint16 lossFeeBps, uint16 entryDeadbandBps, uint16 borrowRateX10, uint16 borrowFreeHours))',
     'function positionIdsOf(address user) view returns (uint256[])',
     'function openRequest(uint256 requestId) view returns (tuple(address trader, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint64 requestedAt, uint256 px0, address referrer))',
     'function closeRequest(uint256 positionId) view returns (tuple(uint64 requestedAt, uint256 px0))',
     'function bustPrice(uint256 positionId) view returns (uint256 px18)',
     'function previewClose(uint256 positionId) view returns (int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc)',
+    'function borrowOwed(uint256 positionId) view returns (uint256 usdc)',
     'function execPrice(uint32 instrumentId, bool isLong, bool isOpen) view returns (uint256 px18)',
     'function nextRequestId() view returns (uint256)',
     'function nextPositionId() view returns (uint256)',
-    'function instrument(uint32 instrumentId) view returns (tuple(uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6, uint128 longOiCapUsd, uint128 shortOiCapUsd, uint128 maxNotionalUsd, uint16 payoutCapX, bool opensPaused, bool retired, uint256 frozenPx18))',
+    'function instrument(uint32 instrumentId) view returns (tuple(uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6, uint128 longOiCapUsd, uint128 shortOiCapUsd, uint128 maxNotionalUsd, uint16 payoutCapX, uint16 posX10, uint16 sideX10, uint16 stressBps, uint16 entryDeadbandBps, uint16 borrowRateX10, bool opensPaused, bool retired, uint256 lastPx18))',
     'function instrumentCount() view returns (uint32)',
     'function openInterest(uint32 instrumentId) view returns (uint256 longUsd, uint256 shortUsd)',
+    'function maxPositionUsd(uint32 instrumentId, bool isLong) view returns (uint256 usd)',
     'function lpBalance() view returns (uint256 usdc)',
     'function feePool() view returns (uint256 usdc)',
+    'function houseFreeUsdc() view returns (uint256 usdc)',
     'function queueLength() view returns (uint256)',
     'function queueHead() view returns (uint256)',
     'function queueEntry(uint256 index) view returns (address recipient, uint256 owedUsdc)',
@@ -384,8 +389,11 @@
     'function globalOpensPaused() view returns (bool)',
     'function breakerTripped() view returns (bool)',
     'function breakerBps() view returns (uint16)',
-    'function breakerFloorUsdc() view returns (uint128)',
-    'function feeBps() view returns (uint16)',
+    'function winFeeBps() view returns (uint16)',
+    'function lossFeeBps() view returns (uint16)',
+    'function borrowFreeHours() view returns (uint16)',
+    'function minMarginUsdc() view returns (uint64)',
+    'function maxWinBps() view returns (uint16)',
     'function stakerFeeShareBps() view returns (uint16)',
     'function minDelay() view returns (uint32)',
     'function grace() view returns (uint32)',
@@ -394,15 +402,13 @@
     'function isKeeper(address account) view returns (bool)',
     'function usdc() view returns (address)',
     'function oracle() view returns (address)',
-    'function confetti() view returns (address)',
-    'function tokenomics() view returns (address)',
     'function staking() view returns (address)',
     'function referrals() view returns (address)',
+    'function extension() view returns (address)',
     'function owner() view returns (address)',
     'function pauseGuardian() view returns (address)',
     'function marketKeeper() view returns (address)',
     'function feeRecipient() view returns (address)',
-    /* v3: the session router (trusted forwarder) and the market-rules module; revert on v2 */
     'function sessionRouter() view returns (address)',
     'function marketRules() view returns (address)',
     /* events */
@@ -410,16 +416,17 @@
     'event Withdrawn(address indexed user, uint256 amountUsdc)',
     'event OpenRequested(uint256 indexed requestId, address indexed trader, uint32 indexed instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 px0, address referrer)',
     'event OpenRequestCancelled(uint256 indexed requestId, address indexed trader, bytes4 reason)',
-    'event PositionOpened(uint256 indexed positionId, address indexed owner, uint32 indexed instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint256 requestId)',
+    'event PositionOpened(uint256 indexed positionId, address indexed owner, uint32 indexed instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint256 requestId, bool keeperFill)',
     'event CloseRequested(uint256 indexed positionId, address indexed trader, uint256 px0)',
     'event CloseRequestCancelled(uint256 indexed positionId, bytes4 reason)',
-    'event PositionClosed(uint256 indexed positionId, address indexed owner, uint256 exitPx18, int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc, uint256 queuedUsdc, uint256 confettiMinted)',
-    'event PositionLiquidated(uint256 indexed positionId, address indexed owner, address indexed liquidator, uint256 exitPx18, uint128 marginUsdc, uint256 bountyUsdc, uint256 feeUsdc, uint256 confettiMinted)',
+    'event PositionClosed(uint256 indexed positionId, address indexed owner, uint256 exitPx18, int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc, uint256 queuedUsdc, uint256 borrowUsdc, bool keeperFill)',
+    'event PositionLiquidated(uint256 indexed positionId, address indexed owner, address indexed liquidator, uint256 exitPx18, uint128 marginUsdc, uint256 bountyUsdc, uint256 feeUsdc)',
     'event QueueAppended(uint256 indexed index, address indexed recipient, uint256 amountUsdc)',
     'event QueuePaid(uint256 indexed index, address indexed recipient, uint256 paidUsdc, uint256 remainingUsdc)',
     'event FeesPushed(uint256 toStakersUsdc, uint256 toRecipientUsdc)',
-    'event StakerOverflowSwept(uint256 amountUsdc)',
-    'event TeamMinted(address indexed to, uint256 amount)',
+    'event HouseDeposited(uint256 amountUsdc, uint256 lpAfterUsdc)',
+    'event HouseWithdrawn(uint256 amountUsdc, uint256 lpAfterUsdc)',
+    'event HouseWinForfeited(uint256 indexed positionId, uint256 forfeitedUsdc)',
     'event InstrumentAdded(uint32 indexed instrumentId, uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage)',
     'event InstrumentParamsSet(uint32 indexed instrumentId, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6)',
     'event OiCapsSet(uint32 indexed instrumentId, uint128 longOiCapUsd, uint128 shortOiCapUsd)',
@@ -430,7 +437,11 @@
     'event BreakerCleared(address indexed by)',
     'event BreakerBpsSet(uint16 breakerBps)',
     'event BreakerFloorSet(uint128 floorUsdc)',
-    'event FeeBpsSet(uint16 feeBps)',
+    'event FeeBpsSet(uint16 winFeeBps, uint16 lossFeeBps)',
+    'event MarketFeesSet(uint32 indexed instrumentId, uint16 entryDeadbandBps, uint16 borrowRateX10)',
+    'event BorrowFreeHoursSet(uint16 hours_)',
+    'event MinMarginSet(uint64 minMarginUsdc)',
+    'event HouseSizingSet(uint32 indexed instrumentId, uint16 posX10, uint16 sideX10, uint16 stressBps)',
     'event StakerFeeShareSet(uint16 stakerFeeShareBps)',
     'event DelaysSet(uint32 minDelay, uint32 grace, uint32 expiry)',
     'event MaxJumpBpsSet(uint16 maxJumpBps)',
@@ -461,7 +472,6 @@
     'error InvalidTier(uint8 tier)',
     'error ParamOutOfBounds(uint8 param, uint256 value)',
     'error QueueEmpty()',
-    'error QueueNotEmpty()',
     'error NothingToPush()',
     'error BreakerNotTripped()',
     'error FeedAlive(uint32 instrumentId)',
@@ -473,7 +483,8 @@
     'error CloseAlreadyPending()',
     'error PriceJumped()',
     'error EntryBusted()',
-    'error MigrationPending()',
+    'error HouseExposureExceeded()',
+    'error NoLastPrice(uint32 instrumentId)',
     /* errors: PriceOracle, bubble up through request / execute */
     'error FeedUnavailable(uint32 instrumentId)',
     'error ZeroPrice(uint32 instrumentId)',
@@ -629,7 +640,12 @@
     /* per instrument id: the on-chain HyperCore oracle price (execPrice), refreshed with the
        chain poll; this is what every fill and liquidation settles on */
     oraclePxById: {},
-    feeRate: null,
+    /* owner settings read from the exchange (null until read; see the constants above) */
+    winFeeBps: null, lossFeeBps: null, minMargin: null, borrowFreeHours: null, maxWinBps: null, free: null,
+    /* per instrument id: { long, short } maxPositionUsd() in USD, read with the chain poll */
+    maxPos: {},
+    /* why this page sends nothing (v4 gate), or null; see sendGate() */
+    gate: null,
     /* request windows in seconds (minDelay / grace / expiry), the jump guard, the fee shares */
     minDelay: 5, grace: 3, expiry: 60, maxJumpBps: null, stakerShareBps: null, referralShareBps: null
   };
@@ -1188,7 +1204,7 @@
     mine.forEach(function (p) {
       var tag = mine.length > 1 ? ' ' + sideWord(p.isLong).toLowerCase() + ' ' + p.leverage + 'x' : '';
       chart.pos.push(chart.series.createPriceLine({ price: p.entry, color: t.ink, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'entry' + tag }));
-      var bust = px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage));
+      var bust = px18ToNum(posBust18(p));
       if (bust > 0) chart.pos.push(chart.series.createPriceLine({ price: bust, color: t.accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'liq.' + tag }));
     });
   }
@@ -1559,41 +1575,89 @@
     return (1 - c.baseRate) / (1 + rateTerm + sizeTerm);
   }
 
-  /* Live fee rate (feeBps / 1e4) once read from the exchange, the 5% cap before that. */
-  function feeRate() { return house.feeRate != null ? house.feeRate : DEFAULT_FEE_RATE; }
+  /* A setting read from the exchange, else config.json's restated value, else null. */
+  function liveOr(v, key) {
+    if (v != null) return v;
+    var c = cfg && cfg[key] != null ? Number(cfg[key]) : NaN;
+    return isFinite(c) ? c : null;
+  }
 
-  /* "5%", "2.5%": the fee rate for UI text. */
-  function feePctText() { return (feeRate() * 100).toFixed(2).replace(/\.?0+$/, '') + '%'; }
+  /* Win fee rate (winFeeBps / 1e4) and loss fee rate (lossFeeBps / 1e4) for new positions. */
+  function feeRate() { var b = liveOr(house.winFeeBps, 'winFeeBps'); return b != null ? b / 1e4 : 0; }
+  function lossFeeRate() { var b = liveOr(house.lossFeeBps, 'lossFeeBps'); return b != null ? b / 1e4 : 0; }
 
-  /* What close() would settle to at price px. Returns { pnl, fee, payout, flat } in USD.
-     A position carries the deadband, payout cap and fee rate stamped on it at open
-     (pos.deadbandBps / payoutCapX / feeBps) and settles on those; the market's live values
-     are only the fallback for a position object that lacks them. The impact curve is live. */
+  /* Smallest margin a request takes, USD (minMarginUsdc). */
+  function minMargin() { var v = liveOr(house.minMargin, 'minMarginUsdc'); return v != null && v > 0 ? v : 1; }
+
+  /* Whole hours a new position holds before the borrow starts (borrowFreeHours). */
+  function freeHours() { return liveOr(house.borrowFreeHours, 'borrowFreeHours'); }
+
+  /* "7.5%", "0%": a rate for UI text; a dash before anything is known. */
+  function pctText(rate) { return rate == null || !isFinite(rate) ? '—' : (rate * 100).toFixed(2).replace(/\.?0+$/, '') + '%'; }
+  function feePctText() { return liveOr(house.winFeeBps, 'winFeeBps') == null ? '—' : pctText(feeRate()); }
+
+  /* A market's borrow rate as a percent of the position per hour: borrowRateX10 is tenths of a bps. */
+  function borrowPctText(inst) { return inst && inst.borrowRateX10 != null ? pctText(inst.borrowRateX10 / 1e5) : '—'; }
+
+  /* The most one new position on inst could win with this margin (USD), as executeOpen stamps
+     it: the smaller of margin x payoutCapX and maxWinBps of the house's free cash. NaN when a
+     part is unknown. */
+  function maxProfitFor(margin, inst) {
+    if (!inst || !(margin > 0)) return NaN;
+    var cap = inst.payoutCapX > 0 ? margin * inst.payoutCapX : Infinity;
+    var bps = liveOr(house.maxWinBps, 'maxWinBps');
+    var byHouse = house.free != null && bps != null ? house.free * bps / 1e4 : Infinity;
+    var m = Math.min(cap, byHouse);
+    return isFinite(m) ? m : NaN;
+  }
+
+  /* Borrow a position owes after heldS seconds (ImpactLib.borrowFee): rateX10 tenths of a bps of
+     notional per whole hour held beyond its free hours; a part hour is free. */
+  function borrowFor(pos, heldS) {
+    var rate = pos.borrowRateX10 > 0 ? pos.borrowRateX10 : 0;
+    var free = (pos.borrowFreeHours >= 0 ? pos.borrowFreeHours : 0) * 3600;
+    if (!rate || !(heldS >= free + 3600)) return 0;
+    return Math.floor((pos.margin * pos.leverage * 1e6) * rate * Math.floor((heldS - free) / 3600) / 1e5) / 1e6;
+  }
+
+  /* What close() would settle to at price px. Returns { pnl, fee, payout, borrow, flat } in USD.
+     A position carries its terms stamped at open (deadbandBps, winFeeBps, lossFeeBps,
+     maxProfit, borrowRateX10, borrowFreeHours) and settles on those; a pretend position (the
+     ticket) uses the live settings. The impact curve is live. On a win the fee is winFeeBps of
+     the gain left after the impact haircut; on a loss the trader pays the loss and nothing more
+     (a loss fee is carved from the house's side). The borrow comes off the payout. */
   function estimateClose(pos, inst, px, queueEmpty) {
+    var borrow = pos.openedAt > 0 ? borrowFor(pos, Math.max(0, chainNow() - pos.openedAt)) : 0;
+    function done(r) {
+      r.borrow = Math.min(borrow, Math.max(0, r.payout));
+      r.payout -= r.borrow;
+      return r;
+    }
     var out = { pnl: 0, fee: 0, payout: pos.margin, flat: true };
-    if (!(px > 0) || !(pos.entry > 0)) return out;
-    var rate = pos.feeBps >= 0 ? pos.feeBps / 1e4 : feeRate();
+    if (!(px > 0) || !(pos.entry > 0)) return done(out);
+    var rate = pos.winFeeBps >= 0 ? pos.winFeeBps / 1e4 : feeRate();
     var notional = pos.margin * pos.leverage;
     var isWin = pos.isLong ? px > pos.entry : px < pos.entry;
     if (!isWin) {
       var diff = Math.abs(pos.entry - px);
       var loss = Math.min(pos.margin, notional * diff / pos.entry);
-      if (loss <= 0) return out;
-      var lfee = queueEmpty === false ? 0 : loss * rate;
-      return { pnl: -loss, fee: lfee, payout: pos.margin - loss, flat: false };
+      if (loss <= 0) return done(out);
+      var lrate = pos.lossFeeBps >= 0 ? pos.lossFeeBps / 1e4 : lossFeeRate();
+      var lfee = queueEmpty === false ? 0 : loss * lrate;
+      return done({ pnl: -loss, fee: lfee, payout: pos.margin - loss, flat: false });
     }
     var c = curveOf(inst);
     var band = pos.deadbandBps > 0 ? pos.deadbandBps : c.deadbandBps;
     var exit = pos.isLong ? px * (1 - band / 1e4) : px * (1 + band / 1e4);
-    if (pos.isLong ? exit <= pos.entry : exit >= pos.entry) return out;
+    if (pos.isLong ? exit <= pos.entry : exit >= pos.entry) return done(out);
     var move = Math.abs(exit - pos.entry) / pos.entry;
     var gain = notional * move;
     var adjusted = gain * impactScale(move, c);
-    /* payout cap (DESIGN 3b): the contract caps the adjusted gain before taking the fee */
-    var capX = pos.payoutCapX > 0 ? pos.payoutCapX : (inst ? inst.payoutCapX : 0);
-    if (capX > 0) adjusted = Math.min(adjusted, pos.margin * capX);
+    /* the maximum profit stamped at open caps the adjusted gain before the fee */
+    var cap = pos.maxProfit >= 0 ? pos.maxProfit : maxProfitFor(pos.margin, inst);
+    if (cap >= 0) adjusted = Math.min(adjusted, cap);
     var fee = adjusted * rate;
-    return { pnl: adjusted - fee, fee: fee, payout: pos.margin + adjusted - fee, flat: false };
+    return done({ pnl: adjusted - fee, fee: fee, payout: pos.margin + adjusted - fee, flat: false });
   }
 
   /* The price a fill settles on: the HyperCore oracle price (every open, close and liquidation
@@ -1651,6 +1715,25 @@
       return (num + den - 1n) / den;
     }
     return entryPx18 * (den + move) / den;
+  }
+
+  /* ImpactLib.rawEntry: the fill before the entry spread a position's entry carries (long down,
+     short up, the contract's rounding). The bust is measured from it. */
+  function rawEntry18(entryPx18, isLong, spreadBps) {
+    var s = BigInt(spreadBps || 0);
+    if (s === 0n) return entryPx18;
+    if (isLong) return entryPx18 * 10000n / (10000n + s);
+    var den = 10000n - s;
+    return (entryPx18 * 10000n + den - 1n) / den;
+  }
+
+  /* A position's liquidation price, as bustPrice(positionId) works it. */
+  function posBust18(p) { return bustPrice18(rawEntry18(p.entryPx18, p.isLong, p.entryDeadbandBps), p.isLong, p.leverage); }
+
+  /* The entry a fill at px books on inst: moved by the market's entry spread against the trader. */
+  function spreadEntry(px, isLong, inst) {
+    var s = inst && inst.entryDeadbandBps > 0 ? inst.entryDeadbandBps : 0;
+    return isLong ? px * (1 + s / 1e4) : px * (1 - s / 1e4);
   }
 
   /* ---- order form ------------------------------------------------------------- */
@@ -1721,9 +1804,14 @@
   }
 
   /* A position as if opened now at px with the ticket's amount, side and leverage: what the money
-     lines and the check before a big trade are priced on. Zero terms fall back to the market's. */
+     lines and the check before a big trade are priced on. Its entry carries the market's entry
+     spread; -1 terms mean the live settings (fees, maximum profit). */
   function pretendPos(px, margin) {
-    return { entry: px, margin: margin, leverage: form.lev, isLong: form.side === 'long', feeBps: -1, deadbandBps: 0, payoutCapX: 0 };
+    var m = state.market, isLong = form.side === 'long';
+    return {
+      entry: spreadEntry(px, isLong, m && m.inst), margin: margin, leverage: form.lev, isLong: isLong,
+      winFeeBps: -1, lossFeeBps: -1, deadbandBps: 0, maxProfit: -1, openedAt: 0
+    };
   }
 
   /* Seconds from a request to its expected fill: the keeper's wait plus a block. */
@@ -1750,8 +1838,7 @@
     setText('moveWin', win && !win.flat ? fmtUsd(win.pnl, true) : '—');
     setText('opensNear', 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' in about ' + fillSecs() + ' s');
     /* the win cap line (in Details) shows only when a 20% move would reach it */
-    var capX = inst ? inst.payoutCapX : 0;
-    var capUsd = capX > 0 && isFinite(margin) ? margin * capX * (1 - feeRate()) : NaN;
+    var capUsd = ticketCap(inst, margin);
     var big = isFinite(capUsd) && px > 0 ? estimateClose(pretendPos(px, margin), inst, px * (isLong ? 1.2 : 0.8), true) : null;
     var capLine = $('capLine');
     if (capLine) {
@@ -1761,13 +1848,25 @@
     }
     var q = $('queueLine');
     if (q) q.hidden = !(house.queued > 0);
-    setText('maxProfit', isFinite(capUsd)
-      ? 'Win cap ' + fmtUsd(capUsd) + ' (' + capX + 'x your ' + fmtUsdShort(margin) + ', after fee)'
-      : 'Win cap: ' + (capX > 0 ? capX + 'x your amount, after fee' : '—'));
+    setText('maxProfit', isFinite(capUsd) ? 'Win cap ' + fmtUsd(capUsd) + ' after fee, set when it opens.' : 'Win cap: —');
     var c = curveOf(inst);
     setText('keptShare', 'Small wins are trimmed: you keep about ' + Math.round(impactScale(0.001, c) * 100) + '% of a 0.1% move, ' + Math.round(impactScale(0.01, c) * 100) + '% of a 1% move.');
-    setText('feeLine', 'Fee: ' + feePctText() + ' of winnings');
-    setText('posCapLine', inst && inst.maxNotional > 0 ? 'Biggest ' + sym + ' position $' + fmtInt(inst.maxNotional) : 'Biggest position: —');
+    setText('feeLine', 'Fee: ' + feePctText() + ' of winnings, after the trim. Nothing on a loss beyond the loss.');
+    var fh = freeHours();
+    setText('borrowLine', inst && inst.borrowRateX10 > 0
+      ? 'Borrow: ' + borrowPctText(inst) + ' of the position per hour after the first ' + (fh == null ? '—' : fh === 1 ? 'hour' : fh + ' hours') + ', taken at close.'
+      : 'Borrow: none.');
+    if (inst && inst.entryDeadbandBps > 0) setText('opensNear', 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' plus a ' + pctText(inst.entryDeadbandBps / 1e4) + ' spread, in about ' + fillSecs() + ' s');
+    var mp = inst ? house.maxPos[inst.id] : null;
+    var room = mp ? (isLong ? mp.long : mp.short) : null;
+    setText('posCapLine', room != null ? 'Biggest ' + sym + ' ' + (isLong ? 'long' : 'short') + ' right now ' + fmtUsd(room) : 'Biggest position: —');
+  }
+
+  /* The most the ticket's trade could win after the fee (USD), as it would be stamped now; NaN
+     when unknown. */
+  function ticketCap(inst, margin) {
+    var mp = maxProfitFor(margin, inst);
+    return isFinite(mp) ? mp * (1 - feeRate()) : NaN;
   }
 
   /* The win cap in dollars for the ticket's amount when a 20% move would reach it, else NaN: the
@@ -1777,8 +1876,7 @@
     var inst = m && m.inst ? m.inst : null;
     var px = openPriceFor(m);
     var margin = isFinite(form.margin) && form.margin > 0 ? form.margin : NaN;
-    var capX = inst ? inst.payoutCapX : 0;
-    var capUsd = capX > 0 && isFinite(margin) ? margin * capX * (1 - feeRate()) : NaN;
+    var capUsd = ticketCap(inst, margin);
     if (!isFinite(capUsd) || !(px > 0)) return NaN;
     var big = estimateClose(pretendPos(px, margin), inst, px * (form.side === 'long' ? 1.2 : 0.8), true);
     return big && big.pnl >= capUsd * 0.999 ? capUsd : NaN;
@@ -1826,6 +1924,7 @@
      reads it before connecting. Before the instruments are read nothing is blocked. */
   function marketBlock() {
     var m = state.market;
+    if (house.gate) return house.gate;
     if (!m) return 'Pick a coin to trade.';
     if (!m.inst) return hasExchange() && state.instrumentsLoaded ? m.symbol + ' is coming soon.' : null;
     if (m.inst.retired) return m.symbol + ' is closed for new trades. You can still close.';
@@ -1837,7 +1936,7 @@
   /* An open market to offer instead: BTC, then ETH, then the first open one. Null while every
      market is paused (the global pause and the loss breaker). */
   function altMarket() {
-    if (house.globalPaused || house.breakerTripped) return null;
+    if (house.gate || house.globalPaused || house.breakerTripped) return null;
     var pick = null;
     ['BTC', 'ETH'].concat(state.markets.map(function (m) { return m.symbol; })).some(function (s) {
       var m = state.bySym[s];
@@ -1854,18 +1953,17 @@
     if (block) return block;
     if (!m || !m.inst) return 'Loading the market…';
     if (!isFinite(form.margin) || form.margin <= 0) return 'Enter an amount.';
-    if (form.margin < MIN_MARGIN) return 'Minimum is $' + MIN_MARGIN + '.';
+    var mm = minMargin();
+    if (form.margin < mm) return 'Minimum is ' + fmtUsd(mm) + '.';
     if (form.margin > acct.available + 1e-9) return 'That is more than your balance (' + fmtUsd(acct.available) + ').';
     if (form.lev < 1 || form.lev > m.inst.maxLeverage) return 'Leverage on ' + m.symbol + ' goes up to ' + m.inst.maxLeverage + 'x.';
-    if (m.inst.maxNotional > 0 && form.margin * form.lev > m.inst.maxNotional + 1e-6) return 'Too big: the largest ' + m.symbol + ' position is $' + fmtInt(m.inst.maxNotional) + '.';
-    var oi = house.oi[m.symbol];
-    if (oi) {
-      var cap = form.side === 'long' ? m.inst.longCap : m.inst.shortCap;
-      var used = form.side === 'long' ? oi.long : oi.short;
-      var headroom = Math.max(0, cap - used);
-      if (form.margin * form.lev > headroom + 1e-6) {
-        return m.symbol + ' ' + (form.side === 'long' ? 'longs' : 'shorts') + ' are full right now. Up to ' + fmtUsdCompact(headroom) + ' more fits: lower the amount or leverage.';
-      }
+    /* maxPositionUsd(id, isLong): every open-time limit in one number (static caps, side and book
+       limits sized to the house's free cash), read with the chain poll */
+    var mp = house.maxPos[m.inst.id];
+    var room = mp ? (form.side === 'long' ? mp.long : mp.short) : null;
+    if (room != null && form.margin * form.lev > room + 1e-6) {
+      return room < 1 ? m.symbol + ' ' + (form.side === 'long' ? 'longs' : 'shorts') + ' are full right now.'
+        : 'Too big right now: up to ' + fmtUsd(room) + ' on ' + m.symbol + ' ' + (form.side === 'long' ? 'longs' : 'shorts') + '. Lower the amount or leverage.';
     }
     return null;
   }
@@ -1899,11 +1997,11 @@
       label = 'Trading is off'; disabled = true; note = 'This copy of the site has no exchange address.'; err = true;
     } else if (!acct.loaded) {
       label = 'Loading your account…'; disabled = true;
-    } else if (acct.available < MIN_MARGIN) {
+    } else if (acct.available < minMargin()) {
       label = 'Add USDC';
       note = acct.walletUsdc >= 1 ? 'You have ' + fmtUsd(acct.walletUsdc) + ' USDC in your wallet. Add it to start.'
-        : acct.available > 0 ? 'Your balance is ' + fmtUsd(acct.available) + '. Trades start at $' + MIN_MARGIN + '.'
-        : 'Add at least $' + MIN_MARGIN + ' to start.';
+        : acct.available > 0 ? 'Your balance is ' + fmtUsd(acct.available) + '. Trades start at ' + fmtUsd(minMargin()) + '.'
+        : 'Add at least ' + fmtUsd(minMargin()) + ' to start.';
     } else if (!(form.margin > 0)) {
       label = 'Enter an amount'; disabled = true;
     } else {
@@ -1964,7 +2062,7 @@
     form.side = lsGet(LS.side) === 'short' ? 'short' : 'long';
     /* the amount box starts ready: $10, or the last amount used */
     var saved = Number(lsGet(LS.amount));
-    form.margin = isFinite(saved) && saved >= MIN_MARGIN ? Math.floor(saved * 100) / 100 : MIN_MARGIN;
+    form.margin = isFinite(saved) && saved >= minMargin() ? Math.floor(saved * 100) / 100 : minMargin();
     if (marginInput) marginInput.value = String(form.margin);
     renderSide();
     renderAmountChips();
@@ -2007,7 +2105,7 @@
         var b = ev.target && ev.target.closest ? ev.target.closest('[data-amt]') : null;
         if (!b) return;
         var v = b.getAttribute('data-amt');
-        var next = MIN_MARGIN;
+        var next = minMargin();
         form.maxed = false;
         if (v === 'max') {
           /* Max is the whole balance; that trade gets the check first */
@@ -2101,7 +2199,7 @@
     if (!wallet.account) { if (wallet.eth || getInjected()) connect(); else openWalletApps(); return; }
     if (wallet.chainId !== CHAIN_ID) { switchChain().then(function () { return onChainChanged(); }).catch(switchFailed); return; }
     if (!hasExchange() || !acct.loaded) return;
-    if (acct.available < MIN_MARGIN) { openDeposit(); return; }
+    if (acct.available < minMargin()) { openDeposit(); return; }
     if (!(form.margin > 0) || orderProblem()) { renderAction(); return; }
     if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') {
       confirmOpen().then(function (yes) { if (yes && !state.busy && !tk.phase && !orderProblem()) submitOpen(); });
@@ -2255,7 +2353,8 @@
       referenceNotional: usd6ToNum(r.referenceNotionalUsd), positionMultiplier: Number(r.positionMultiplierE6) / 1e6,
       longCap: usd6ToNum(r.longOiCapUsd), shortCap: usd6ToNum(r.shortOiCapUsd),
       maxNotional: usd6ToNum(r.maxNotionalUsd), payoutCapX: Number(r.payoutCapX),
-      opensPaused: !!r.opensPaused, retired: !!r.retired, frozenPx: px18ToNum(r.frozenPx18)
+      entryDeadbandBps: Number(r.entryDeadbandBps), borrowRateX10: Number(r.borrowRateX10),
+      opensPaused: !!r.opensPaused, retired: !!r.retired, frozenPx: px18ToNum(r.lastPx18)
     };
   }
 
@@ -2305,21 +2404,28 @@
     return Promise.all([
       ex.lpBalance(), ex.feePool(), ex.queuedTotal(), ex.queueLength(), ex.queueHead(), ex.globalOpensPaused(), read.provider.getBlock('latest'),
       ex.breakerTripped().catch(function () { return false; }),
-      ex.feeBps().catch(none),
+      ex.winFeeBps().catch(none),
       ex.minDelay().catch(none), ex.grace().catch(none), ex.expiry().catch(none),
-      ex.maxJumpBps().catch(none), ex.stakerFeeShareBps().catch(none), ex.breakerBps().catch(none)
+      ex.maxJumpBps().catch(none), ex.stakerFeeShareBps().catch(none), ex.breakerBps().catch(none),
+      ex.lossFeeBps().catch(none), ex.minMarginUsdc().catch(none), ex.borrowFreeHours().catch(none),
+      ex.maxWinBps().catch(none), ex.houseFreeUsdc().catch(none)
     ]).then(function (r) {
       house.lp = usd6ToNum(r[0]); house.feePool = usd6ToNum(r[1]); house.queued = usd6ToNum(r[2]);
       house.queueLen = Number(r[3]); house.queueHead = Number(r[4]); house.globalPaused = !!r[5];
       noteBlock(r[6]); house.breakerTripped = !!r[7];
-      if (r[8] != null) house.feeRate = Number(r[8]) / 1e4;
+      if (r[8] != null) house.winFeeBps = Number(r[8]);
       if (r[9] != null) house.minDelay = Number(r[9]);
       if (r[10] != null) house.grace = Number(r[10]);
       if (r[11] != null) house.expiry = Number(r[11]);
       if (r[12] != null) house.maxJumpBps = Number(r[12]);
       if (r[13] != null) house.stakerShareBps = Number(r[13]);
       if (r[14] != null) house.breakerBps = Number(r[14]);
-      renderStatus(); renderAction();
+      if (r[15] != null) house.lossFeeBps = Number(r[15]);
+      if (r[16] != null) house.minMargin = usd6ToNum(r[16]);
+      if (r[17] != null) house.borrowFreeHours = Number(r[17]);
+      if (r[18] != null) house.maxWinBps = Number(r[18]);
+      if (r[19] != null) house.free = usd6ToNum(r[19]);
+      renderStatus(); renderForm(); renderAction();
     }).catch(function () { /* transient RPC trouble: keep the last values */ });
   }
 
@@ -2339,7 +2445,13 @@
       names.forEach(function (n, i) { if (vals[i]) house.addrs[n] = vals[i]; });
       var off = [];
       CHECKED.forEach(function (n) {
-        var pin = cfg.contracts[n], theirs = house.addrs[n];
+        var key = n === 'extension' ? 'exchangeExt' : n;
+        var pin = cfg.contracts[key], theirs = house.addrs[n];
+        if (n === 'extension' && !(isAddr(theirs) && isAddr(pin) && pin.toLowerCase() === theirs.toLowerCase())) {
+          console.error('exchange.extension() ' + (theirs || 'unreadable') + ' is not the pinned exchangeExt ' + (pin || 'none') + '; nothing is sent.');
+          setGate('Contracts not ready.');
+          return;
+        }
         if (n === 'usdc' || !isAddr(theirs) || (isAddr(pin) && pin.toLowerCase() === theirs.toLowerCase())) return;
         house.unpinned[n] = true;
         console.error('exchange.' + n + '() ' + theirs + ' is not the pinned ' + (pin || 'none') + (TX_TARGETS[n] ? '; ' + TX_TARGETS[n] + ' is off.' : '.'));
@@ -2391,13 +2503,16 @@
     var ex = read.exchange;
     if (!m || !ex || m.instrumentId == null) return Promise.resolve();
     var id = m.instrumentId;
-    return Promise.all([ex.openInterest(id), ex.instrument(id), readOraclePx(id)]).then(function (r) {
+    var none = function () { return null; };
+    return Promise.all([ex.openInterest(id), ex.instrument(id), readOraclePx(id), ex.maxPositionUsd(id, true).catch(none), ex.maxPositionUsd(id, false).catch(none)]).then(function (r) {
       house.oi[m.symbol] = { long: usd6ToNum(r[0][0]), short: usd6ToNum(r[0][1]) };
       var inst = normInst(r[1], id);
       inst.market = m;
       m.inst = inst;
       state.byInstId[id] = inst;
       house.oraclePxById[id] = r[2];
+      /* maxPositionUsd(id, isLong): the biggest open the exchange takes right now, every limit in one number */
+      if (r[3] != null && r[4] != null) house.maxPos[id] = { long: usd6ToNum(r[3]), short: usd6ToNum(r[4]) };
       loadHouseBotOi();
       renderMarketHeader(); renderLeverage(); renderForm(); renderAction(); renderStatus(); renderAccount(); renderPositions();
     }).catch(function () { /* keep the last values */ });
@@ -2455,8 +2570,10 @@
             id: ids[i], instrumentId: Number(p.instrumentId), isLong: !!p.isLong,
             margin: usd6ToNum(p.marginUsdc), leverage: Number(p.leverage),
             entry: px18ToNum(p.entryPx18), entryPx18: BigInt(p.entryPx18), openedAt: Number(p.openedAt),
-            /* settlement terms stamped at open (DESIGN 5); the close settles on these */
-            deadbandBps: Number(p.deadbandBps), payoutCapX: Number(p.payoutCapX), feeBps: Number(p.feeBps),
+            /* settlement terms stamped at open; the close settles on these */
+            deadbandBps: Number(p.deadbandBps), payoutCapX: Number(p.payoutCapX), maxProfit: usd6ToNum(p.maxProfitUsdc),
+            winFeeBps: Number(p.winFeeBps), lossFeeBps: Number(p.lossFeeBps), entryDeadbandBps: Number(p.entryDeadbandBps),
+            borrowRateX10: Number(p.borrowRateX10), borrowFreeHours: Number(p.borrowFreeHours),
             preview: pv ? { pnl: usd6ToNum(pv.pnlUsdc), fee: usd6ToNum(pv.feeUsdc), payout: usd6ToNum(pv.payoutUsdc) } : null
           });
           var known = acct.closeReqs[String(ids[i])];
@@ -2794,7 +2911,7 @@
   /* A position's liquidation price, how far the price now is from it, and its colour: amber
      under half of the full liquidation move, red under a fifth. */
   function liqRoom(p, px) {
-    var liq = px18ToNum(bustPrice18(p.entryPx18, p.isLong, p.leverage));
+    var liq = px18ToNum(posBust18(p));
     var out = { liq: liq, away: NaN, cls: '' };
     if (!(px > 0) || !(liq > 0)) return out;
     out.away = Math.max(0, p.isLong ? (px - liq) / px : (liq - px) / px);
@@ -2816,7 +2933,7 @@
       var t = known ? fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')' : '—';
       if (pnl.textContent !== t) pnl.textContent = t;
       pnl.className = 'pc-pnl' + (est.pnl > 0 ? ' pos' : est.pnl < 0 ? ' neg' : '');
-      pnl.title = known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') : '';
+      pnl.title = known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') : '';
     }
     setRole(card, 'now', isFinite(px) ? fmtPrice(px, sz) : '—');
     var room = liqRoom(p, px);
@@ -3746,10 +3863,12 @@
     MarketRetired: function () { return 'This market is closed for new trades. You can still close.'; },
     OpensPausedGlobally: function () { return 'New trades are paused for now. You can still close.'; },
     OpensPausedForMarket: function () { return 'New trades on this market are paused for now. You can still close.'; },
-    MarginBelowMinimum: function () { return 'Minimum is $' + MIN_MARGIN + '.'; },
+    MarginBelowMinimum: function () { return 'Minimum is ' + fmtUsd(minMargin()) + '.'; },
     LeverageOutOfRange: function () { return 'That leverage is over this market\'s limit.'; },
     OiCapExceeded: function () { return 'This market is full on that side right now. Lower the amount or leverage.'; },
-    PositionTooLarge: function () { return 'Too big for this market. Lower the amount or leverage.'; },
+    PositionTooLarge: function () { return 'Too big right now. Lower the amount or leverage.'; },
+    HouseExposureExceeded: function () { return 'The house is full right now. Lower the amount or leverage.'; },
+    NoLastPrice: function () { return 'That market has no last price.'; },
     OpensPausedByBreaker: function () { return 'New trades are paused for now. You can still close.'; },
     BreakerNotTripped: function () { return 'The loss breaker is not tripped.'; },
     FeedAlive: function (a) { return 'Market #' + a[0] + ' still has a live price feed; retire it normally.'; },
@@ -3760,7 +3879,6 @@
     InvalidTier: function (a) { return 'Invalid tier ' + a[0] + '.'; },
     ParamOutOfBounds: function (a) { return 'Parameter out of bounds (' + a[1] + ').'; },
     QueueEmpty: function () { return 'No wins are owed right now.'; },
-    QueueNotEmpty: function () { return 'Not allowed while wins are owed.'; },
     NothingToPush: function () { return 'Nothing to push right now.'; },
     UnknownRequest: function () { return 'Already done: it was filled, refunded or cancelled.'; },
     TooEarly: function () { return 'Almost: try again in a second.'; },
@@ -3770,7 +3888,6 @@
     CloseAlreadyPending: function () { return 'This position is already closing.'; },
     PriceJumped: function () { return 'The price moved too fast to fill. Your money is back in your balance.'; },
     EntryBusted: function () { return 'The price passed your liquidation price before the fill. Your money is back in your balance.'; },
-    MigrationPending: function () { return 'New trades start after the move to the new exchange.'; },
     FeedUnavailable: function () { return 'The price feed is down for a moment. Try again shortly.'; },
     ZeroPrice: function () { return 'The price feed is down for a moment. Try again shortly.'; },
     ClampOutOfBounds: function (a) { return 'Clamp ' + a[0] + ' bps is out of bounds.'; },
@@ -3808,8 +3925,8 @@
   var REASONS = {
     RequestExpired: 'it ran out of time', PriceJumped: 'the price moved too fast', EntryBusted: 'the price passed your liquidation price',
     MarketRetired: 'the market closed', OpensPausedGlobally: 'trading paused', OpensPausedForMarket: 'trading paused',
-    OpensPausedByBreaker: 'trading paused', LeverageOutOfRange: 'leverage over the limit', PositionTooLarge: 'too big for this market',
-    OiCapExceeded: 'the market is full on that side', MarginBelowMinimum: 'under the $' + MIN_MARGIN + ' minimum', UnknownPosition: 'liquidated first'
+    OpensPausedByBreaker: 'trading paused', LeverageOutOfRange: 'leverage over the limit', PositionTooLarge: 'too big right now',
+    OiCapExceeded: 'the market is full on that side', HouseExposureExceeded: 'the house is full', MarginBelowMinimum: 'under the minimum', UnknownPosition: 'liquidated first'
   };
 
   function reasonText(selector) {
@@ -3857,6 +3974,7 @@
     if (!window.ethers) throw new Error('ethers.js not loaded.');
     if (!wallet.account || !wallet.signer) throw new Error('Connect a wallet first.');
     if (wallet.chainId !== CHAIN_ID) throw new Error('Switch the wallet to HyperEVM (999) first.');
+    if (house.gate) throw new Error(house.gate);
     if (!hasExchange()) throw new Error('Exchange address not configured.');
     if (house.usdcBad) throw new Error('This exchange does not settle in native USDC.');
   }
@@ -4003,8 +4121,8 @@
     if (wallet.chainId !== CHAIN_ID) { toast('Switch the wallet to HyperEVM first.', 'err'); return; }
     var cap = $('sessionCap');
     if (cap && !cap.value) {
-      var guess = isFinite(form.margin) && form.margin >= MIN_MARGIN ? form.margin : acct.available;
-      cap.value = String(Math.max(MIN_MARGIN, Math.floor(guess) || MIN_MARGIN));
+      var guess = isFinite(form.margin) && form.margin >= minMargin() ? form.margin : acct.available;
+      cap.value = String(Math.max(Math.ceil(minMargin()), Math.floor(guess) || Math.ceil(minMargin())));
     }
     var hint = $('sessionHint'); if (hint) { hint.textContent = ''; hint.classList.remove('is-err'); }
     openDialog('sessionModal');
@@ -4102,7 +4220,7 @@
      after the keeper window). An open whose non-zero referrer differs from the session's (not
      yet locked) goes to the wallet. */
   function sessionCarries(kind, args) {
-    if (!sessionLive() || house.usdcBad) return false;
+    if (!sessionLive() || house.usdcBad || house.gate) return false;
     if (kind === 'requestOpen') return sessionRefOk(args[4]) && BigInt(args[2]) <= sess.onchain.cap6;
     return true;
   }
@@ -4153,7 +4271,7 @@
   /* A trading action may start: a live session, or a wallet that can sign. */
   function tradeReady() {
     if (DEMO) return true;
-    if (sessionLive() && !house.usdcBad && hasExchange()) return true;
+    if (sessionLive() && !house.usdcBad && !house.gate && hasExchange()) return true;
     try { requireSigner(); return true; } catch (e) { toast(e.message, 'err'); return false; }
   }
 
@@ -4634,7 +4752,7 @@
   }
 
   /* A close's end, as a card where the position was (and a toast): closed (P&L, what came back,
-     anything owed, FETTI, Withdraw and Share), liquidated (stays until OK), or a close that did
+     anything owed, the borrow, Withdraw and Share), liquidated (stays until OK), or a close that did
      not go through (the position stays open). pos: the position as last read, when known. */
   function reportCloseOutcome(pid, logs, txHash, pos) {
     pid = String(pid);
@@ -4661,7 +4779,7 @@
       var exit = fmtPrice(px18ToNum(a.exitPx18), sz);
       var lines = ['Closed at ' + exit + ' · ' + fmtUsd(pnl, true) + ' · ' + fmtUsd(paid) + ' is back in your balance'];
       if (a.queuedUsdc > 0n) lines.push(fmtUsd(usd6ToNum(a.queuedUsdc)) + ' more is owed to you, paid automatically.');
-      if (a.confettiMinted > 0n) lines.push('You got ' + fmtInt(tokenToNum(a.confettiMinted)) + ' FETTI' + (pnl < 0 ? ' for the loss.' : '.'));
+      if (a.borrowUsdc > 0n) lines.push('Borrow: ' + fmtUsd(usd6ToNum(a.borrowUsdc)) + '.');
       var win = pnl > 0 && !!window.ConfettiShare;
       var openShare = function () { window.ConfettiShare.open(shareTrade(pid, a, closed.block, pos)); };
       var buttons = [{ label: 'Withdraw', act: 'withdraw', fn: function () { tourEvent('withdraw'); openWithdraw(); } }];
@@ -4684,7 +4802,6 @@
     } else if (liq) {
       var lost = usd6ToNum(liq.args.marginUsdc);
       var llines = ['Your ' + label + ' was liquidated at ' + fmtPrice(px18ToNum(liq.args.exitPx18), sz) + '. Your ' + fmtUsdShort(lost) + ' is gone.'];
-      if (liq.args.confettiMinted > 0n) llines.push('You got ' + fmtInt(tokenToNum(liq.args.confettiMinted)) + ' FETTI for the loss.');
       addRecent({ key: 'l' + pid, pid: pid, cls: 'is-loss', title: 'Liquidated', lines: llines });
       resultToast([recentEl('l' + pid)], 'Your ' + label + ' was liquidated. Your ' + fmtUsdShort(lost) + ' is gone.', 'err', link);
     } else if (cancelled) {
@@ -5108,7 +5225,7 @@
         var cap = Number($('sessionCap').value);
         var days = Number($('sessionDays').value) || 7;
         var hint = $('sessionHint');
-        if (!isFinite(cap) || cap < MIN_MARGIN) { hint.textContent = 'Cap per trade: at least ' + MIN_MARGIN + ' USDC.'; hint.classList.add('is-err'); return; }
+        if (!isFinite(cap) || cap < minMargin()) { hint.textContent = 'Cap per trade: at least ' + minMargin() + ' USDC.'; hint.classList.add('is-err'); return; }
         hint.classList.remove('is-err');
         hint.textContent = '';
         submitAuthorize(cap, days);
@@ -5275,7 +5392,6 @@
     function sym(instId) { var inst = state.byInstId[instId]; return inst && inst.market ? inst.market.symbol : 'Market ' + instId; }
     function pid() { d.id = String(a.positionId); var mi = hist.openedMarket[d.id]; d.market = mi != null ? sym(mi) : null; d.side = hist.openedSide[d.id] || null; }
     function szFor() { var mi = hist.openedMarket[d.id]; var inst = mi != null ? state.byInstId[mi] : null; return inst && inst.market ? inst.market.szDecimals : null; }
-    var fetti = function (n) { return n > 0n ? ' · ' + fmtInt(tokenToNum(n)) + ' FETTI' : ''; };
     switch (r.name) {
       case 'Deposited':
         d.label = 'Deposit';
@@ -5300,15 +5416,15 @@
         d.amount = usd6ToNum(a.pnlUsdc);
         var en = hist.openedEntry[d.id];
         d.details = (en ? fmtPrice(en, szFor()) + ' → ' : 'at ') + fmtPrice(px18ToNum(a.exitPx18), szFor()) + ' · ' + fmtUsd(usd6ToNum(a.payoutUsdc)) + ' back';
-        if (a.feeUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6ToNum(a.feeUsdc));
+        if (a.feeUsdc > 0n && a.pnlUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6ToNum(a.feeUsdc));
+        if (a.borrowUsdc > 0n) d.details += ' · borrow ' + fmtUsd(usd6ToNum(a.borrowUsdc));
         if (a.queuedUsdc > 0n) d.details += ' · ' + fmtUsd(usd6ToNum(a.queuedUsdc)) + ' owed';
-        d.details += fetti(a.confettiMinted);
         break;
       case 'PositionLiquidated':
         d.label = 'Liquidated';
         pid();
         d.amount = -usd6ToNum(a.marginUsdc);
-        d.details = 'at ' + fmtPrice(px18ToNum(a.exitPx18), szFor()) + fetti(a.confettiMinted);
+        d.details = 'at ' + fmtPrice(px18ToNum(a.exitPx18), szFor());
         break;
       case 'QueueAppended':
         d.label = 'Win owed';
@@ -5438,7 +5554,10 @@
 
     setText('stPaused', read.exchange ? (house.globalPaused || house.breakerTripped ? 'yes' : 'no') : '—');
     setText('stBreaker', read.exchange ? (house.breakerTripped ? 'tripped · opens paused' : house.breakerBps != null && house.breakerBps >= 10000 ? 'off' : 'armed') : '—');
-    setText('stFee', read.exchange && house.feeRate != null ? feePctText() : '—');
+    setText('stFee', read.exchange && house.winFeeBps != null ? pctText(house.winFeeBps / 1e4) : '—');
+    setText('stLossFee', read.exchange && house.lossFeeBps != null ? pctText(house.lossFeeBps / 1e4) : '—');
+    setText('stFreeHours', read.exchange && house.borrowFreeHours != null ? String(house.borrowFreeHours) : '—');
+    setText('stMinMargin', read.exchange && house.minMargin != null ? fmtUsd(house.minMargin) : '—');
     setText('stStakerShare', read.exchange && house.stakerShareBps != null ? (house.stakerShareBps / 100).toFixed(0) + '%' : '—');
     setText('stRefShare', read.exchange && house.referralShareBps != null ? (house.referralShareBps / 100).toFixed(0) + '%' : '—');
     setText('stInstCount', house.instCount != null ? String(house.instCount) : '—');
@@ -5450,10 +5569,10 @@
     }
 
     addrCell('stExchange', cfg.contracts && cfg.contracts.exchange);
+    addrCell('stExchangeExt', house.addrs.extension || (cfg.contracts && cfg.contracts.exchangeExt));
     addrCell('stUsdc', usdcAddress());
     addrCell('stOracle', house.addrs.oracle || (cfg.contracts && cfg.contracts.oracle));
-    addrCell('stConfetti', house.addrs.confetti || (cfg.contracts && cfg.contracts.confetti));
-    addrCell('stTokenomics', house.addrs.tokenomics || (cfg.contracts && cfg.contracts.tokenomics));
+    addrCell('stConfetti', cfg.contracts && cfg.contracts.confetti);
     addrCell('stStaking', house.addrs.staking || (cfg.contracts && cfg.contracts.staking));
     addrCell('stReferrals', house.addrs.referrals || (cfg.contracts && cfg.contracts.referrals));
     addrCell('stOwner', house.addrs.owner);
@@ -5469,13 +5588,15 @@
       setText('stInst', '#' + inst.id + ' · HL ' + inst.hlAssetIndex + ' · sz ' + inst.szDecimals + ' · tier ' + tierLetter(m) + (inst.retired ? ' · retired' : inst.opensPaused ? ' · paused' : ''));
       setText('stMaxLev', inst.maxLeverage + 'x');
       setText('stCaps', fmtUsdCompact(inst.longCap) + ' / ' + fmtUsdCompact(inst.shortCap));
-      setText('stPosCap', fmtUsdCompact(inst.maxNotional) + ' · ' + inst.payoutCapX + 'x');
+      var mp = house.maxPos[inst.id];
+      setText('stPosCap', mp ? fmtUsdCompact(mp.long) + ' / ' + fmtUsdCompact(mp.short) : '—');
+      setText('stMarketFees', pctText(inst.entryDeadbandBps / 1e4) + ' · ' + borrowPctText(inst));
       var opx = house.oraclePxById[inst.id];
       setText('stOraclePx', inst.retired ? fmtPrice(inst.frozenPx, m.szDecimals) + ' (frozen)' : (opx != null ? fmtPrice(opx, m.szDecimals) : '—'));
     } else {
       setText('stInst', m ? (hasExchange() ? (state.instrumentsLoaded ? 'not on chain yet' : 'loading…') : 'HL ' + m.hlAssetIndex + ' · tier ' + m.tier) : '—');
       setText('stMaxLev', m && !hasExchange() ? maxLev(m) + 'x' : '—');
-      setText('stCaps', '—'); setText('stPosCap', '—'); setText('stOraclePx', '—');
+      setText('stCaps', '—'); setText('stPosCap', '—'); setText('stMarketFees', '—'); setText('stOraclePx', '—');
     }
   }
 
@@ -6028,7 +6149,7 @@
   }
 
   /* Every config market marked launch is "on chain" with the live market's terms (200x win cap,
-     5% fee, the published impact curve); the rest are Coming soon. */
+     7.5% win fee, the published impact curve); the rest are Coming soon. */
   function demoInsts() {
     var tiers = (cfg && cfg.tiers) || {};
     state.byInstId = {};
@@ -6040,11 +6161,12 @@
         id: i, hlAssetIndex: m.hlAssetIndex, szDecimals: m.szDecimals, tier: Number(t.code) || 0,
         maxLeverage: m.maxLeverage || 1, deadbandBps: Number(t.deadbandBps) || 1, clampBps: Number(t.clampBps) || 5,
         baseRate: 0.1, rateMultiplier: 15000, referenceNotional: 20000, positionMultiplier: 130000000,
-        longCap: 1000000, shortCap: 1000000, maxNotional: 1000000, payoutCapX: 200,
+        longCap: 1000000, shortCap: 1000000, maxNotional: 1000000, payoutCapX: 200, entryDeadbandBps: 1, borrowRateX10: 5,
         opensPaused: false, retired: false, frozenPx: 0, market: m
       };
       m.inst = inst; m.instrumentId = i; state.byInstId[i] = inst;
       house.oi[m.symbol] = { long: 1950, short: 640 };
+      house.maxPos[i] = { long: 2500, short: 2500 };
     });
     state.instrumentsLoaded = true;
     hbots.loaded = true;
@@ -6061,7 +6183,7 @@
   function demoBoot() {
     if (!window.ethers || !exIface) { toast('The demo needs ethers.js, which did not load.', 'err', null, 0); return; }
     demoInsts();
-    house.feePool = 0; house.queued = 0; house.queueLen = 2; house.queueHead = 2; house.feeRate = 0.05;
+    house.feePool = 0; house.queued = 0; house.queueLen = 2; house.queueHead = 2; house.winFeeBps = 750; house.lossFeeBps = 0; house.minMargin = 5; house.borrowFreeHours = 1; house.maxWinBps = 2500; house.free = 10000;
     house.instCount = Object.keys(state.byInstId).length; house.breakerBps = 10000;
     house.block = demo.block; house.blockAt = Date.now();
     wallet.account = window.ethers.getAddress('0xde00000000000000000000000000000000000001');
@@ -6094,7 +6216,8 @@
     return {
       id: BigInt(demo.nextPos++), instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev,
       entry: px18ToNum(px18), entryPx18: px18, openedAt: Math.floor(Date.now() / 1000) - 900,
-      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, feeBps: 500, preview: null
+      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, maxProfit: 10 * m.inst.payoutCapX, winFeeBps: 750, lossFeeBps: 0,
+      entryDeadbandBps: m.inst.entryDeadbandBps, borrowRateX10: m.inst.borrowRateX10, borrowFreeHours: 1, preview: null
     };
   }
 
@@ -6112,8 +6235,8 @@
     hist = freshHistory();
     var now = Math.floor(Date.now() / 1000);
     [[demoLog('Deposited', [wallet.account, wallet.account, numToUsd6(70)], demoHash()), 3600],
-     [demoLog('PositionOpened', [p1.id, wallet.account, p1.instrumentId, true, numToUsd6(10), 20, p1.entryPx18, 41n], demoHash()), 900],
-     [demoLog('PositionOpened', [p2.id, wallet.account, p2.instrumentId, false, numToUsd6(10), 50, p2.entryPx18, 42n], demoHash()), 600]
+     [demoLog('PositionOpened', [p1.id, wallet.account, p1.instrumentId, true, numToUsd6(10), 20, p1.entryPx18, 41n, true], demoHash()), 900],
+     [demoLog('PositionOpened', [p2.id, wallet.account, p2.instrumentId, false, numToUsd6(10), 50, p2.entryPx18, 42n, true], demoHash()), 600]
     ].forEach(function (x) { hist.blockTs[x[0].blockNumber] = now - x[1]; addLogs([x[0]]); });
     hist.done = true;
     if (DEMO === 'pending') {
@@ -6165,7 +6288,7 @@
     acct.pending = Math.max(0, acct.pending - r.margin);
     acct.marginInUse += r.margin;
     acct.positions.push(p);
-    var log = demoLog('PositionOpened', [p.id, wallet.account, r.instrumentId, r.isLong, numToUsd6(r.margin), r.leverage, p.entryPx18, BigInt(r.id)], hash);
+    var log = demoLog('PositionOpened', [p.id, wallet.account, r.instrumentId, r.isLong, numToUsd6(r.margin), r.leverage, p.entryPx18, BigInt(r.id), true], hash);
     demoRecord(log);
     return [log];
   }
@@ -6178,8 +6301,7 @@
     demo.closed[pid] = true;
     acct.marginInUse = Math.max(0, acct.marginInUse - p.margin);
     acct.available += est.payout;
-    var minted = est.pnl < 0 ? BigInt(Math.round(-est.pnl * 100)) * 10000000000000000n : 0n;
-    var log = demoLog('PositionClosed', [BigInt(pid), wallet.account, toPx18(px), BigInt(Math.round(est.pnl * 1e6)), BigInt(Math.round(est.fee * 1e6)), BigInt(Math.round(est.payout * 1e6)), 0n, minted], hash);
+    var log = demoLog('PositionClosed', [BigInt(pid), wallet.account, toPx18(px), BigInt(Math.round(est.pnl * 1e6)), BigInt(Math.round(est.fee * 1e6)), BigInt(Math.round(est.payout * 1e6)), 0n, BigInt(Math.round(est.borrow * 1e6)), true], hash);
     demoRecord(log);
     return [log];
   }
@@ -6325,12 +6447,30 @@
     if (!DEMO) setTimeout(maybeStartTour, 2500);
   }
 
+  /* The v4 gate: a placeholder build (config "v4Placeholder": true) or a build without the
+     exchange extension pinned sends nothing; loadHouseAddresses also closes it when
+     exchange.extension() is not the pin. */
+  function initGate() {
+    if (DEMO) return;
+    if (cfg.v4Placeholder === true) setGate('Not live yet.');
+    else if (!isAddr(CONTRACTS.exchangeExt)) setGate('Contracts not ready.');
+  }
+
+  function setGate(msg) {
+    if (house.gate) return;
+    house.gate = msg;
+    console.error('transactions are off: ' + msg);
+    toast(msg + ' Nothing can be sent from this page.', 'err', null, 0);
+    try { renderAction(); } catch (e) { /* before start(): start renders it */ }
+  }
+
   function init() {
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};
       initHouseBots(cfg.houseBots);
       var bad = pinConfig(cfg);
+      initGate();
       start();
       if (bad.length) {
         console.error('config.json does not match the pinned contracts; using the pinned values. Differences: ' + bad.join(', '));
@@ -6339,6 +6479,7 @@
     }).catch(function (e) {
       cfg = { contracts: {}, markets: [] };
       pinConfig(cfg);
+      initGate();
       start();
       toast('Could not load config.json: ' + (e && e.message ? e.message : e) + '. Serve the site over http and copy config.example.json to config.json.', 'err', null, 0);
     });

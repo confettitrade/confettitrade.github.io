@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — stake</title>
-  <meta name="description" content="Stake FETTI on HyperEVM and earn the house's USDC: stake, unstake, claim, and the APR from recent pushes.">
+  <meta name="description" content="Stake FETTI on HyperEVM and earn a share of the fees in USDC: convert, stake, unstake, claim.">
   <meta name="theme-color" content="#0d1229">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#f4ecd8'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#2a2520'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#8b2020'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="paper.css?v=swap1">
@@ -32,16 +32,30 @@
   </header>
 
   <main class="container tab-main">
-    <div class="tab-title"><h1>Confetti</h1><span class="sub">stake FETTI, earn the house's USDC</span></div>
+    <div class="tab-title"><h1>Confetti</h1><span class="sub">stake FETTI, earn a share of the fees</span></div>
 
     <div class="tab-grid">
       <section class="panel" aria-label="Your stake">
         <div class="panel-head"><span>You</span></div>
         <div class="panel-body">
-          <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="cfWallet">—</span></div>
+          <div class="kv"><span class="kv-key">FETTI</span><span class="kv-val" id="cfWallet">—</span></div>
+          <div class="kv"><span class="kv-key">FETTI (v3)</span><span class="kv-val" id="cfV3Wallet">—</span></div>
           <div class="kv"><span class="kv-key">Staked</span><span class="kv-val" id="cfStaked">—</span></div>
+          <div class="kv"><span class="kv-key">Warming</span><span class="kv-val" id="cfWarming">—</span></div>
           <div class="kv"><span class="kv-key">Share of pool</span><span class="kv-val" id="cfShare">—</span></div>
           <div class="kv"><span class="kv-key">Unclaimed</span><span class="kv-val" id="cfEarned">—</span></div>
+
+          <div class="act-block">
+            <label class="label" for="convertAmount">Convert FETTI (v3) to FETTI</label>
+            <div class="act">
+              <div class="input-group">
+                <input class="input" id="convertAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false">
+                <span class="unit">v3</span>
+              </div>
+              <button class="btn btn-sm" id="convertMax" type="button" disabled>Max</button>
+              <button class="btn btn-sm" id="convertBtn" type="button" disabled>Convert</button>
+            </div>
+          </div>
 
           <div class="act-block">
             <label class="label" for="stakeAmount">Stake</label>
@@ -66,6 +80,17 @@
             </div>
           </div>
           <div class="act-block">
+            <label class="label" for="stakeV3Amount">Stake v3 FETTI</label>
+            <div class="act">
+              <div class="input-group">
+                <input class="input" id="stakeV3Amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false">
+                <span class="unit">v3</span>
+              </div>
+              <button class="btn btn-sm" id="stakeV3Max" type="button" disabled>Max</button>
+              <button class="btn btn-sm" id="stakeV3Btn" type="button" disabled>Stake</button>
+            </div>
+          </div>
+          <div class="act-block">
             <div class="act"><button class="btn btn-sm btn-block" id="claimBtn" type="button" disabled>Claim</button></div>
             <div class="hint" id="cfHint" aria-live="polite">Connect a wallet to stake.</div>
           </div>
@@ -79,8 +104,6 @@
           <div class="kv"><span class="kv-key">Pushed, 30d</span><span class="kv-val" id="cfPushed">—</span></div>
           <div class="kv"><span class="kv-key">Paid to stakers</span><span class="kv-val" id="cfRewards">—</span></div>
           <div class="kv"><span class="kv-key">Total staked</span><span class="kv-val" id="cfTotal">—</span></div>
-          <div class="kv"><span class="kv-key">Mint rate</span><span class="kv-val" id="cfRate">—</span></div>
-          <div class="kv"><span class="kv-key">Transfers</span><span class="kv-val" id="cfTransfers">—</span></div>
         </div>
       </section>
     </div>
@@ -109,7 +132,7 @@
           <div class="kv"><span class="kv-key">You get</span><span class="kv-val" id="swOut">—</span></div>
           <div class="kv"><span class="kv-key">Min received</span><span class="kv-val" id="swMin">—</span></div>
           <div class="hint" id="swHint" aria-live="polite"></div>
-          <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. <span id="swFee">0.3%</span> pool fee, nothing to the house. <a href="https://app.hyperswap.exchange/#/swap?outputCurrency=0x995B36d7e33680fc6Fa1Db6fA4dc8e475B5233A2" target="_blank" rel="noopener">pool</a></div>
+          <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. <span id="swFee">0.3%</span> pool fee, nothing to the house. <a id="swPoolLink" target="_blank" rel="noopener" hidden>pool</a></div>
         </div>
       </div>
     </section>

@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — house</title>
-  <meta name="description" content="The Confetti house on HyperEVM: LP cash, fee pool, payout queue, open interest by market, breaker and keeper, read live from chain.">
+  <meta name="description" content="The Confetti house on HyperEVM: house cash, fee pool, payout queue, open interest and limits by market, breaker and keeper, read live from chain.">
   <meta name="theme-color" content="#0d1229">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#f4ecd8'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#2a2520'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#8b2020'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="paper.css?v=v3tabs">
@@ -38,10 +38,13 @@
       <div class="status-grid">
         <div>
           <h4>Cash</h4>
-          <div class="kv"><span class="kv-key">LP cash</span><span class="kv-val" id="hsLp">—</span></div>
+          <div class="kv"><span class="kv-key">House cash</span><span class="kv-val" id="hsLp">—</span></div>
           <div class="kv"><span class="kv-key">Fee pool</span><span class="kv-val" id="hsFeePool">—</span></div>
           <div class="kv"><span class="kv-key">Queued payouts</span><span class="kv-val" id="hsQueued">—</span></div>
           <div class="kv"><span class="kv-key">Queue entries</span><span class="kv-val" id="hsQueueLen">—</span></div>
+          <div class="kv"><span class="kv-key">Free cash</span><span class="kv-val" id="hsFree">—</span></div>
+          <div class="kv"><span class="kv-key">Book exposure</span><span class="kv-val" id="hsExposure">—</span></div>
+          <div class="kv"><span class="kv-key">Room</span><span class="kv-val" id="hsRoom">—</span></div>
         </div>
         <div>
           <h4>Guards</h4>
@@ -53,7 +56,6 @@
           <div class="kv"><span class="kv-key">Max payout</span><span class="kv-val" id="hsMaxPayout">—</span></div>
         </div>
       </div>
-      <p class="hint">Above the staker cap, house cash goes to stakers. While nobody is staked, the stakers' share of fees waits in the fee pool, behind winners.</p>
     </section>
 
     <section class="panel tab-section" aria-label="Open interest by market">
@@ -66,6 +68,13 @@
     <section class="panel tab-section" aria-label="Payout queue">
       <div class="panel-head"><span>Payout queue</span><span class="count" id="hsQueueCount"></span></div>
       <div class="pos-lines" id="hsQueue">
+        <div class="empty">Loading…</div>
+      </div>
+    </section>
+
+    <section class="panel tab-section" aria-label="House deposits and withdrawals">
+      <div class="panel-head"><span>House moves</span><span class="count" id="hsMovesCount"></span></div>
+      <div class="pos-lines" id="hsMoves">
         <div class="empty">Loading…</div>
       </div>
     </section>

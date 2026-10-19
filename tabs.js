@@ -5,12 +5,12 @@
    pinned (CONTRACTS, as in trade.js) and checked against the Exchange's own getters
    over a plain RPC, Exchange events over eth_getLogs, and the points engine
    (points.js) for the points board. The only transactions are the Confetti
-   page's approve / stake / unstake / claim on the Staking contract, its FETTI buy / sell on
-   HyperSwap V2's FETTI / WHYPE pool (router and pair pinned in SWAP), and the v2
-   page's requestClose / executeClose / cancelClose / cancelOpen / withdraw on the v2 Exchange
-   (config contracts.v2Exchange), sent from the user's wallet. No build step. ABI fragments
-   are copied from the compiled ABIs in contracts/out (Exchange, Staking, Confetti,
-   Tokenomics); the v2 Exchange's from ops/abi/ExchangeV2.json; HyperSwap's from its
+   page's convert (FETTI v3 to FETTI) and approve / stake / stakeFromV3 / unstake / claim on the
+   Staking contract, its FETTI buy / sell on HyperSwap V2's FETTI / WHYPE pool (router and pair
+   pinned in SWAP), and the v2 page's requestClose / executeClose / cancelClose / cancelOpen /
+   withdraw on the v2 Exchange (config contracts.v2Exchange), sent from the user's wallet. No
+   build step. ABI fragments are copied from the compiled v4 ABIs (IExchange, Staking, Confetti);
+   the v2 Exchange's from ops/abi/ExchangeV2.json; HyperSwap's from its
    deployed contracts (no artifact; ops/check_site_abi.js lists them as external).
    ========================================================================== */
 (function () {
@@ -27,18 +27,22 @@
      The Exchange's own getters (EX_GETTERS) are compared with the pins once it is readable. */
   /* ---- BEGIN PINNED CONTRACTS (ops/write_config.py) ---- */
   var CONTRACTS = {
-    exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
+    exchange: '',
+    exchangeExt: '',
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
-    oracle: '0x6c68f03d3b17ceed7955c13a3373cc186cdf9d1f',
-    confetti: '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2',
-    tokenomics: '0xcfd4d15d4c7b4a60e8a008e23cc9fa5eba1784be',
-    staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
-    referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b',
-    priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494',
-    marketRules: '0x51cbb4d222d50536785013e2afc27b5a13d53a45',
-    sessionRouter: '0x42e2e55d7ea4cb4956e2f702bda59e15d8ce05fd',
-    depositFactory: '0xc6b54a4aac8180ca51bbbd394e4fb6a79f60dc97',
-    v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2'
+    oracle: '',
+    confetti: '',
+    staking: '',
+    referrals: '',
+    priceSource: '',
+    marketRules: '',
+    sessionRouter: '',
+    depositFactory: '',
+    v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
+    v3Exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
+    v3Confetti: '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2',
+    v3Staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
+    v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b'
   };
   /* ---- END PINNED CONTRACTS ---- */
   /* HyperSwap V2's FETTI / WHYPE pool for the Confetti page's buy / sell box. External contracts,
@@ -51,14 +55,14 @@
   /* ---- BEGIN PINNED SWAP (HyperSwap V2, external) ---- */
   var SWAP = {
     router: '0xb4a9c4e6ea8e2191d2fa5b380452a634fb21240a',
-    pair: '0x9cD9b6514f28325c8F18F1c5aBe311D5c737D930',
+    pair: '',
     whype: '0x5555555555555555555555555555555555555555'
   };
   /* ---- END PINNED SWAP ---- */
   var USDC = CONTRACTS.usdc;
-  var EX_GETTERS = ['usdc', 'confetti', 'tokenomics', 'staking', 'oracle', 'referrals'];
+  var EX_GETTERS = ['usdc', 'staking', 'oracle', 'referrals', 'extension'];
   /* the EX_GETTERS addresses the Confetti page sends transactions to (approve, stake, unstake, claim) */
-  var TX_GETTERS = { confetti: true, staking: true };
+  var TX_GETTERS = { staking: true };
   var RPC_HOSTS = ['rpc.hyperliquid.xyz', 'hyperliquid.drpc.org', 'rpc.purroofgroup.com'];
   var INFO_HOSTS = ['api.hyperliquid.xyz'];
   var DEFAULT_RPC = 'https://rpc.hyperliquid.xyz/evm';
@@ -274,8 +278,8 @@
 
   /* ---- ABI fragments (hand-written from the Solidity interfaces) ---------- */
 
-  var POSITION_T = 'tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint64 openedAt, uint16 deadbandBps, uint16 payoutCapX, uint16 feeBps)';
-  var INSTRUMENT_T = 'tuple(uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6, uint128 longOiCapUsd, uint128 shortOiCapUsd, uint128 maxNotionalUsd, uint16 payoutCapX, bool opensPaused, bool retired, uint256 frozenPx18)';
+  var POSITION_T = 'tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint96 maxProfitUsdc, uint256 entryPx18, uint64 openedAt, uint16 deadbandBps, uint16 payoutCapX, uint16 winFeeBps, uint16 lossFeeBps, uint16 entryDeadbandBps, uint16 borrowRateX10, uint16 borrowFreeHours)';
+  var INSTRUMENT_T = 'tuple(uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6, uint128 longOiCapUsd, uint128 shortOiCapUsd, uint128 maxNotionalUsd, uint16 payoutCapX, uint16 posX10, uint16 sideX10, uint16 stressBps, uint16 entryDeadbandBps, uint16 borrowRateX10, bool opensPaused, bool retired, uint256 lastPx18)';
 
   var EXCHANGE_ABI = [
     'function balanceOf(address user) view returns (uint256 availableUsdc)',
@@ -290,6 +294,11 @@
     'function openInterest(uint32 instrumentId) view returns (uint256 longUsd, uint256 shortUsd)',
     'function lpBalance() view returns (uint256 usdc)',
     'function feePool() view returns (uint256 usdc)',
+    'function houseFreeUsdc() view returns (uint256 usdc)',
+    'function houseExposureUsdc() view returns (uint256 usdc)',
+    'function rhoBps() view returns (uint16)',
+    'function maxPositionUsd(uint32 instrumentId, bool isLong) view returns (uint256 usd)',
+    'function openMaxPayoutUsdc() view returns (uint256)',
     'function queueLength() view returns (uint256)',
     'function queueHead() view returns (uint256)',
     'function queueEntry(uint256 index) view returns (address recipient, uint256 owedUsdc)',
@@ -301,57 +310,53 @@
     'function breakerWindow() view returns (uint64 windowStart, uint256 windowStartLpUsdc, int256 netOutflowUsdc)',
     'function isKeeper(address account) view returns (bool)',
     'function usdc() view returns (address)',
-    'function confetti() view returns (address)',
-    'function tokenomics() view returns (address)',
     'function staking() view returns (address)',
     'function oracle() view returns (address)',
     'function referrals() view returns (address)',
-    /* v3 house seed and payout bound. The v2 exchange has none of these; the calls revert and the page shows a dash. */
-    'function seedUsdc() view returns (uint256)',
-    'function seedWithdrawal() view returns (uint256 amountUsdc, uint64 executableAt)',
-    'function openMaxPayoutUsdc() view returns (uint256)',
-    'function SEED_NOTICE() view returns (uint64)',
-    'function SEED_WINDOW() view returns (uint64)',
+    'function extension() view returns (address)',
     'event Deposited(address indexed user, address indexed payer, uint256 amountUsdc)',
     'event Withdrawn(address indexed user, uint256 amountUsdc)',
     'event OpenRequestCancelled(uint256 indexed requestId, address indexed trader, bytes4 reason)',
-    'event PositionOpened(uint256 indexed positionId, address indexed owner, uint32 indexed instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint256 requestId)',
-    'event PositionClosed(uint256 indexed positionId, address indexed owner, uint256 exitPx18, int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc, uint256 queuedUsdc, uint256 confettiMinted)',
-    'event PositionLiquidated(uint256 indexed positionId, address indexed owner, address indexed liquidator, uint256 exitPx18, uint128 marginUsdc, uint256 bountyUsdc, uint256 feeUsdc, uint256 confettiMinted)',
+    'event PositionOpened(uint256 indexed positionId, address indexed owner, uint32 indexed instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 entryPx18, uint256 requestId, bool keeperFill)',
+    'event PositionClosed(uint256 indexed positionId, address indexed owner, uint256 exitPx18, int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc, uint256 queuedUsdc, uint256 borrowUsdc, bool keeperFill)',
+    'event PositionLiquidated(uint256 indexed positionId, address indexed owner, address indexed liquidator, uint256 exitPx18, uint128 marginUsdc, uint256 bountyUsdc, uint256 feeUsdc)',
     'event QueueAppended(uint256 indexed index, address indexed recipient, uint256 amountUsdc)',
-    'event QueuePaid(uint256 indexed index, address indexed recipient, uint256 paidUsdc, uint256 remainingUsdc)'
+    'event QueuePaid(uint256 indexed index, address indexed recipient, uint256 paidUsdc, uint256 remainingUsdc)',
+    'event HouseDeposited(uint256 amountUsdc, uint256 lpAfterUsdc)',
+    'event HouseWithdrawn(uint256 amountUsdc, uint256 lpAfterUsdc)'
   ];
 
   var STAKING_ABI = [
     'function stake(uint256 amount)',
+    'function stakeFromV3(uint256 amount)',
     'function unstake(uint256 amount)',
-    'function claim() returns (uint256 usdcOut)',
+    'function claim() returns (uint256 usdc)',
     'function stakedOf(address user) view returns (uint256)',
-    'function earned(address user) view returns (uint256)',
+    'function activeStakeOf(address user) view returns (uint256)',
+    'function warmingOf(address user) view returns (uint256 amount, uint64 activatesAt)',
+    'function earned(address user) view returns (uint256 usdc)',
     'function totalStaked() view returns (uint256)',
+    'function totalWarming() view returns (uint256)',
+    'function totalStake() view returns (uint256)',
     'function totalRewardsUsdc() view returns (uint256)',
+    'function confetti() view returns (address)',
     'event RewardNotified(address indexed from, uint256 usdc, uint256 accRewardPerShareE30After)',
-    'error NotRewarder()',
-    'error AlreadyWired()',
     'error ZeroAddress()',
     'error ZeroAmount()',
-    'error InsufficientStake(uint256 staked, uint256 requested)',
-    'error SafeERC20FailedOperation(address token)'
+    'error InsufficientStake(uint256 staked, uint256 requested)'
   ];
 
+  /* FETTI (v4) and, for approve / allowance / balanceOf, the v3 token (contracts.v3Confetti). */
   var CONFETTI_ABI = [
     'function balanceOf(address account) view returns (uint256)',
     'function allowance(address owner, address spender) view returns (uint256)',
     'function approve(address spender, uint256 value) returns (bool)',
     'function totalSupply() view returns (uint256)',
-    'function transfersEnabled() view returns (bool)',
-    'error TransfersDisabled()',
-    'error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)',
-    'error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)'
-  ];
-
-  var TOKENOMICS_ABI = [
-    'function currentRateE18() view returns (uint256)'
+    'function convert(uint256 amount, address to)',
+    'function v3Confetti() view returns (address)',
+    'function converted() view returns (uint256)',
+    'error ZeroAddress()',
+    'error ZeroAmount()'
   ];
 
   /* HyperSwap V2 (SWAP pins), from the deployed router and pair: a Camelot-style fork, so the
@@ -412,7 +417,7 @@
     'error SafeERC20FailedOperation(address token)'
   ];
 
-  var read = { provider: null, logProvider: null, ex: null, staking: null, confetti: null, tokenomics: null, v2: null };
+  var read = { provider: null, logProvider: null, ex: null, staking: null, confetti: null, v3Confetti: null, v2: null };
   var exIface = null, stIface = null, cfIface = null, v2Iface = null;
 
   function makeProvider(url) {
@@ -442,16 +447,40 @@
     var E = window.ethers, k = cfg.contracts;
     read.staking = k.staking ? new E.Contract(k.staking, STAKING_ABI, read.provider) : null;
     read.confetti = k.confetti ? new E.Contract(k.confetti, CONFETTI_ABI, read.provider) : null;
-    read.tokenomics = k.tokenomics ? new E.Contract(k.tokenomics, TOKENOMICS_ABI, read.provider) : null;
+    read.v3Confetti = k.v3Confetti ? new E.Contract(k.v3Confetti, CONFETTI_ABI, read.provider) : null;
   }
 
-  /* Set when the exchange does not settle in the pinned USDC, or names a Confetti or Staking other
-     than the pinned ones: reads go on, transactions are off. */
+  /* Set when the exchange does not settle in the pinned USDC, or names a Staking other than the
+     pinned one, or Staking / FETTI name another FETTI / v3 FETTI: reads go on, transactions are off. */
   var refused = null;
 
+  /* The v4 gate: config "v4Placeholder", an empty exchangeExt pin, or exchange.extension() other
+     than that pin. No v4 page sends a transaction while it is set; reads go on. */
+  var gate = null;
+
+  function setGate(text) {
+    if (gate) return;
+    gate = text;
+    toast(gate, 'err', null, 0);
+  }
+
+  function initGate() {
+    if (cfg.v4Placeholder === true) setGate('Not live yet.');
+    else if (!addrOrNull(CONTRACTS.exchangeExt)) setGate('Contracts not ready.');
+  }
+
+  function refuse(what, got, pin) {
+    console.error(what + ' ' + got + ' is not the pinned ' + (pin || 'none') + '; transactions are off.');
+    if (refused) return;
+    refused = 'The exchange does not match this site\'s pinned contracts. Transactions are off.';
+    toast(refused, 'err', null, 0);
+  }
+
   /* The Exchange's own getters against the pins: a disagreeing one is reported (one console error
-     per field) and the pin stays in force; when it is a transaction target (USDC, Confetti,
-     Staking) transactions are off. Rejects when usdc() could not be read, so the caller retries. */
+     per field) and the pin stays in force; when it is a transaction target (USDC, Staking)
+     transactions are off; extension() other than the exchangeExt pin sets the v4 gate. Then
+     FETTI's pin against staking.confetti() and the v3 FETTI pin against confetti.v3Confetti().
+     Rejects when usdc() could not be read, so the caller retries. */
   function checkExchange() {
     return Promise.all(EX_GETTERS.map(function (k) {
       return read.ex[k]().then(addrOrNull, none);
@@ -459,6 +488,13 @@
       if (!vals[0]) throw new Error('exchange.usdc() unreadable');
       EX_GETTERS.forEach(function (k, i) {
         var g = vals[i];
+        if (k === 'extension') {
+          if (!sameAddr(g, CONTRACTS.exchangeExt)) {
+            console.error('exchange.extension() ' + g + ' is not the pinned ' + (CONTRACTS.exchangeExt || 'none') + '.');
+            setGate('Contracts not ready.');
+          }
+          return;
+        }
         if (!g) return;
         if (k === 'usdc') {
           if (sameAddr(g, USDC)) return;
@@ -468,12 +504,16 @@
           return;
         }
         if (sameAddr(cfg.contracts[k], g)) return;
-        console.error('exchange.' + k + '() ' + g + ' is not the pinned ' + (cfg.contracts[k] || 'none') + (TX_GETTERS[k] ? '; transactions are off.' : '.'));
-        if (TX_GETTERS[k] && !refused) {
-          refused = 'The exchange does not match this site\'s pinned contracts. Transactions are off.';
-          toast(refused, 'err', null, 0);
-        }
+        if (TX_GETTERS[k]) refuse('exchange.' + k + '()', g, cfg.contracts[k]);
+        else console.error('exchange.' + k + '() ' + g + ' is not the pinned ' + (cfg.contracts[k] || 'none') + '.');
       });
+      return Promise.all([
+        read.staking ? read.staking.confetti().then(addrOrNull, none) : null,
+        read.confetti ? read.confetti.v3Confetti().then(addrOrNull, none) : null
+      ]);
+    }).then(function (r) {
+      if (r[0] && !sameAddr(r[0], cfg.contracts.confetti)) refuse('staking.confetti()', r[0], cfg.contracts.confetti);
+      if (r[1] && !sameAddr(r[1], cfg.contracts.v3Confetti)) refuse('confetti.v3Confetti()', r[1], cfg.contracts.v3Confetti);
     });
   }
 
@@ -773,9 +813,6 @@
   var FRIENDLY = {
     ZeroAmount: function () { return 'Amount must be more than zero.'; },
     InsufficientStake: function (a) { return 'Only ' + fmtTok(tok18(a[0])) + ' FETTI staked.'; },
-    TransfersDisabled: function () { return 'FETTI transfers are not open yet.'; },
-    ERC20InsufficientAllowance: function () { return 'FETTI allowance too low.'; },
-    ERC20InsufficientBalance: function (a) { return 'Wallet FETTI too low: ' + fmtTok(tok18(a[1])) + '.'; },
     SafeERC20FailedOperation: function () { return 'Token transfer failed.'; },
     InsufficientBalance: function (a) { return 'Available is ' + fmtUsd(usd6(a[0])) + '.'; },
     UnknownPosition: function () { return 'Position already closed.'; },
@@ -834,6 +871,7 @@
   function requireSigner() {
     if (!window.ethers) throw new Error('ethers.js not loaded.');
     if (refused) throw new Error(refused);
+    if (gate && page !== v2Page) throw new Error(gate);
     if (!wallet.account || !wallet.signer) throw new Error('Connect a wallet first.');
     if (wallet.chainId !== CHAIN_ID) throw new Error('Switch the wallet to HyperEVM (999) first.');
   }
@@ -1098,12 +1136,11 @@
           d.details = 'exit ' + fmtPrice(px18(a.exitPx18)) + ' · paid ' + fmtUsd(usd6(a.payoutUsdc));
           if (a.queuedUsdc > 0n) d.details += ' · queued ' + fmtUsd(usd6(a.queuedUsdc));
           if (a.feeUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6(a.feeUsdc));
-          if (a.confettiMinted > 0n) d.details += ' · ' + fmtTok(tok18(a.confettiMinted)) + ' FETTI';
+          if (a.borrowUsdc > 0n) d.details += ' · borrow ' + fmtUsd(usd6(a.borrowUsdc));
           break;
         case 'PositionLiquidated':
           d.label = 'liquidated'; byPid(); d.amount = -usd6(a.marginUsdc);
           d.details = 'exit ' + fmtPrice(px18(a.exitPx18)) + ' · fee ' + fmtUsd(usd6(a.feeUsdc));
-          if (a.confettiMinted > 0n) d.details += ' · ' + fmtTok(tok18(a.confettiMinted)) + ' FETTI';
           break;
         case 'QueueAppended':
           d.label = 'queued'; d.amount = usd6(a.amountUsdc); d.signed = false; d.details = 'entry #' + a.index + ' · owed';
@@ -1203,7 +1240,7 @@
       if (pf.conf) {
         valCell('pfConf', fmtTok(pf.conf.wallet));
         valCell('pfStaked', fmtTok(pf.conf.staked));
-        valCell('pfEarned', fmtUsd(pf.conf.earned), '', 'USDC; a claim lands in the exchange balance');
+        valCell('pfEarned', fmtUsd(pf.conf.earned), '', 'USDC; claims land in your wallet');
       }
       var done = pf.scannedTo != null;
       valCell('pfRealised', done ? fmtUsd(pf.agg.realised, true) : '…', done ? signCls(pf.agg.realised) : '', 'closes and liquidations, after fees');
@@ -1257,11 +1294,12 @@
   })();
 
   /* ==========================================================================
-     House: LP cash, fee pool, payout queue, seed (v3), OI by market, breaker, keeper
+     House: house cash, fee pool, payout queue, book room, OI and limits by market, breaker,
+     keeper, house deposits / withdrawals
      ========================================================================== */
 
   var housePage = (function () {
-    var h = { v: null, oi: {}, queue: [], keeper: null, keeperAt: 0, bots: null, botsAt: 0 };
+    var h = { v: null, oi: {}, queue: [], keeper: null, keeperAt: 0, bots: null, botsAt: 0, moves: [], seen: {}, scannedTo: null };
 
     /* The house bots' own open interest per instrument, taken out of the public numbers. */
     function loadBotOi() {
@@ -1288,31 +1326,62 @@
       return Promise.all([
         ex.lpBalance(), ex.feePool(), ex.queuedTotal(), ex.queueLength(), ex.queueHead(), ex.globalOpensPaused(),
         ex.breakerTripped(), ex.breakerBps(), ex.breakerFloorUsdc(), ex.breakerWindow().catch(none),
-        ex.seedUsdc().catch(none), ex.seedWithdrawal().catch(none), ex.openMaxPayoutUsdc().catch(none),
-        h.notice != null ? h.notice : ex.SEED_NOTICE().then(Number, none),
-        h.seedWindow != null ? h.seedWindow : ex.SEED_WINDOW().then(Number, none)
+        ex.openMaxPayoutUsdc().catch(none), ex.houseFreeUsdc(), ex.houseExposureUsdc(), ex.rhoBps()
       ]).then(function (r) {
+        /* An open must keep exposure <= free * rhoBps / 10000 (IExchange): room is what is left of that. */
+        var free = BigInt(r[11]), exposure = BigInt(r[12]), cap = free * BigInt(r[13]) / 10000n;
         h.v = {
           lp: usd6(r[0]), feePool: usd6(r[1]), queued: usd6(r[2]), queueLen: Number(r[3]), queueHead: Number(r[4]),
           paused: !!r[5], tripped: !!r[6], breakerBps: Number(r[7]), floor: usd6(r[8]),
           window: r[9] ? { start: Number(r[9][0]), startLp: usd6(r[9][1]), outflow: usd6(r[9][2]) } : null,
-          seed: r[10] != null ? usd6(r[10]) : null,
-          seedOut: r[11] ? { amount: usd6(r[11][0]), at: Number(r[11][1]) } : null,
-          maxPayout: r[12] != null ? usd6(r[12]) : null
+          maxPayout: r[10] != null ? usd6(r[10]) : null,
+          free: usd6(free), exposure: usd6(exposure), rhoBps: Number(r[13]), room: usd6(cap > exposure ? cap - exposure : 0n)
         };
-        h.notice = r[13];
-        h.seedWindow = r[14];
         var idx = [];
         for (var i = h.v.queueHead; i < Math.min(h.v.queueLen, h.v.queueHead + QUEUE_ROWS); i++) idx.push(i);
         return Promise.all([
           Promise.all(idx.map(function (i) { return ex.queueEntry(i).then(function (q) { return { index: i, to: q[0], owed: usd6(q[1]) }; }); })),
-          Promise.all(mk.list.map(function (m) { return ex.openInterest(m.id).then(function (o) { return { id: m.id, long: usd6(o[0]), short: usd6(o[1]) }; }); }))
+          Promise.all(mk.list.map(function (m) {
+            return Promise.all([ex.openInterest(m.id), ex.maxPositionUsd(m.id, true).catch(none), ex.maxPositionUsd(m.id, false).catch(none)]).then(function (o) {
+              return { id: m.id, long: usd6(o[0][0]), short: usd6(o[0][1]), maxLong: o[1] != null ? usd6(o[1]) : null, maxShort: o[2] != null ? usd6(o[2]) : null };
+            });
+          }))
         ]);
       }).then(function (r) {
         h.queue = r[0];
         h.oi = {};
         r[1].forEach(function (o) { h.oi[o.id] = o; });
       });
+    }
+
+    /* HouseDeposited / HouseWithdrawn on the Exchange from deployBlock, newest first. */
+    function scanMoves() {
+      var from = h.scannedTo != null ? h.scannedTo + 1 : deployBlock();
+      return readHead().then(function (to) {
+        if (from > to) return;
+        return scanLogs([{ address: cfg.contracts.exchange, topics: [[topic(exIface, 'HouseDeposited'), topic(exIface, 'HouseWithdrawn')]] }], from, to).then(function (logs) {
+          logs.map(function (l) { return parseLog(exIface, l); }).filter(Boolean).forEach(function (p) {
+            var key = p.tx + ':' + p.index;
+            if (h.seen[key]) return;
+            h.seen[key] = true;
+            h.moves.push({ block: p.block, index: p.index, tx: p.tx, out: p.name === 'HouseWithdrawn', amount: usd6(p.args.amountUsdc), after: usd6(p.args.lpAfterUsdc) });
+          });
+          h.moves.sort(function (x, y) { return y.block - x.block || y.index - x.index; });
+          h.scannedTo = to;
+        });
+      }).then(function () {
+        return fetchTimes(h.moves.slice(0, QUEUE_ROWS).map(function (m) { return m.block; }));
+      });
+    }
+
+    function moveLine(m) {
+      var line = el('div', 'pos-line');
+      line.appendChild(timeSpan(m.block));
+      line.appendChild(el('span', m.out ? 'neg' : 'pos', (m.out ? 'withdrawn ' : 'deposited ') + fmtUsd(m.amount)));
+      line.appendChild(el('span', 'faint', 'house ' + fmtUsd(m.after)));
+      line.appendChild(el('span', 'grow'));
+      line.appendChild(explorerLink('tx', m.tx));
+      return line;
     }
 
     function publicOi(id) {
@@ -1334,6 +1403,8 @@
       line.appendChild(l); line.appendChild(s);
       line.appendChild(el('span', 'faint', 'cap ' + (m.longCap === m.shortCap ? fmtUsdCompact(m.longCap) : fmtUsdCompact(m.longCap) + ' / ' + fmtUsdCompact(m.shortCap))));
       line.appendChild(el('span', 'faint', 'x' + m.maxLeverage));
+      var lim = h.oi[m.id];
+      if (lim && !m.retired) line.appendChild(el('span', 'faint', 'max ' + (lim.maxLong != null ? fmtUsdCompact(lim.maxLong) : '—') + ' / ' + (lim.maxShort != null ? fmtUsdCompact(lim.maxShort) : '—')));
       line.appendChild(el('span', 'grow'));
       if (m.retired) line.appendChild(el('span', 'faint', 'retired'));
       else if (m.opensPaused) line.appendChild(el('span', 'neg', 'opens paused'));
@@ -1351,22 +1422,23 @@
     function render() {
       var v = h.v;
       if (v) {
-        valCell('hsLp', fmtUsd(v.lp), '', 'USDC the house can pay from right now');
-        valCell('hsFeePool', fmtUsd(v.feePool), '', 'fees the keeper pushes each block, behind winners; the stakers\' part waits here while nobody is staked');
-        valCell('hsSeed', v.seed != null ? fmtUsd(v.seed) : '—', v.seed != null ? '' : 'faint', '');
+        valCell('hsLp', fmtUsd(v.lp), '', 'USDC the house pays from');
+        valCell('hsFeePool', fmtUsd(v.feePool), '', 'fees not yet pushed to stakers and the fee recipient');
+        valCell('hsFree', fmtUsd(v.free), '', 'house cash less the queue and the fee pool');
+        valCell('hsExposure', fmtUsd(v.exposure));
+        valCell('hsRoom', fmtUsd(v.room), v.room > 0 ? '' : 'neg', 'exposure allowed: ' + (v.rhoBps / 100).toFixed(v.rhoBps % 100 ? 2 : 0) + '% of free cash');
         valCell('hsMaxPayout', v.maxPayout != null ? fmtUsd(v.maxPayout) : '—', v.maxPayout != null ? '' : 'faint',
-          v.maxPayout != null ? 'the most the LP could owe if every open position closed at its payout cap; what the cash cannot pay is queued and paid from later losses' : 'arrives with v3');
+          v.maxPayout != null ? 'if every open position closed at its cap' : '');
         valCell('hsQueued', fmtUsd(v.queued));
         valCell('hsQueueLen', fmtInt(v.queueLen - v.queueHead) + ' live · ' + fmtInt(v.queueLen) + ' ever');
         valCell('hsOpens', v.paused || v.tripped ? 'paused' : 'open', v.paused || v.tripped ? 'neg' : 'pos');
         valCell('hsBreaker', v.tripped ? 'tripped · opens paused' : (v.breakerBps >= 10000 ? 'off' : 'armed'), v.tripped ? 'neg' : '');
         var threshold = v.window ? Math.max(v.window.startLp * v.breakerBps / 1e4, v.floor) : null;
-        valCell('hsTrips', v.breakerBps >= 10000 ? (v.tripped ? 'off · opens paused' : 'never') : (v.breakerBps / 100).toFixed(v.breakerBps % 100 ? 2 : 0) + '% of hour-start LP · floor ' + fmtUsd(v.floor), '',
-          'opens pause when net LP outflow in a one-hour window passes the larger of the two');
+        valCell('hsTrips', v.breakerBps >= 10000 ? (v.tripped ? 'off · opens paused' : 'never') : (v.breakerBps / 100).toFixed(v.breakerBps % 100 ? 2 : 0) + '% of hour-start free cash · floor ' + fmtUsd(v.floor), '',
+          'opens pause when net house outflow in a one-hour window passes the larger of the two');
         valCell('hsOutflow', v.window && v.window.start ? fmtUsd(v.window.outflow, true) + ' of ' + fmtUsd(threshold) : '—',
-          v.window && v.window.outflow > 0 ? 'neg' : '', v.window && v.window.start ? 'window opened ' + fmtTime(v.window.start) + ' at ' + fmtUsd(v.window.startLp) + ' LP' : '');
+          v.window && v.window.outflow > 0 ? 'neg' : '', v.window && v.window.start ? 'window opened ' + fmtTime(v.window.start) + ' at ' + fmtUsd(v.window.startLp) : '');
       }
-      renderSeedOut();
       renderKeeper();
 
       var mlist = mk.list.filter(function (m) { return !m.retired || (h.oi[m.id] && (h.oi[m.id].long || h.oi[m.id].short)); });
@@ -1376,22 +1448,8 @@
       fillLines($('hsOi'), mlist.map(oiLine), mk.loaded ? 'No markets on chain.' : 'Loading…');
       setText('hsQueueCount', v && v.queueLen > v.queueHead ? String(v.queueLen - v.queueHead) : '');
       fillLines($('hsQueue'), h.queue.map(queueLine), v ? 'Queue empty.' : 'Loading…');
-    }
-
-    /* The announced seed withdrawal, counted down between reads. It is executable from `at` for
-       SEED_WINDOW (2 days) and void after that until announced again. */
-    function renderSeedOut() {
-      var s = h.v ? h.v.seedOut : null;
-      if (!s) { valCell('hsSeedOut', '—', 'faint', h.v ? 'arrives with v3' : ''); return; }
-      if (!s.amount && !s.at) { valCell('hsSeedOut', 'none', '', h.notice ? 'seed leaves only after a ' + fmtDuration(h.notice) + ' notice' : ''); return; }
-      var now = chainNow(), left = s.at - now;
-      var lapse = h.seedWindow ? s.at + h.seedWindow : null;
-      var text = left > 0 ? fmtTime(s.at) + ' · in ' + fmtSpan(left)
-        : lapse == null ? 'executable'
-        : now <= lapse ? 'executable · lapses ' + fmtTime(lapse)
-        : 'lapsed';
-      valCell('hsSeedOut', fmtUsd(s.amount) + ' · ' + text, lapse != null && now > lapse ? 'faint' : 'neg',
-        'announced; executable from ' + fmtTime(s.at) + (lapse != null ? ' until ' + fmtTime(lapse) + ', then void until announced again' : ''));
+      setText('hsMovesCount', h.moves.length ? String(h.moves.length) : '');
+      fillLines($('hsMoves'), h.moves.slice(0, QUEUE_ROWS).map(moveLine), h.scannedTo != null ? 'None yet.' : 'Scanning events…');
     }
 
     /* The keeper cell ticks every second between reads, on the chain clock. */
@@ -1401,7 +1459,7 @@
     }
 
     function refresh() {
-      var jobs = [readHouse().catch(function () { /* keep the last values */ }), loadBotOi()];
+      var jobs = [readHouse().catch(function () { /* keep the last values */ }), loadBotOi(), scanMoves().catch(function () { /* retried on the next poll */ })];
       if (h.keeper && Date.now() - h.keeperAt >= KEEPER_EVERY_MS) { h.keeperAt = Date.now(); jobs.push(h.keeper.refresh()); }
       return Promise.all(jobs).then(render);
     }
@@ -1409,14 +1467,15 @@
     function init() {
       if (window.ConfettiKeeper) h.keeper = window.ConfettiKeeper.create({ provider: read.provider, logProvider: read.logProvider, exchange: read.ex, iface: exIface });
       render();
-      setInterval(function () { if (!document.hidden) { renderKeeper(); renderSeedOut(); } }, 1000);
+      setInterval(function () { if (!document.hidden) renderKeeper(); }, 1000);
     }
 
     return { init: init, refresh: refresh, every: EVERY_MS.house };
   })();
 
   /* ==========================================================================
-     Confetti: stake / unstake / claim on Staking, APR from recent pushes
+     Confetti: convert FETTI (v3) to FETTI, stake / stakeFromV3 / unstake / claim on Staking,
+     APR from recent pushes priced off the FETTI / WHYPE pair
      ========================================================================== */
 
   var confettiPage = (function () {
@@ -1425,27 +1484,31 @@
 
     function readPool() {
       return Promise.all([
-        read.staking.totalStaked(), read.staking.totalRewardsUsdc(), read.confetti.totalSupply(),
-        read.confetti.transfersEnabled().catch(none), read.tokenomics.currentRateE18().catch(none)
+        read.staking.totalStake(), read.staking.totalRewardsUsdc(), read.confetti.totalSupply()
       ]).then(function (r) {
-        c.pool = {
-          staked: tok18(r[0]), rewards: usd6(r[1]), supply: tok18(r[2]), transfers: r[3], rate: r[4] != null ? tok18(r[4]) : null
-        };
+        c.pool = { stake: tok18(r[0]), rewards: usd6(r[1]), supply: tok18(r[2]) };
       });
     }
 
     function readMe() {
       var a = wallet.account;
       if (!a) { c.me = null; return Promise.resolve(); }
+      var v3 = read.v3Confetti, k = cfg.contracts;
       return Promise.all([
-        read.confetti.balanceOf(a), read.staking.stakedOf(a), read.staking.earned(a), read.confetti.allowance(a, cfg.contracts.staking)
+        read.confetti.balanceOf(a), read.staking.stakedOf(a), read.staking.earned(a), read.confetti.allowance(a, k.staking),
+        read.staking.warmingOf(a),
+        v3 ? v3.balanceOf(a) : 0n, v3 ? v3.allowance(a, k.confetti) : 0n, v3 ? v3.allowance(a, k.staking) : 0n
       ]).then(function (r) {
         if (wallet.account !== a) return;
-        c.me = { walletRaw: BigInt(r[0]), stakedRaw: BigInt(r[1]), earned: usd6(r[2]), allowanceRaw: BigInt(r[3]) };
+        c.me = {
+          walletRaw: BigInt(r[0]), stakedRaw: BigInt(r[1]), earned: usd6(r[2]), allowanceRaw: BigInt(r[3]),
+          warmingRaw: BigInt(r[4][0]), activatesAt: Number(r[4][1]),
+          v3Raw: BigInt(r[5]), v3ToFettiRaw: BigInt(r[6]), v3ToStakingRaw: BigInt(r[7])
+        };
       });
     }
 
-    /* RewardNotified on Staking from deployBlock: the Exchange's fee pushes and Tokenomics' LP sweeps. */
+    /* RewardNotified on Staking from deployBlock: the Exchange's fee pushes, and anyone else's. */
     function scanPushes() {
       var from = c.scannedTo != null ? c.scannedTo + 1 : deployBlock();
       var to = head.block;
@@ -1466,29 +1529,45 @@
       });
     }
 
-    /* Annualised pushes over the last PUSH_WINDOW_DAYS (or since deploy), on staked FETTI
-       valued at its mint price (1 / FETTI per $1 lost at the current rate). */
+    /* FETTI in USD from the swap box's pair reserves and HYPE mid; null when the pair is off. */
+    function fettiUsd() {
+      var p = sw.checked && cfg.swap ? sw.pool : null;
+      if (!p || !(p.fetti > 0n) || !(p.hype > 0n) || !(sw.hypeUsd > 0)) return null;
+      return tok18(p.hype) / tok18(p.fetti) * sw.hypeUsd;
+    }
+
+    /* Pushes over the last PUSH_WINDOW_DAYS (or since deploy), annualised on all stake (active +
+       warming) at the pair price. Before the first push is APR_MIN_DAYS old, or without a price:
+       what was paid and over how many days. */
+    var APR_MIN_DAYS = 7;
     function apr() {
       if (!c.pool || c.scannedTo == null || c.deployTs == null) return null;
       var now = chainNow();
       var since = Math.max(c.deployTs, now - PUSH_WINDOW_DAYS * 86400);
       var days = (now - since) / 86400;
-      var sum = 0, n = 0, dated = true;
+      var sum = 0, n = 0, total = 0, first = null, dated = true;
       c.pushes.forEach(function (p) {
         var ts = blockTs[p.block];
         if (ts == null) { dated = false; return; }
+        total += p.usdc;
+        if (first == null || ts < first) first = ts;
         if (ts >= since) { sum += p.usdc; n++; }
       });
       if (!dated || !(days > 0)) return null;
-      var price = c.pool.rate > 0 ? 1 / c.pool.rate : null;
-      var value = price != null ? c.pool.staked * price : 0;
-      return { sum: sum, n: n, days: days, price: price, apr: value > 0 ? (sum / days * 365) / value : null };
+      var price = fettiUsd();
+      var value = price != null ? c.pool.stake * price : 0;
+      var ripe = first != null && now - first >= APR_MIN_DAYS * 86400;
+      return {
+        sum: sum, n: n, days: days, price: price, total: total,
+        paidDays: first != null ? Math.max(1, Math.round((now - first) / 86400)) : 0,
+        apr: ripe && value > 0 ? (sum / days * 365) / value : null
+      };
     }
 
     function pushLine(p) {
       var line = el('div', 'pos-line');
       line.appendChild(timeSpan(p.block));
-      var src = p.from === String(cfg.contracts.exchange).toLowerCase() ? 'fees' : p.from === String(cfg.contracts.tokenomics).toLowerCase() ? 'lp sweep' : shortAddr(p.from);
+      var src = p.from === String(cfg.contracts.exchange).toLowerCase() ? 'fees' : shortAddr(p.from);
       line.appendChild(el('span', null, src));
       line.appendChild(el('span', 'pos', fmtUsd(p.usdc)));
       line.appendChild(el('span', 'grow'));
@@ -1500,13 +1579,15 @@
 
     function renderForms() {
       var me = c.me;
-      var ready = !!(wallet.account && wallet.signer && wallet.chainId === CHAIN_ID && me);
+      var ready = !!(wallet.account && wallet.signer && wallet.chainId === CHAIN_ID && me && !gate && !refused);
+      var v3 = !!cfg.contracts.v3Confetti;
       ['stakeBtn', 'unstakeBtn', 'claimBtn', 'stakeMax', 'unstakeMax'].forEach(function (id) { var b = $(id); if (b) b.disabled = c.busy || !ready; });
+      ['convertBtn', 'convertMax', 'stakeV3Btn', 'stakeV3Max'].forEach(function (id) { var b = $(id); if (b) b.disabled = c.busy || !ready || !v3; });
       var hint = $('cfHint');
       if (hint && !c.busy) {
         var note = c.note && Date.now() - c.note.at < NOTE_MS ? c.note : null;
-        hint.classList.toggle('is-err', !!(note && note.err));
-        hint.textContent = note ? note.text : !wallet.account ? 'Connect a wallet to stake.' : wallet.chainId !== CHAIN_ID ? 'Switch the wallet to HyperEVM (999).' : 'Claims land in your exchange balance.';
+        hint.classList.toggle('is-err', !!(note && note.err) || !!gate);
+        hint.textContent = note ? note.text : gate ? gate : !wallet.account ? 'Connect a wallet to stake.' : wallet.chainId !== CHAIN_ID ? 'Switch the wallet to HyperEVM (999).' : 'Claims land in your wallet.';
       }
       swapForms();
     }
@@ -1514,24 +1595,25 @@
     function render() {
       var p = c.pool, me = c.me;
       if (p) {
-        valCell('cfTotal', fmtTok(p.staked), '', p.supply > 0 ? fmtPct(p.staked / p.supply) + ' of ' + fmtTok(p.supply) + ' minted' : '');
-        valCell('cfRewards', fmtUsd(p.rewards), '', 'USDC notified to stakers since launch');
-        valCell('cfRate', p.rate != null ? fmtInt(p.rate) + ' per $1 lost' : '—');
-        valCell('cfTransfers', p.transfers == null ? '—' : p.transfers ? 'open' : 'staking only');
+        valCell('cfTotal', fmtTok(p.stake), '', p.supply > 0 ? fmtPct(p.stake / p.supply) + ' of ' + fmtTok(p.supply) + ' FETTI' : '');
+        valCell('cfRewards', fmtUsd(p.rewards), '', 'USDC paid to stakers');
       }
       var a = apr();
       if (a) {
         valCell('cfPushed', fmtUsd(a.sum) + ' · ' + fmtInt(a.n) + ' push' + (a.n === 1 ? '' : 'es'), '', 'last ' + Math.max(1, Math.round(a.days)) + ' days');
-        valCell('cfApr', a.apr != null ? fmtPct(a.apr) : (a.n ? '—' : 'no pushes yet'), a.apr > 0 ? 'pos' : 'faint',
-          'pushes over the last ' + Math.max(1, Math.round(a.days)) + ' days, annualised, on staked FETTI at its mint price' + (a.price != null ? ' ($' + a.price.toFixed(4).replace(/0+$/, '') + ')' : ''));
+        var paid = a.paidDays ? fmtUsd(a.total) + ' paid over ' + a.paidDays + ' day' + (a.paidDays === 1 ? '' : 's') : '—';
+        valCell('cfApr', a.apr != null ? fmtPct(a.apr) : paid, a.apr > 0 ? 'pos' : 'faint',
+          a.apr != null ? 'last ' + Math.max(1, Math.round(a.days)) + ' days of pushes, annualised, on all stake at $' + fmtPrice(a.price) + ' per FETTI' : '');
       }
       if (me) {
         valCell('cfWallet', fmtTok(tok18(me.walletRaw)));
+        valCell('cfV3Wallet', cfg.contracts.v3Confetti ? fmtTok(tok18(me.v3Raw)) : '—');
         valCell('cfStaked', fmtTok(tok18(me.stakedRaw)));
+        valCell('cfWarming', me.warmingRaw > 0n ? fmtTok(tok18(me.warmingRaw)) + (me.activatesAt > chainNow() ? ' · active ' + fmtTime(me.activatesAt) : ' · active on next touch') : 'none');
         valCell('cfEarned', fmtUsd(me.earned), me.earned > 0 ? 'pos' : '');
-        valCell('cfShare', p && p.staked > 0 ? fmtPct(tok18(me.stakedRaw) / p.staked) : '—');
+        valCell('cfShare', p && p.stake > 0 ? fmtPct(tok18(me.stakedRaw) / p.stake) : '—');
       } else {
-        ['cfWallet', 'cfStaked', 'cfEarned', 'cfShare'].forEach(function (id) { valCell(id, '—'); });
+        ['cfWallet', 'cfV3Wallet', 'cfStaked', 'cfWarming', 'cfEarned', 'cfShare'].forEach(function (id) { valCell(id, '—'); });
       }
       setText('cfPushCount', c.pushes.length ? String(c.pushes.length) : '');
       fillLines($('cfPushes'), c.pushes.slice(0, BOARD_ROWS).map(pushLine), c.scannedTo != null ? 'No pushes yet.' : 'Scanning events…');
@@ -1606,6 +1688,36 @@
       run('Claiming', function () {
         var st = new window.ethers.Contract(cfg.contracts.staking, STAKING_ABI, wallet.signer);
         return sendTx('Claim', st.claim, []);
+      });
+    }
+
+    /* FETTI (v3) to FETTI 1:1: approve the v3 token to FETTI when short, then convert to the wallet. */
+    function convert() {
+      var amt = parseAmount('convertAmount'), k = cfg.contracts;
+      if (!k.v3Confetti) { hintErr('No FETTI (v3) pinned.'); return; }
+      if (amt == null) { hintErr('Enter an amount to convert.'); return; }
+      if (c.me && amt > c.me.v3Raw) { hintErr('More than your wallet holds.'); return; }
+      run('Converting', function () {
+        var E = window.ethers;
+        var v3 = new E.Contract(k.v3Confetti, CONFETTI_ABI, wallet.signer);
+        var cf = new E.Contract(k.confetti, CONFETTI_ABI, wallet.signer);
+        var approve = c.me && c.me.v3ToFettiRaw >= amt ? Promise.resolve() : sendTx('Approve FETTI (v3)', v3.approve, [k.confetti, amt]);
+        return approve.then(function () { return sendTx('Convert', cf.convert, [amt, wallet.account]); }).then(function () { $('convertAmount').value = ''; });
+      });
+    }
+
+    /* Stake FETTI (v3) straight in: approve the v3 token to Staking when short, then stakeFromV3. */
+    function stakeV3() {
+      var amt = parseAmount('stakeV3Amount'), k = cfg.contracts;
+      if (!k.v3Confetti) { hintErr('No FETTI (v3) pinned.'); return; }
+      if (amt == null) { hintErr('Enter an amount to stake.'); return; }
+      if (c.me && amt > c.me.v3Raw) { hintErr('More than your wallet holds.'); return; }
+      run('Staking', function () {
+        var E = window.ethers;
+        var v3 = new E.Contract(k.v3Confetti, CONFETTI_ABI, wallet.signer);
+        var st = new E.Contract(k.staking, STAKING_ABI, wallet.signer);
+        var approve = c.me && c.me.v3ToStakingRaw >= amt ? Promise.resolve() : sendTx('Approve FETTI (v3)', v3.approve, [k.staking, amt]);
+        return approve.then(function () { return sendTx('Stake', st.stakeFromV3, [amt]); }).then(function () { $('stakeV3Amount').value = ''; });
       });
     }
 
@@ -1733,7 +1845,7 @@
     function swapForms() {
       var btn = $('swBtn');
       if (!btn || !sw.on) return;
-      var ready = !!(wallet.account && wallet.signer && wallet.chainId === CHAIN_ID && sw.me);
+      var ready = !!(wallet.account && wallet.signer && wallet.chainId === CHAIN_ID && sw.me && !gate && !refused);
       var bps = slipBps();
       btn.disabled = c.busy || !ready || !sw.checked || bps == null || !(sw.quote && sw.quote.mode === sw.mode && sw.quote.out > 0n);
       ['swBuy', 'swSell'].forEach(function (id) { var n = $(id); if (n) n.disabled = c.busy; });
@@ -1816,6 +1928,8 @@
       var timer = null;
       swapContracts();
       $('swSlip').value = String(SLIP_DEFAULT);
+      var pl = $('swPoolLink'), fetti = addrOrNull(CONTRACTS.confetti);
+      if (pl && fetti) { pl.href = 'https://app.hyperswap.exchange/#/swap?outputCurrency=' + fetti; pl.hidden = false; }
       renderSwap();
       $('swBuy').addEventListener('click', function () { swapMode('buy'); });
       $('swSell').addEventListener('click', function () { swapMode('sell'); });
@@ -1834,6 +1948,10 @@
       bind('claimBtn', claim);
       bind('stakeMax', function () { if (c.me) $('stakeAmount').value = fmtRaw(c.me.walletRaw); });
       bind('unstakeMax', function () { if (c.me) $('unstakeAmount').value = fmtRaw(c.me.stakedRaw); });
+      bind('convertBtn', convert);
+      bind('stakeV3Btn', stakeV3);
+      bind('convertMax', function () { if (c.me) $('convertAmount').value = fmtRaw(c.me.v3Raw); });
+      bind('stakeV3Max', function () { if (c.me) $('stakeV3Amount').value = fmtRaw(c.me.v3Raw); });
       render();
     }
 
@@ -2342,6 +2460,7 @@
     initRead();
     renderWallet();
     if (!page) return;
+    if (page !== v2Page) initGate();
     /* What needs no exchange check starts now (the Confetti page's swap box). */
     if (page.early) page.early();
     /* The v2 page reads the v2 exchange only (its own prepare); every other page the exchange. */
