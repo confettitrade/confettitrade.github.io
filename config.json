@@ -48,8 +48,8 @@
   "minMarginUsdc": 5,
   "bustBufferPct": 95,
   "bustGapBps": 5,
-  "winFeeBps": 750,
-  "lossFeeBps": 0,
+  "winFeeBps": 500,
+  "lossFeeBps": 500,
   "borrowFreeHours": 1,
   "maxWinBps": 2500,
   "impactDefaults": {

@@ -1592,7 +1592,7 @@
   /* Whole hours a new position holds before the borrow starts (borrowFreeHours). */
   function freeHours() { return liveOr(house.borrowFreeHours, 'borrowFreeHours'); }
 
-  /* "7.5%", "0%": a rate for UI text; a dash before anything is known. */
+  /* "5%", "0.5%": a rate for UI text; a dash before anything is known. */
   function pctText(rate) { return rate == null || !isFinite(rate) ? '—' : (rate * 100).toFixed(2).replace(/\.?0+$/, '') + '%'; }
   function feePctText() { return liveOr(house.winFeeBps, 'winFeeBps') == null ? '—' : pctText(feeRate()); }
 
@@ -6148,8 +6148,8 @@
     renderHistory();
   }
 
-  /* Every config market marked launch is "on chain" with the live market's terms (200x win cap,
-     7.5% win fee, the published impact curve); the rest are Coming soon. */
+  /* Every config market marked launch is "on chain" with the launch terms (5% win fee, 5% loss
+     fee from the house's side, the published impact curve); the rest are Coming soon. */
   function demoInsts() {
     var tiers = (cfg && cfg.tiers) || {};
     state.byInstId = {};
@@ -6183,7 +6183,7 @@
   function demoBoot() {
     if (!window.ethers || !exIface) { toast('The demo needs ethers.js, which did not load.', 'err', null, 0); return; }
     demoInsts();
-    house.feePool = 0; house.queued = 0; house.queueLen = 2; house.queueHead = 2; house.winFeeBps = 750; house.lossFeeBps = 0; house.minMargin = 5; house.borrowFreeHours = 1; house.maxWinBps = 2500; house.free = 10000;
+    house.feePool = 0; house.queued = 0; house.queueLen = 2; house.queueHead = 2; house.winFeeBps = 500; house.lossFeeBps = 500; house.minMargin = 5; house.borrowFreeHours = 1; house.maxWinBps = 2500; house.free = 10000;
     house.instCount = Object.keys(state.byInstId).length; house.breakerBps = 10000;
     house.block = demo.block; house.blockAt = Date.now();
     wallet.account = window.ethers.getAddress('0xde00000000000000000000000000000000000001');
@@ -6216,7 +6216,7 @@
     return {
       id: BigInt(demo.nextPos++), instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev,
       entry: px18ToNum(px18), entryPx18: px18, openedAt: Math.floor(Date.now() / 1000) - 900,
-      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, maxProfit: 10 * m.inst.payoutCapX, winFeeBps: 750, lossFeeBps: 0,
+      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, maxProfit: 10 * m.inst.payoutCapX, winFeeBps: 500, lossFeeBps: 500,
       entryDeadbandBps: m.inst.entryDeadbandBps, borrowRateX10: m.inst.borrowRateX10, borrowFreeHours: 1, preview: null
     };
   }
