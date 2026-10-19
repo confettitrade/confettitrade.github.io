@@ -111,7 +111,7 @@
       accent: hex('--accent', '#e86a6a'),
       ui: v('--font-ui', '"Soehne", system-ui, sans-serif'),
       mono: v('--font-mono', '"Soehne Mono", ui-monospace, monospace'),
-      brand: v('--font-brand', '"Tinos", "Times New Roman", serif')
+      brand: v('--font-brand', '"Soehne Breit", "Soehne", sans-serif')
     };
     probe.parentNode.removeChild(probe);
     return palCache;

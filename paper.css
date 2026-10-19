@@ -4,8 +4,8 @@
    Source of truth: docs/DESIGN.md section 10.
    ========================================================================== */
 
-@import url("https://fonts.googleapis.com/css2?family=Tinos:ital,wght@0,400;0,700;1,400&display=swap");
-/* Söhne (Klim order 26100774): the interface in Söhne, every number in Söhne Mono; the wordmark stays Tinos. */
+/* Söhne (Klim order 26100774) on every aspect: the interface in Söhne, every number in Söhne Mono, the confetti_ wordmark in Söhne Breit. */
+@font-face { font-family: "Soehne Breit"; font-weight: 700; font-style: normal; font-display: swap; src: url("fonts/soehne-breit-700.woff2") format("woff2"); }
 @font-face { font-family: "Soehne"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/soehne-400.woff2") format("woff2"); }
 @font-face { font-family: "Soehne"; font-weight: 400; font-style: italic; font-display: swap; src: url("fonts/soehne-400i.woff2") format("woff2"); }
 @font-face { font-family: "Soehne"; font-weight: 500; font-style: normal; font-display: swap; src: url("fonts/soehne-500.woff2") format("woff2"); }
@@ -53,7 +53,7 @@
 
   /* type */
   --font-display: "Soehne", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-brand: "Tinos", "Times New Roman", Times, serif;   /* the confetti_ wordmark only */
+  --font-brand: "Soehne Breit", "Soehne", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;   /* the confetti_ wordmark and brand canvas text */
   --font-ui: "Soehne", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Soehne Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
@@ -265,9 +265,9 @@ pre {
   align-items: baseline;
   gap: 0;
   font-family: var(--font-brand);
-  font-weight: 400;
-  font-size: var(--text-xl);
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  font-size: calc(var(--text-xl) * 0.72);   /* Söhne Breit is wide: same footprint as the old serif */
+  letter-spacing: -0.04em;
   color: var(--ink);
   text-decoration: none;
   line-height: 1;
