@@ -1,0 +1,54 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.26"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+
+[fuzz]
+runs = 256
+
+# Defaults for the invariant suite (raise with FOUNDRY_INVARIANT_RUNS / FOUNDRY_INVARIANT_DEPTH).
+[invariant]
+runs = 32
+depth = 64
+
+# Per-slice profiles for the v4 test port (removed once the suite is merged): each compiles one
+# test directory into its own out/ and cache/ so a half-ported slice never blocks another.
+[profile.a]
+test = "test/exchange"
+out = "out_a"
+cache_path = "cache_a"
+
+[profile.b]
+test = "test/integration"
+out = "out_b"
+cache_path = "cache_b"
+
+[profile.c]
+test = "test/units"
+out = "out_c"
+cache_path = "cache_c"
+
+[profile.d]
+test = "test/invariant"
+out = "out_d"
+cache_path = "cache_d"
+
+# Fork rehearsal / launch-kit dry runs (scripts only, against a local anvil fork).
+[profile.e]
+test = "test/none"
+out = "out_e"
+cache_path = "cache_e"
+
+# Fork rehearsal driver deploys (own out/cache so it never races the launch kit's builds).
+[profile.f]
+test = "test/none"
+out = "out_f"
+cache_path = "cache_f"

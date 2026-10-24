@@ -1,0 +1,3200 @@
+[
+  {
+    "type": "function",
+    "name": "addInstrument",
+    "inputs": [
+      {
+        "name": "spec",
+        "type": "tuple",
+        "internalType": "struct IExchangeTypes.Instrument",
+        "components": [
+          {
+            "name": "hlAssetIndex",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "szDecimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "tier",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxLeverage",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "deadbandBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "clampBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "baseRateBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rateMultiplier",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "referenceNotionalUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "positionMultiplierE6",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "longOiCapUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "shortOiCapUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "maxNotionalUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "payoutCapX",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "posX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "sideX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "stressBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "entryDeadbandBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowRateX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "opensPaused",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "retired",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "lastPx18",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "balanceOf",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "availableUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "borrowFreeHours",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "borrowOwed",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "breakerBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "breakerFloorUsdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "breakerTripped",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "breakerWindow",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "windowStart",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "windowStartLpUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "netOutflowUsdc",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "bustPrice",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "px18",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "cancelClose",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cancelOpen",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "clearBreaker",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "closeRequest",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct IExchangeTypes.CloseRequest",
+        "components": [
+          {
+            "name": "requestedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "px0",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deposit",
+    "inputs": [
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "depositFor",
+    "inputs": [
+      {
+        "name": "beneficiary",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "depositHouse",
+    "inputs": [
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "execPrice",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "isLong",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "isOpen",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "px18",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "executeClose",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "payoutUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "queuedUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "executeOpen",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "expiry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "extension",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "feePool",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "feeRecipient",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "globalOpensPaused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "grace",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "harvest",
+    "inputs": [
+      {
+        "name": "maxEntries",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "entriesPaid",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "paidUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "houseExposureUsdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "houseFreeUsdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "instrument",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct IExchangeTypes.Instrument",
+        "components": [
+          {
+            "name": "hlAssetIndex",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "szDecimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "tier",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "maxLeverage",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "deadbandBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "clampBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "baseRateBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rateMultiplier",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "referenceNotionalUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "positionMultiplierE6",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "longOiCapUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "shortOiCapUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "maxNotionalUsd",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "payoutCapX",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "posX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "sideX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "stressBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "entryDeadbandBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowRateX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "opensPaused",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "retired",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "lastPx18",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "instrumentCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isHouseWallet",
+    "inputs": [
+      {
+        "name": "wallet",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isKeeper",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "liquidate",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bountyUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "lossFeeBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lpBalance",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "marginInUse",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "marketKeeper",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "marketRules",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxJumpBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxPositionUsd",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "isLong",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usd",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxWinBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minDelay",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minMarginUsdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "nextPositionId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "nextRequestId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "openInterest",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "longUsd",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "shortUsd",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "openMaxPayoutUsdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "openRequest",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct IExchangeTypes.OpenRequest",
+        "components": [
+          {
+            "name": "trader",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "instrumentId",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "isLong",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "marginUsdc",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "leverage",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "requestedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "px0",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "referrer",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "oracle",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pauseGuardian",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingOf",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "positionIdsOf",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "positions",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct IExchangeTypes.Position",
+        "components": [
+          {
+            "name": "owner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "instrumentId",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "isLong",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "marginUsdc",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "leverage",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxProfitUsdc",
+            "type": "uint96",
+            "internalType": "uint96"
+          },
+          {
+            "name": "entryPx18",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "openedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "deadbandBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "payoutCapX",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "winFeeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "lossFeeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "entryDeadbandBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowRateX10",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowFreeHours",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "previewClose",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "pnlUsdc",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "feeUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "payoutUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pushFees",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "toStakersUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "toRecipientUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "queueEntry",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "owedUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "queueHead",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "queueLength",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "queuedTotal",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "usdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "referrals",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "requestClose",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "requestOpen",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "isLong",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "marginUsdc",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "leverage",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "referrer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "retire",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "retireDead",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "rhoBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sessionRouter",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setBorrowFreeHours",
+    "inputs": [
+      {
+        "name": "newFreeHours",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setBreakerBps",
+    "inputs": [
+      {
+        "name": "newBreakerBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setBreakerFloor",
+    "inputs": [
+      {
+        "name": "newFloorUsdc",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setDelays",
+    "inputs": [
+      {
+        "name": "newMinDelay",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "newGrace",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "newExpiry",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setFeeBps",
+    "inputs": [
+      {
+        "name": "newWinFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "newLossFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setFeeRecipient",
+    "inputs": [
+      {
+        "name": "newFeeRecipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setGlobalOpensPaused",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setHouseSizing",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "posX10",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "sideX10",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "stressBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setHouseWallet",
+    "inputs": [
+      {
+        "name": "wallet",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "isHouse",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setInstrumentParams",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "deadbandBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "clampBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "baseRateBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "rateMultiplier",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "referenceNotionalUsd",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "positionMultiplierE6",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setKeeper",
+    "inputs": [
+      {
+        "name": "keeper",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setKeepers",
+    "inputs": [
+      {
+        "name": "newPauseGuardian",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "newMarketKeeper",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMarketFees",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "entryDeadbandBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "borrowRateX10",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMarketOpensPaused",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "paused",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxJumpBps",
+    "inputs": [
+      {
+        "name": "newMaxJumpBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxLeverage",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxWinBps",
+    "inputs": [
+      {
+        "name": "newMaxWinBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMinMargin",
+    "inputs": [
+      {
+        "name": "newMinMarginUsdc",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setOiCaps",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "longOiCapUsd",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "shortOiCapUsd",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPositionCaps",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "maxNotionalUsd",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "payoutCapX",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setReferralShare",
+    "inputs": [
+      {
+        "name": "newShareBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRhoBps",
+    "inputs": [
+      {
+        "name": "newRhoBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setStakerFeeShare",
+    "inputs": [
+      {
+        "name": "newShareBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "stakerFeeShareBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "staking",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "usdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "winFeeBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
+    "inputs": [
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "withdrawHouse",
+    "inputs": [
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "BorrowFreeHoursSet",
+    "inputs": [
+      {
+        "name": "hours_",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BreakerBpsSet",
+    "inputs": [
+      {
+        "name": "breakerBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BreakerCleared",
+    "inputs": [
+      {
+        "name": "by",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "BreakerFloorSet",
+    "inputs": [
+      {
+        "name": "floorUsdc",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CloseRequestCancelled",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "reason",
+        "type": "bytes4",
+        "indexed": false,
+        "internalType": "bytes4"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CloseRequested",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "px0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DelaysSet",
+    "inputs": [
+      {
+        "name": "minDelay",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "grace",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "expiry",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Deposited",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "payer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FeeBpsSet",
+    "inputs": [
+      {
+        "name": "winFeeBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "lossFeeBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FeeRecipientSet",
+    "inputs": [
+      {
+        "name": "feeRecipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FeesPushed",
+    "inputs": [
+      {
+        "name": "toStakersUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "toRecipientUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GlobalOpensPausedSet",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HouseDeposited",
+    "inputs": [
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "lpAfterUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HouseSizingSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "posX10",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "sideX10",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "stressBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HouseWalletSet",
+    "inputs": [
+      {
+        "name": "wallet",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "isHouse",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HouseWinForfeited",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "forfeitedUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HouseWithdrawn",
+    "inputs": [
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "lpAfterUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "InstrumentAdded",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "hlAssetIndex",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "szDecimals",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "tier",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "InstrumentParamsSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "deadbandBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "clampBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "baseRateBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "rateMultiplier",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "referenceNotionalUsd",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "positionMultiplierE6",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "InstrumentRetired",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "frozenPx18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KeeperSet",
+    "inputs": [
+      {
+        "name": "keeper",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KeepersSet",
+    "inputs": [
+      {
+        "name": "pauseGuardian",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "marketKeeper",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LpBreakerTripped",
+    "inputs": [
+      {
+        "name": "netOutflowUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "thresholdUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "windowStartLpUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MarketFeesSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "entryDeadbandBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "borrowRateX10",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MarketOpensPausedSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxJumpBpsSet",
+    "inputs": [
+      {
+        "name": "maxJumpBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxLeverageSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "maxLeverage",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxWinBpsSet",
+    "inputs": [
+      {
+        "name": "maxWinBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinMarginSet",
+    "inputs": [
+      {
+        "name": "minMarginUsdc",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OiCapsSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "longOiCapUsd",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "shortOiCapUsd",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OpenRequestCancelled",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "reason",
+        "type": "bytes4",
+        "indexed": false,
+        "internalType": "bytes4"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OpenRequested",
+    "inputs": [
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "isLong",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "marginUsdc",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "leverage",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "px0",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "referrer",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PayoutCapped",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "cappedGainUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "forfeitedUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionCapsSet",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "maxNotionalUsd",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "payoutCapX",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionClosed",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "exitPx18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "pnlUsdc",
+        "type": "int256",
+        "indexed": false,
+        "internalType": "int256"
+      },
+      {
+        "name": "feeUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "payoutUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "queuedUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "borrowUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "keeperFill",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionLiquidated",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "liquidator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "exitPx18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "marginUsdc",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "bountyUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "feeUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionOpened",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "isLong",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "marginUsdc",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "leverage",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "entryPx18",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "requestId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "keeperFill",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "QueueAppended",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "QueuePaid",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "paidUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "remainingUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RhoBpsSet",
+    "inputs": [
+      {
+        "name": "rhoBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "StakerFeeShareSet",
+    "inputs": [
+      {
+        "name": "stakerFeeShareBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Withdrawn",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amountUsdc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "BreakerNotTripped",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CloseAlreadyPending",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DirectCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EntryBusted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ExtensionMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FeedAlive",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HouseExposureExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientBalance",
+    "inputs": [
+      {
+        "name": "availableUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requestedUsdc",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidTier",
+    "inputs": [
+      {
+        "name": "tier",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KeeperWindow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LeverageOutOfRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MarginBelowMinimum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MarketRetired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoLastPrice",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotLiquidatable",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "px18",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "bustPx18",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotPositionOwner",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NothingToPush",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OiCapExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OpensPausedByBreaker",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OpensPausedForMarket",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OpensPausedGlobally",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ParamOutOfBounds",
+    "inputs": [
+      {
+        "name": "param",
+        "type": "uint8",
+        "internalType": "enum IExchangeTypes.Param"
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PositionTooLarge",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PriceJumped",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "QueueEmpty",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RequestExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RequestNotExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooEarly",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Unauthorized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnknownInstrument",
+    "inputs": [
+      {
+        "name": "instrumentId",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownPosition",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownRequest",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAmount",
+    "inputs": []
+  }
+]

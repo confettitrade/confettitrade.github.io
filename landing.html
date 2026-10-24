@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — up to 1000x meme coin perpetuals on HyperEVM</title>
+  <meta name="description" content="Confetti: synthetic perpetuals on meme coins with up to 1000x leverage, fully onchain on Hyperliquid's HyperEVM.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+</head>
+<body class="landing">
+
+  <!-- Falling paper scraps, behind everything. Filled by landing.js. -->
+  <div class="confetti-layer" id="confetti" aria-hidden="true"></div>
+
+  <!-- Ticker tape: live mid prices from Hyperliquid, refreshed every 5 s. -->
+  <div class="ticker" id="ticker" role="region" aria-label="Live meme coin mid prices from Hyperliquid">
+    <div class="ticker-track" id="tickerTrack"></div>
+    <span class="ticker-status" id="tickerStatus" hidden>prices paused · retrying</span>
+  </div>
+
+  <div class="landing-main">
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+
+          <div class="hero-copy">
+            <h1 class="wordmark wordmark-hero hero-wordmark">confetti<span class="cursor cursor-block" aria-hidden="true"></span></h1>
+
+            <ul class="hero-lines hero-lines-ui" role="list">
+              <li><b>up to 1000x</b> on meme coins</li>
+              <li>fully onchain on hyperliquid</li>
+            </ul>
+
+            <div class="hero-actions">
+              <a class="btn btn-lg" href="trade.html">Trade</a>
+              <a class="btn btn-lg" href="docs.html">Docs</a>
+            </div>
+          </div>
+
+          <!-- Tilted preview of the trade page. Decorative: hidden from assistive tech,
+               controls are kept out of the tab order. -->
+          <div class="hero-preview" aria-hidden="true">
+            <div class="preview-tilt">
+              <div class="preview pv">
+
+                <div class="pv-head">
+                  <span class="wordmark">confetti<span class="cursor cursor-block"></span></span>
+                  <span class="pv-nav">
+                    <span class="is-current">Trade</span>
+                    <span>Portfolio</span>
+                    <span>House</span>
+                    <span>Confetti</span>
+                    <span>Leaderboard</span>
+                  </span>
+                  <span class="pv-auth">
+                    <span class="btn btn-sm">Deposit</span>
+                    <span class="btn btn-sm">Withdraw</span>
+                    <span class="btn btn-sm btn-accent">Connect</span>
+                  </span>
+                </div>
+
+                <div class="pv-market">
+                  <span class="pv-sym">DOGE-USD</span>
+                  <span class="badge badge-a">A</span>
+                  <span class="chip"><span class="chip-label">sample</span><span class="chip-value">numbers</span></span>
+                  <span class="chip"><span class="chip-label">24h vol</span><span class="chip-value">$2.41M</span></span>
+                  <span class="chip"><span class="chip-label">long oi</span><span class="chip-value">$184,210</span></span>
+                  <span class="chip"><span class="chip-label">short oi</span><span class="chip-value">$96,480</span></span>
+                  <span class="chip"><span class="chip-label">tick</span><span class="chip-value">1m</span></span>
+                  <span class="chip chip-live"><span class="dot dot-pulse"></span>live</span>
+                </div>
+
+                <div class="pv-body">
+                  <div class="pv-chart">
+                    <canvas id="pvChart"></canvas>
+                    <span class="pv-interval">DOGE · 1m · last 60</span>
+                    <span class="pill" id="pvPill">—</span>
+                  </div>
+
+                  <div class="pv-side">
+                    <div class="kv"><span class="kv-key">Account Equity</span><span class="kv-val">$1,240.18</span></div>
+                    <div class="kv"><span class="kv-key">Available to Trade</span><span class="kv-val">$1,140.18</span></div>
+                    <div class="kv"><span class="kv-key">Margin in Use</span><span class="kv-val">$100.00</span></div>
+                    <div class="kv"><span class="kv-key">Open PnL</span><span class="kv-val pos">+$12.40</span></div>
+
+                    <div class="seg" id="pvSide">
+                      <button class="seg-item seg-long" type="button" data-side="long" aria-pressed="true" tabindex="-1">Long</button>
+                      <button class="seg-item seg-short" type="button" data-side="short" aria-pressed="false" tabindex="-1">Short</button>
+                    </div>
+
+                    <span class="label">Margin</span>
+                    <div class="input-group">
+                      <input class="input" id="pvMargin" type="number" value="100" min="10" step="10" inputmode="decimal" tabindex="-1">
+                      <span class="unit">USDC</span>
+                    </div>
+                    <div class="quick">
+                      <span class="btn" data-mult="0.5">½x</span>
+                      <span class="btn" data-mult="2">2x</span>
+                      <span class="btn" data-mult="max">Max</span>
+                    </div>
+
+                    <div class="pv-lev">
+                      <span class="label">Leverage</span>
+                      <span class="num" id="pvLevVal">x1000</span>
+                    </div>
+                    <input class="slider" id="pvLev" type="range" min="0" max="1000" value="1000" tabindex="-1">
+                    <div class="slider-scale"><span class="safe">x1 Safe</span><span class="wild">Wild x1000</span></div>
+
+                    <div class="kv"><span class="kv-key">Order Value</span><span class="kv-val" id="pvNotional">$100,000.00</span></div>
+                    <div class="kv"><span class="kv-key">Bust Price</span><span class="kv-val neg" id="pvBust">—</span></div>
+
+                    <span class="btn btn-long btn-block" id="pvAction">Long DOGE</span>
+                  </div>
+                </div>
+
+                <div class="pv-bottom">
+                  <div class="tabs">
+                    <span class="tab is-active">Positions</span>
+                    <span class="tab">History</span>
+                    <span class="tab">Status</span>
+                    <span class="grow"></span>
+                    <span class="btn btn-sm btn-ghost">Close all</span>
+                  </div>
+                  <div class="pos-line">
+                    <span class="sym">DOGE</span>
+                    <span class="pos">long 1000x</span>
+                    <span>$100,000</span>
+                    <span id="pvEntry">—</span>
+                    <span class="grow"></span>
+                    <span class="pos">+$12.40</span>
+                    <span class="btn btn-sm btn-ghost">Close</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Points banner: one green, bold line under the hero. -->
+      <div class="pts-banner">
+        <div class="container">
+          <p><a href="trade.html#pointsPanel">Points are live. Every trade, deposit and referral earns. Referrals pay the most.</a></p>
+        </div>
+      </div>
+    </main>
+
+    <footer class="container landing-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>synthetic perpetuals on meme coins · HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="trade.html">trade</a>
+      <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+    </footer>
+  </div>
+
+  <script src="landing.js" defer></script>
+  <script src="points.js?v=phone2" defer></script>
+</body>
+</html>

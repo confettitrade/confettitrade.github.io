@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — trade</title>
+  <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no funding.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+  <style>
+    /* Page-specific rules only. Tokens and components come from paper.css?v=intuitive2. */
+    .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
+
+    /* Market bar: coin button (DOGE ▾ up to 1000x), live price, two stats, How to trade */
+    .market-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 0 0 var(--gap); }
+    .market-select { position: relative; flex: none; }
+    .market-btn {
+      -webkit-appearance: none; appearance: none;
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 44px; padding: 0 12px;
+      border: 1px solid var(--ink); background: var(--raised); color: var(--ink);
+      font-family: var(--font-display); font-size: var(--text-xl); line-height: 1; cursor: pointer;
+    }
+    @media (hover: hover) { .market-btn:hover { background: var(--sunken); } }
+    .market-caret { font-family: var(--font-ui); font-size: 14px; color: var(--ink-muted); }
+    .market-lev { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .market-menu {
+      position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
+      width: min(360px, calc(100vw - 2 * var(--gutter)));
+      max-height: 60vh; overflow: auto;
+      background: var(--raised); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--sunken);
+    }
+    .market-menu[hidden] { display: none; }
+    .market-filter { position: sticky; top: 0; padding: 8px; background: var(--raised); border-bottom: 1px solid var(--rule); }
+    .market-filter .input { min-height: 36px; font-size: var(--text-sm); }
+    .market-group { padding: 8px 10px 4px; border-bottom: 1px solid var(--rule); }
+    .market-row {
+      -webkit-appearance: none; appearance: none;
+      display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center;
+      width: 100%; min-height: 44px; padding: 6px 10px; border: 0; border-bottom: 1px dotted var(--rule);
+      background: transparent; color: var(--ink); font-family: var(--font-ui); font-size: var(--text-sm);
+      text-align: left; cursor: pointer;
+    }
+    @media (hover: hover) { .market-row:hover { background: var(--sunken); } }
+    .market-row[aria-selected="true"] { background: var(--sunken); }
+    .market-row .sym { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: var(--text-lg); line-height: 1.1; }
+    .market-row .px { font-family: var(--font-mono); text-align: right; }
+    .market-row .chg { font-family: var(--font-mono); font-size: var(--text-xs); min-width: 58px; text-align: right; }
+    .market-soon { padding: 10px; font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); cursor: default; }
+    .market-tag { font-family: var(--font-ui); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--warn); padding: 1px 4px; color: var(--warn); align-self: center; }
+    .market-tag[hidden] { display: none; }
+    .market-quote { display: inline-flex; align-items: center; gap: 8px 14px; min-width: 0; }
+    .market-sub { display: inline-flex; align-items: center; gap: 8px; }
+    .market-price { font-family: var(--font-mono); font-size: var(--text-xl); font-variant-numeric: tabular-nums; }
+    .market-change { font-family: var(--font-mono); font-size: var(--text-sm); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+    /* HOUSE (the owner, 2026-10-23: "put the house LP balance on the confetti front page somewhere noticeable"):
+       the first chip, in the win colour, a link to the House page. */
+    .chip-house { text-decoration: none; border-color: var(--pos); }
+    .chip-house .chip-label { color: var(--pos); }
+    .chip-house .chip-value { color: var(--pos); font-weight: 600; }
+    @media (hover: hover) { .chip-house:hover { background: var(--raised); filter: brightness(1.12); } }
+    .chip-live { min-height: 22px; padding: 0 6px; }
+    .chip-live.is-stale { border-color: var(--neg); color: var(--neg); }
+    .chip-live.is-stale #chipLiveText { font-family: var(--font-ui); font-size: var(--text-xs); }
+    .tour-btn { flex: none; }
+    .tour-short { display: none; }
+
+    /* Chart: header bar (timeframes, indicators, line tool) over the canvas; the box keeps its height */
+    .chart-canvas { position: absolute; inset: 0; }
+    /* the reset circle: under the candles, above the time axis; shown once the chart is scrolled, zoomed or its price axis dragged */
+    .chart-reset { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 3; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 12px 0 9px; border-radius: 13px; border: 1px solid var(--rule-strong); background: var(--raised); color: var(--ink); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; opacity: 0.9; box-shadow: 0 1px 2px rgba(0,0,0,0.15); white-space: nowrap; }
+    .chart-reset i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); }
+    @media (hover: hover) { .chart-reset:hover { opacity: 1; border-color: var(--ink); } }
+    .chart-reset:focus-visible { opacity: 1; border-color: var(--ink); }
+    .chart-reset[hidden] { display: none; }
+    .chart-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px; border: 1px solid var(--rule); border-bottom: 0; background: var(--raised); }
+    .chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-left: auto; min-width: 0; }
+    .chart-tf { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+    .chart-tf-select { display: none; width: auto; min-height: 44px; padding: 0 28px 0 12px; font-size: var(--text-sm); }
+    .chart-bar .chart-btn { min-height: 24px; padding: 0 6px; font-size: 10.5px; letter-spacing: 0.04em; border-color: var(--rule-strong); }
+    .chart-bar .chart-btn[aria-pressed="true"], .chart-bar .chart-btn[aria-expanded="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+    .chart-bar .chart-btn[aria-pressed="true"]::before, .chart-bar .chart-btn[aria-pressed="true"]::after,
+    .chart-bar .chart-btn[aria-expanded="true"]::before, .chart-bar .chart-btn[aria-expanded="true"]::after { color: var(--page); }
+    .chart-bar .chart-btn[hidden] { display: none; }
+    .chart-menu { position: absolute; top: calc(100% + 2px); right: 8px; z-index: 20; min-width: 190px; padding: 4px 0; background: var(--raised); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--sunken); }
+    .chart-menu[hidden] { display: none; }
+    .chart-menu-item { -webkit-appearance: none; appearance: none; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; background: transparent; color: var(--ink-muted); font-family: var(--font-mono); font-size: var(--text-xs); text-align: left; cursor: pointer; }
+    @media (hover: hover) { .chart-menu-item:hover { background: var(--sunken); color: var(--ink); } }
+    .chart-menu-item[aria-checked="true"] { color: var(--ink); }
+    .chart-menu-box { flex: none; width: 10px; height: 10px; border: 1px solid currentColor; }
+    .chart-menu-item[aria-checked="true"] .chart-menu-box { background: currentColor; }
+    .chart-legend { position: absolute; top: 6px; left: 8px; z-index: 3; max-width: calc(100% - 96px); pointer-events: none; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); font-variant-numeric: tabular-nums; text-shadow: 0 0 3px var(--raised), 0 0 3px var(--raised); }
+    .chart-legend-row { display: flex; flex-wrap: wrap; gap: 0 10px; }
+    .chart-legend b { font-weight: 500; color: var(--ink); }
+    .chart-legend b.pos { color: var(--pos); }
+    .chart-legend b.neg { color: var(--neg); }
+    .chart-box.is-arming, .chart-box.is-arming * { cursor: crosshair !important; }
+    .chart-note { position: absolute; left: 8px; bottom: 30px; z-index: 3; padding: 2px 6px; border: 1px solid var(--rule); background: var(--sunken); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .chart-note[hidden] { display: none; }
+
+    /* Layout: chart, your positions and the history tabs on the left, the ticket on the right */
+    body.trade { --side-panel: 360px; }
+    body.trade .trade-layout { grid-template-areas: "chart side" "pos side" "bottom side"; }
+    @media (max-width: 1100px) { body.trade { --side-panel: 320px; } }
+    @media (min-width: 901px) and (max-width: 1100px) { .side-pair .dir-label { font-size: 16px; } }
+    /* desktop: position cards side by side */
+    @media (min-width: 901px) { .pos-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); align-items: start; } }
+    .trade-pos { grid-area: pos; min-width: 0; }
+    .pos-head { font-size: var(--text-md); }
+    .pos-head .count { margin-left: 4px; }
+    .lev-input { width: 72px; text-align: right; }
+    .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
+    @media (min-width: 901px) {
+      /* the ticket scrolls inside itself on a short screen and its button area is pinned to the
+         bottom of it, so OPEN POSITION is always on screen; the max-height leaves room for the
+         market bar above the column at scroll 0 */
+      html body.trade .trade-side { max-height: calc(100vh - var(--header-h) - 2 * var(--gap) - var(--pts-bar-h, 0px) - 56px); overflow-y: auto; overscroll-behavior: contain; }
+      body.trade .ticket-go { position: sticky; bottom: 0; z-index: 3; margin: 0 -12px; padding: 8px 12px; background: var(--panel); }
+      /* with positions open the chart gives up height, so the first card's CLOSE POSITION is above the fold */
+      body.trade .trade-layout.has-pos .chart-box { height: clamp(220px, calc(100vh - 470px), 520px); }
+      /* toasts sit over the chart (top right, under its toolbar), never over the ticket's button or
+         progress card and never over the position cards' CLOSE POSITION at the bottom */
+      body.trade .toasts {
+        top: calc(var(--header-h) + var(--pts-bar-h, 0px) + 104px); bottom: auto;
+        right: calc(max(var(--gutter), (100vw - var(--max-width)) / 2 + var(--gutter)) + var(--side-panel) + var(--gap));
+      }
+      body.trade .acct-mini { display: none; }
+    }
+
+    /* History and Refer tabs */
+    .tab-panel[hidden] { display: none; }
+    #histLines .pos-line.hist-line { flex-wrap: wrap; white-space: normal; min-width: 0; gap: 4px 12px; }
+    .hist-line .hist-what { font-family: var(--font-ui); font-weight: 600; }
+    .hist-line .hist-detail { font-size: var(--text-xs); }
+
+    /* Refer panel */
+    .refer { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 12px; }
+    .refer .kv-val { overflow-wrap: anywhere; text-align: right; }
+    .refer .kv-val a { color: inherit; text-decoration-color: var(--rule); }
+    .refer-form { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .refer-form .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
+    .refer-form[hidden] { display: none; }
+    .refer .hint { text-align: left; margin-top: 6px; }
+
+    /* Contracts & status: closed under the page, opened from the footer link */
+    .status-box { margin-top: var(--gap); }
+    .status-box > summary { cursor: pointer; list-style: none; }
+    .status-box > summary::-webkit-details-marker { display: none; }
+    .status-box > summary::after { content: "▾"; font-family: var(--font-ui); color: var(--ink-faint); }
+    .status-box[open] > summary::after { content: "▴"; }
+
+    /* Dialogs */
+    .modal { width: min(420px, calc(100vw - 2 * var(--gutter))); padding: 0; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 8px 8px 0 var(--sunken); }
+    .modal::backdrop { background: rgba(42, 37, 32, 0.35); }
+    [data-theme="night"] .modal::backdrop { background: rgba(0, 0, 0, 0.55); }
+    .modal form { margin: 0; }
+    .modal .panel-head { font-size: var(--text-xl); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-actions .btn { flex: 1 1 auto; }
+    .modal .hint.left { text-align: left; }
+    .modal .seg-item { min-height: 44px; }
+
+    /* One-click: the session switch under the order button, and the Hyperliquid deposit block */
+    .session-row { display: flex; align-items: center; gap: 8px; }
+    .session-row[hidden] { display: none; }
+    .session-row #sessionState { flex: 1 1 auto; min-width: 0; text-align: right; }
+    .session-row [hidden] { display: none; }
+    .hl-dep { border-top: 1px solid var(--rule); }
+    .hl-addr { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; padding: 6px 8px; margin-top: 6px; border: 1px solid var(--rule); background: var(--sunken); }
+    .hl-dep[hidden], #depFromWallet[hidden] { display: none; }
+
+    /* Header menu button: phones only */
+    .nav-toggle { display: none; }
+
+    /* Tap targets: the 44 px floor lives in paper.css for every page; here only the chart's
+       reset circle, whose 26 px pill gets an invisible 44 px hit area */
+    @media (pointer: coarse), (max-width: 900px) {
+      .chart-reset::after { content: ""; position: absolute; left: -4px; right: -4px; top: -9px; bottom: -9px; }
+    }
+
+    /* Phones and tablets: the ticket is a bottom sheet opened from a pinned BUY / LONG + SELL / SHORT bar */
+    @media (max-width: 900px) {
+      body.trade { padding-bottom: calc(var(--mbar-h) + 56px + env(safe-area-inset-bottom)); }
+      body.trade .mbar { display: block; }
+      body.trade .trade-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "chart" "pos" "bottom"; }
+      body.trade .trade-layout.has-pos { grid-template-areas: "pos" "chart" "bottom"; }
+      html body.trade .trade-side {
+        position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 56;
+        max-height: calc(100vh - 44px); max-height: calc(100dvh - 44px);
+        overflow-y: auto; overscroll-behavior: contain;
+        transform: translateY(102%); visibility: hidden;
+        transition: transform 220ms ease, visibility 0s linear 220ms;
+      }
+      html body.trade.sheet-open .trade-side { transform: none; visibility: visible; transition: transform 220ms ease; }
+      body.trade .ticket { border-width: 1px 0 0; border-color: var(--ink); box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.45); padding-bottom: env(safe-area-inset-bottom); }
+      body.trade .sheet-head { display: flex; }
+      body.trade .sheet-scrim:not([hidden]) { display: block; }
+      /* OPEN POSITION (or its progress card) is pinned to the bottom of the sheet: never below the
+         visible edge, whatever the screen height (-12px matches the .panel-body padding) */
+      body.trade .ticket-go {
+        position: sticky; bottom: 0; z-index: 3; margin: 0 -12px;
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+        background: var(--panel); border-top: 1px solid var(--rule);
+      }
+      /* the sheet's account line is one row of numbers; Deposit and Withdraw live on the page
+         (.acct-mini at the top of Your positions) */
+      body.trade .acct-strip { padding: 6px 12px; gap: 4px 12px; }
+      body.trade .acct-strip .acct-btns { display: none; }
+      body.trade .acct-nums { flex-wrap: nowrap; white-space: nowrap; overflow: hidden; gap: 4px 12px; }
+      /* while a request is out the form folds away, so the progress card sits under the direction buttons */
+      body.trade .ticket.is-going #amountBox, body.trade .ticket.is-going #levBox,
+      body.trade .ticket.is-going #previewBox, body.trade .ticket.is-going #detailsBox { display: none; }
+      /* toasts at the top, under the points bar, never over the bar's buttons or the cards */
+      body.trade .toasts { top: calc(var(--pts-bar-h, 0px) + 8px); bottom: auto; left: var(--gutter); right: var(--gutter); width: auto; }
+      /* with the sheet up they keep clear of its close button */
+      body.trade.sheet-open .toasts { right: 60px; }
+    }
+    /* points.css moves its toasts to the top only at 640 px and below; between that and the
+       sheet layout they sit above the pinned BUY / LONG + SELL / SHORT bar */
+    @media (min-width: 641px) and (max-width: 900px) {
+      body.trade .pts-toasts { bottom: calc(var(--mbar-h) + 56px + env(safe-area-inset-bottom)); }
+      /* the header still sticks at these widths: the toasts go under it */
+      body.trade .toasts { top: calc(var(--pts-bar-h, 0px) + var(--header-h) + 8px); }
+    }
+    @media (max-width: 400px) {
+      body.trade .acct-nums { font-size: var(--text-xs); gap: 4px 10px; }
+      /* the live dot says nothing while prices flow: room for the price and a PAUSED tag */
+      .chip-live:not(.is-stale) { display: none; }
+    }
+    @media (max-width: 340px) {
+      body.trade .tour-short { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html body.trade .trade-side, html body.trade.sheet-open .trade-side { transition: none; }
+    }
+
+    @media (max-width: 640px) {
+      /* one 48 px header row: wordmark, Menu, Connect; it scrolls away */
+      body.trade .header { position: static; flex-wrap: nowrap; min-height: 48px; }
+      body.trade .header.nav-open { flex-wrap: wrap; }
+      body.trade .nav-toggle { display: inline-flex; margin-left: auto; }
+      body.trade .nav-main { display: none; }
+      body.trade .header.nav-open .nav-main { display: flex; order: 3; flex: 1 1 100%; }
+      body.trade .header-actions { width: auto; margin-left: 0; }
+      body.trade .header-actions .btn { flex: none; }
+      body.trade #depositBtn, body.trade #withdrawBtn { display: none; }
+    }
+
+    @media (max-width: 640px) {
+      /* phones: only the House chip, which joins the market strip (below) */
+      .chips { order: 9; flex: 0 0 100%; margin-left: 0; }
+      .chips .chip:not(.chip-house) { display: none; }
+      .market-bar { flex-wrap: wrap; gap: 8px; row-gap: 6px; }
+      /* every part may shrink, so a long symbol or a PAUSED tag never runs under the ? button */
+      .market-select { flex: 0 0 auto; min-width: 0; max-width: 52%; }
+      .market-btn { flex: 0 1 auto; min-width: 0; max-width: 100%; font-size: var(--text-lg); padding: 0 10px; }
+      .market-btn #marketSym { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .market-lev { display: none; }
+      .market-quote { flex: 1 1 auto; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; }
+      .market-price { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-lg); line-height: 1.1; }
+      .market-change { font-size: var(--text-xs); }
+      .market-sub { flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+    }
+
+    @media (max-width: 600px) {
+      .tour-btn { margin-left: auto; min-width: 44px; padding: 0 8px; }
+      .tour-word { display: none; }
+      .tour-short { display: inline; }
+      .chart-tf, #indBtn, #lineBtn, #lineClear { display: none !important; }
+      .chart-tf-select { display: inline-flex; }
+      /* the one timeframe picker floats over the chart's top right, left of the price scale */
+      .trade-chart { position: relative; }
+      .chart-bar { position: absolute; top: 6px; right: calc(var(--scale-w, 72px) + 8px); z-index: 4; border: 0; background: transparent; padding: 0; }
+      body.trade .chart-box { height: clamp(240px, 42vh, 360px); }
+      .chart-legend { font-size: 12px; line-height: 1.35; max-width: calc(100% - 168px); }
+      .chart-legend-row { gap: 0 6px; }
+      .modal.sheet-modal { width: 100%; max-width: 100%; margin: auto 0 0; border-width: 1px 0 0; box-shadow: none; padding-bottom: env(safe-area-inset-bottom); }
+    }
+
+    @media (max-width: 640px) {
+      /* the type floor: nothing under 12 px */
+      .market-tag { font-size: 12px; line-height: 1.2; padding: 0 4px; }
+      /* a PAUSED tag takes the change's place on the strip (the coin list still shows the change) */
+      .market-tag:not([hidden]) ~ .market-change { display: none; }
+      .chart-reset, .chart-bar .chart-btn, .chart-menu-item { font-size: 12px; }
+
+      /* MARKET STRIP, 56 px: coin | price and change | HOUSE LP: | ?  (the House row joins the strip) */
+      .market-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 44px; align-items: center; gap: 6px; min-height: 56px; padding: 6px 0; }
+      .market-select { max-width: 28vw; }
+      .market-btn { height: 44px; min-height: 44px; padding: 0 8px; gap: 4px; border-color: var(--field-line, var(--ink)); font-weight: 600; font-size: 18px; }
+      .market-btn.is-long-sym { font-size: 15px; }
+      .market-caret { font-size: 12px; }
+      .market-quote { gap: 2px; overflow: hidden; }
+      .market-price { font-family: var(--font-ui); font-weight: 600; font-size: clamp(18px, 5.6vw, 22px); line-height: 1.1; font-variant-numeric: tabular-nums; }
+      .market-price.is-long { font-size: 18px; }
+      .market-change { font-size: 12px; white-space: nowrap; }
+      .market-change .chg-sign { display: none; }
+      .market-change .chg-arrow { font-size: 0.8em; }
+      .market-sub { flex-wrap: nowrap; max-width: 100%; overflow: hidden; }
+      /* HOUSE LP: two lines, 44 px, right-aligned, in the win colour; a link to the House page */
+      .chips { order: 0; flex: none; margin-left: 0; display: block; }
+      .chip-house { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 3px; height: 44px; min-height: 44px; padding: 0 6px; background: transparent; }
+      .chip-house .chip-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; line-height: 1; }
+      .chip-house .chip-value { font-family: var(--font-mono); font-size: 16px; font-weight: 600; line-height: 1; }
+      .chip-house #chipHouseLp { display: none; }
+      /* until the house balance first arrives: a quiet bar, never a bare dash */
+      .chip-house:not(.is-loaded) .chip-value.ph-only { width: 48px; height: 12px; background: var(--sunken); color: transparent; overflow: hidden; }
+      /* HELP: a 44 x 44 square with the ? at 18 px */
+      .tour-btn { width: 44px; min-width: 44px; height: 44px; margin-left: 0; padding: 0; justify-content: center; font-size: 18px; letter-spacing: 0; }
+      .tour-btn::before, .tour-btn::after { content: none; }
+      .tour-btn .tour-word, .tour-btn .tour-short { display: none; }
+
+      /* feedback: the price tints for a moment on a tick (text only, no flash behind it) */
+      .market-price { transition: color 400ms ease-out; }
+      .market-price.tick-up { color: var(--pos); transition: none; }
+      .market-price.tick-down { color: var(--neg); transition: none; }
+    }
+    @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+      .market-price, .market-price.tick-up, .market-price.tick-down { transition: none; color: inherit; }
+    }
+
+    /* ----------------------------------------------------------------------
+       Phones (<= 640 px): builds 6, 8 and 10 of the phone spec. Nothing here
+       reaches a wider screen; the new markup is ph-only.
+       ---------------------------------------------------------------------- */
+    @media (max-width: 640px) {
+      /* Build 8: the compact header sticks (paper.css); here only what this page set before */
+      body.trade .header.ph-head { position: sticky; min-height: 0; }
+      body.trade .nav-toggle.ph-menu { margin-left: 0; }
+      body.trade .header.nav-open .nav-main { display: none; }
+      body.trade .toasts { top: calc(env(safe-area-inset-top) + 56px); }
+      /* Balance, Deposit and Withdraw moved to the Account sheet (the header's balance) */
+      body.trade .acct-mini { display: none !important; }
+      /* the market strip sits right under the header: chart (or the rows) at 104 px */
+      .trade-main { padding-top: 0; }
+
+      /* Build 6: the ticket sheet. 280 ms ease-out in, 200 ms ease-in out; a drag follows the
+         finger with no transition; the safe-area inset is added once, on .ticket-go */
+      html body.trade .trade-side { transition: transform var(--t-sheet-out) var(--ease-in), visibility 0s linear var(--t-sheet-out); }
+      html body.trade.sheet-open .trade-side { transition: transform var(--t-sheet-in) var(--ease-out); }
+      html body.trade .trade-side.is-dragging { transition: none; }
+      body.trade .ticket { padding-bottom: 0; }
+      body.trade .sheet-head { min-height: 58px; padding-top: 12px; touch-action: none; cursor: grab; }
+      body.trade .sheet-head .sheet-grab { position: absolute; top: 0; left: 0; right: 0; height: 14px; margin: 0; }
+
+      /* Build 10: Your positions as 64 px rows above the chart */
+      body.trade #posPanel .pos-head { display: none; }
+      .ph-pos-head { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 0 0 12px; border-bottom: 1px solid var(--rule); font-size: 14px; color: var(--ink-muted); scroll-margin-top: calc(env(safe-area-inset-top) + 56px); }
+      .ph-pos-head[hidden] { display: none; }
+      .ph-pos-sum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ph-pos-sum b { font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+      .ph-pos-sum b.pos { color: var(--pos); }
+      .ph-pos-sum b.neg { color: var(--neg); }
+      .ph-closeall { -webkit-appearance: none; appearance: none; flex: none; min-height: 44px; margin: -4px 0; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--close); font-family: var(--font-ui); font-size: 14px; font-weight: 600; cursor: pointer; }
+      .ph-closeall[hidden] { display: none; }
+      .ph-closeall:disabled { color: var(--ink-faint); cursor: default; }
+      .ph-rows { display: flex; flex-direction: column; }
+      .ph-rows:empty { display: none; }
+      .ph-row {
+        -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent;
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; gap: 8px 10px; line-height: 20px;
+        width: 100%; min-height: 64px; padding: 8px 12px 8px 10px; margin: 0;
+        border: 0; border-bottom: 1px solid var(--rule); border-left: 4px solid var(--rule-strong); border-radius: 0;
+        background: transparent; color: var(--ink); font-family: var(--font-ui); text-align: left; cursor: pointer;
+      }
+      .ph-row:last-child { border-bottom: 0; }
+      .ph-row.is-long { border-left-color: var(--pos); }
+      .ph-row.is-short { border-left-color: var(--neg); }
+      .ph-row.is-near { box-shadow: inset 0 0 0 1px var(--neg); }
+      .ph-row[aria-expanded="true"] { background: var(--sunken); }
+      .ph-row:active { background: var(--sunken); }
+      .ph-row:focus-visible { outline: none; box-shadow: var(--focus); }
+      .ph-row-who { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
+      .ph-side { flex: none; align-self: center; padding: 2px 5px 1px; font-size: 12px; font-weight: 700; line-height: 1.2; letter-spacing: 0.06em; color: var(--page); background: var(--ink-muted); }
+      .ph-row.is-long .ph-side { background: var(--pos); }
+      .ph-row.is-short .ph-side { background: var(--neg); }
+      .ph-sym { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 16px; font-weight: 600; }
+      .ph-lev { flex: none; font-size: 14px; color: var(--ink-muted); }
+      .ph-money { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+      .ph-pnl-n { font-size: 18px; font-weight: 600; line-height: 20px; font-variant-numeric: tabular-nums; }
+      .ph-pct { font-family: var(--font-mono); font-size: 13px; }
+      .ph-pnl-n.pos, .ph-pct.pos { color: var(--pos); }
+      .ph-pnl-n.neg, .ph-pct.neg { color: var(--neg); }
+      .ph-row-liq { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-width: 0; height: 14px; line-height: 14px; }
+      .ph-row-liq[hidden], .ph-row-note[hidden] { display: none; }
+      .ph-bar { position: relative; flex: 1 1 auto; height: 6px; overflow: hidden; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--rule); }
+      .ph-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ink); }
+      .ph-bar.is-amber i { background: var(--warn); }
+      .ph-bar.is-red i { background: var(--neg); }
+      .ph-away { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); }
+      .ph-away.is-amber { color: var(--warn); font-weight: 600; }
+      .ph-away.is-red { color: var(--neg); font-weight: 700; }
+      .ph-row-note { grid-column: 1 / -1; min-width: 0; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--close); }
+      .ph-row-note.is-warn { color: var(--warn); }
+      .ph-row.is-more { display: flex; align-items: center; min-height: 44px; border-left-color: transparent; font-size: 14px; font-weight: 600; color: var(--ink-muted); }
+      .ph-row.is-flash { animation: ph-flash 200ms ease-out; }
+      /* the cards stay for what is in flight; a position's card shows when its row is tapped */
+      body.trade #posLines { padding: 0; gap: 0; }
+      body.trade #posLines > * { margin: 10px 10px 0; }
+      body.trade #posLines > :last-child { margin-bottom: 10px; }
+      body.trade #posLines > .pos-card[data-id]:not(.ph-open) { display: none; }
+      body.trade #posLines > .pos-card[data-id].ph-open { scroll-margin-top: calc(env(safe-area-inset-top) + 56px); }
+      /* with positions the chart gives up height, so the rows and the chart share the first screen */
+      body.trade .trade-layout.has-pos .chart-box { height: clamp(200px, 32vh, 300px); }
+
+      /* the live P&L strip on the bar replaces the Your positions chip */
+      body.trade #posChip { display: none !important; }
+      body.trade.ph-pnl-on { padding-bottom: calc(var(--mbar-h) + 100px + env(safe-area-inset-bottom)); }
+      .mbar.has-ph-pnl #barStatus { display: none !important; }
+      .ph-pnl {
+        -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent;
+        position: relative; display: flex; align-items: center; gap: 10px;
+        width: calc(100% + 2 * var(--gutter)); height: 44px; margin: -8px calc(-1 * var(--gutter)) 8px; padding: 0 var(--gutter);
+        border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; background: var(--panel); color: var(--ink);
+        font-family: var(--font-ui); text-align: left; cursor: pointer; overflow: hidden;
+      }
+      .ph-pnl[hidden] { display: none; }
+      .ph-pnl-k { flex: none; font-size: 12px; color: var(--ink-muted); }
+      .ph-pnl-v { flex: none; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .ph-pnl-v.pos { color: var(--pos); }
+      .ph-pnl-v.neg { color: var(--neg); }
+      .ph-pnl-mid { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--ink-muted); }
+      .ph-pnl-mid.is-done { color: var(--ink); font-weight: 600; }
+      .ph-pnl-liq { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+      .ph-pnl-liq[hidden] { display: none; }
+      .ph-pnl-liq .ph-bar { flex: 0 0 48px; width: 48px; }
+      .ph-pnl.is-closing::before { content: ""; position: absolute; top: 0; left: 0; width: 30%; height: 2px; background: var(--close); animation: ph-indet 1.1s ease-in-out infinite; }
+    }
+    @keyframes ph-flash { 0% { box-shadow: inset 0 0 0 2px var(--ink); } 100% { box-shadow: inset 0 0 0 0 transparent; } }
+    @keyframes ph-indet { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+    @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+      html body.trade .trade-side, html body.trade.sheet-open .trade-side { transition: none; }
+      .ph-row.is-flash { animation: none; }
+      .ph-pnl.is-closing::before { animation: none; width: 100%; opacity: 0.6; }
+    }
+  </style>
+</head>
+<body class="trade">
+
+  <header class="header container-fluid ph-head" id="siteHeader">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <button class="nav-toggle ph-menu" id="navToggle" type="button" aria-label="Menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="phMenuSheet"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></button>
+    <nav class="nav nav-main" id="navMain" aria-label="Primary">
+      <a href="trade.html" aria-current="page">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html">$FETTI</a>
+      <a href="leaderboard.html">Leaderboard</a>
+    </nav>
+    <div class="header-actions">
+      <button class="btn btn-sm" id="depositBtn" type="button" hidden>Deposit</button>
+      <button class="btn btn-sm" id="withdrawBtn" type="button" hidden>Withdraw</button>
+      <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
+    </div>
+    <a class="ph-only ph-pts is-idle" id="phPts" href="#pointsPanel" aria-label="Points"><i class="ph-pts-dot" aria-hidden="true"></i><span class="ph-pts-val" id="phPtsVal">Earn<span class="ph-pts-word"> points</span></span><span class="ph-pts-delta" id="phPtsDelta" aria-hidden="true"></span></a>
+    <button class="ph-only ph-acct is-out" id="phAcct" type="button" aria-haspopup="dialog" aria-controls="phAcctSheet"><span class="ph-acct-txt" id="phAcctTxt">Connect</span><span class="ph-acct-caret" aria-hidden="true"></span><i class="ph-acct-owed" aria-hidden="true"></i></button>
+  </header>
+
+  <main class="container trade-main">
+
+    <!-- Market: the coin button, the live price, two stats, How to trade -->
+    <div class="market-bar">
+      <div class="market-select">
+        <button class="market-btn" id="marketBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="marketMenu">
+          <span id="marketSym">—</span>
+          <span class="market-caret" aria-hidden="true">▾</span>
+          <span class="market-lev" id="marketTier">up to 1000x</span>
+        </button>
+        <div class="market-menu" id="marketMenu" role="listbox" aria-label="Markets" hidden>
+          <div class="market-filter">
+            <input class="input" id="marketFilter" type="search" placeholder="Find a coin" autocomplete="off" spellcheck="false" aria-label="Find a coin">
+          </div>
+          <div id="marketList"></div>
+        </div>
+      </div>
+      <span class="market-quote">
+        <span class="market-price" id="marketPrice" title="Live price">—</span>
+        <span class="market-sub">
+          <span class="market-tag" id="marketTag" hidden></span>
+          <span class="market-change" id="marketChange" title="Change since this time yesterday"></span>
+          <span class="chip chip-live" id="chipLive" title="Live prices"><span class="dot dot-pulse" aria-hidden="true"></span><span class="sr-only" id="chipLiveText">live</span></span>
+        </span>
+      </span>
+      <div class="chips">
+        <a class="chip chip-house" id="chipHouse" href="house.html" title="USDC the house pays winners from: its LP balance, live from the exchange"><span class="chip-label">House LP:</span><span class="chip-value" id="chipHouseLp">—</span><span class="chip-value ph-only" id="chipHouseLpPh" aria-hidden="true">—</span></a>
+        <span class="chip" title="Money in open trades on this coin, house bots left out"><span class="chip-label">Open bets</span><span class="chip-value"><span id="chipLongOi">—</span> long · <span id="chipShortOi">—</span> short</span></span>
+        <span class="chip" title="Positions opened on Confetti in the last 24 hours, every coin, house bots included"><span class="chip-label">Traded here 24h</span><span class="chip-value" id="chipConfVol">—</span></span>
+      </div>
+      <button class="btn btn-sm tour-btn" id="tourBtn" type="button" title="How to trade: a short tour of every button" aria-label="How to trade">?<span class="tour-word">&nbsp;How to trade</span><span class="tour-short">&nbsp;Help</span></button>
+    </div>
+
+    <div class="notice" id="v2Banner" hidden>You have <b id="v2Amt">money</b> on v2. <a class="btn btn-sm" id="stV2" href="v2.html">Move it</a></div>
+    <div class="notice" id="v3Banner" hidden>You have <b id="v3Amt">money</b> on v3. <a class="btn btn-sm" id="stV3" href="v3.html">Move it</a></div>
+
+    <div class="trade-layout" id="tradeLayout">
+
+      <!-- Candlestick chart -->
+      <section class="trade-chart" aria-label="Price chart">
+        <div class="chart-bar" id="chartBar">
+          <div class="chart-tools">
+            <div class="chart-tf" id="chartTf" role="group" aria-label="Timeframe">
+              <button class="btn btn-sm chart-btn" type="button" data-tf="1m" aria-pressed="true">1m</button>
+              <button class="btn btn-sm chart-btn" type="button" data-tf="5m" aria-pressed="false">5m</button>
+              <button class="btn btn-sm chart-btn" type="button" data-tf="15m" aria-pressed="false">15m</button>
+              <button class="btn btn-sm chart-btn" type="button" data-tf="1h" aria-pressed="false">1h</button>
+              <button class="btn btn-sm chart-btn" type="button" data-tf="4h" aria-pressed="false">4h</button>
+              <button class="btn btn-sm chart-btn" type="button" data-tf="1d" aria-pressed="false">1D</button>
+            </div>
+            <select class="select chart-tf-select" id="tfSelect" aria-label="Timeframe">
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1D</option>
+            </select>
+            <button class="btn btn-sm chart-btn" id="indBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="indMenu">Indicators</button>
+            <button class="btn btn-sm chart-btn" id="lineBtn" type="button" aria-pressed="false" title="Click the chart to draw a price line; click a line to remove it">Line</button>
+            <button class="btn btn-sm chart-btn" id="lineClear" type="button" hidden>Clear lines</button>
+          </div>
+          <div class="chart-menu" id="indMenu" role="menu" aria-label="Indicators" hidden></div>
+        </div>
+        <div class="chart-box" id="chartBox">
+          <div class="chart-canvas" id="chart"></div>
+          <div class="chart-legend" id="chartLegend" aria-hidden="true"></div>
+          <span class="chart-note" id="chartNote" hidden>candles unavailable · retrying</span>
+          <button class="chart-reset" id="chartReset" type="button" title="Reset chart" hidden><i aria-hidden="true"></i>reset chart</button>
+        </div>
+      </section>
+
+      <!-- Your positions: one card each, CLOSE POSITION on every card -->
+      <section class="trade-pos panel" id="posPanel" aria-label="Your positions">
+        <div class="panel-head pos-head">
+          <span>Your positions<span class="count" id="posCount"></span></span>
+          <button class="btn btn-sm" id="closeAllBtn" type="button" hidden>Close all</button>
+        </div>
+        <div class="ph-only ph-pos-head" id="phPosHead" hidden>
+          <span class="ph-pos-sum" id="phPosSum">Your positions</span>
+          <button class="ph-closeall" id="phCloseAll" type="button" hidden>Close all</button>
+        </div>
+        <div class="ph-only ph-rows" id="phRows"></div>
+        <div class="acct-mini" id="acctMini" hidden>
+          <span class="acct-mini-bal">Balance <b class="js-bal">—</b></span>
+          <span class="acct-mini-owed js-owed" hidden></span>
+          <span class="acct-mini-btns">
+            <button class="btn btn-sm js-dep" type="button">+ Deposit</button>
+            <button class="btn btn-sm js-wd" type="button">Withdraw</button>
+          </span>
+        </div>
+        <div class="pos-cards" id="posLines">
+          <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
+        </div>
+      </section>
+
+      <!-- The ticket: a column on desktop, a bottom sheet on a phone -->
+      <aside class="trade-side" id="ticket" aria-label="Order ticket">
+        <div class="panel ticket">
+          <div class="sheet-head">
+            <div class="sheet-grab ph-only" aria-hidden="true"></div>
+            <!-- phones (piece 14): a page inside the sheet (the coin page, More) gets a back button and its title -->
+            <button class="ph-only ph-tk-back" id="phPageBack" type="button" hidden><span aria-hidden="true">‹</span> Trade</button>
+            <span class="ph-only ph-tk-page-title" id="phPageTitle" hidden>Pick a coin</span>
+            <span class="sheet-title" id="sheetTitle">—</span>
+            <!-- phones (piece 14): the coin pill opens the coin page; the live price and change beside it -->
+            <button class="ph-only ph-tk-pill" id="phCoinPill" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="phCoinPage"><span class="ph-tk-pill-sym" id="phTkSym">—</span><span class="ph-tk-pill-caret" aria-hidden="true">▾</span></button>
+            <span class="ph-only ph-tk-quote"><span class="ph-tk-px" id="phTkPx">—</span><span class="ph-tk-chg" id="phTkChg"></span></span>
+            <button class="btn btn-sm btn-ghost btn-plain sheet-x" id="sheetClose" type="button" aria-label="Close the ticket">✕</button>
+          </div>
+
+          <div class="acct-strip" id="acctStrip" hidden>
+            <div class="acct-nums">
+              <span>Balance <b id="eqAvailable">—</b></span>
+              <span>In trades <b id="eqMargin">—</b></span>
+              <span>P&amp;L <b id="eqPnl">—</b></span>
+            </div>
+            <div class="acct-owed" id="acctOwed" hidden></div>
+            <div class="acct-btns">
+              <button class="btn btn-sm" id="acctDeposit" type="button">+ Deposit</button>
+              <button class="btn btn-sm" id="acctWithdraw" type="button">Withdraw</button>
+            </div>
+          </div>
+
+          <form class="panel-body stack order-form" id="orderForm" autocomplete="off" novalidate>
+            <!-- phones (piece 13): the receipt, read first. Rows A-E are renderForm's numbers with the targets
+                 moved: what you risk, the position, the liquidation and the move to it, the 1% outcome, the open
+                 price and timing (row D, which the notices take over), the costs and More. -->
+            <div class="ph-only ph-rc" id="phReceipt">
+              <div class="ph-rc-a">
+                <div class="ph-rc-cell"><span class="ph-rc-k">You risk</span><b class="ph-rc-risk" id="phRcRisk">—</b></div>
+                <div class="ph-rc-cell is-right"><span class="ph-rc-k">Position</span><b class="ph-rc-size" id="phRcSize"><span id="phRcSizeUsd">—</span><span class="ph-rc-sep" id="phRcSizeSep"></span><span id="phRcSizeQty"></span></b></div>
+              </div>
+              <div class="ph-rc-b" id="phRcLiq">Liquidation —</div>
+              <div class="ph-rc-c"><span id="phRcMoveK">If the price moves 1% your way</span><b id="phRcMoveV">—</b></div>
+              <div class="ph-rc-d is-default" id="phRcD" aria-live="polite">Opens near the market price in about 6 s</div>
+              <div class="ph-rc-e"><span class="ph-rc-costs" id="phRcCosts">Costs —</span><button class="ph-rc-more" id="phMoreBtn" type="button" aria-haspopup="true" aria-expanded="false">More <span aria-hidden="true">›</span></button></div>
+              <span class="sr-only" id="phArmLive" aria-live="assertive"></span>
+            </div>
+            <div class="side-pair" id="sidePair" role="group" aria-label="Direction">
+              <button class="dir-btn dir-long" type="button" data-side="long" aria-pressed="true">
+                <span class="dir-label">BUY / LONG</span>
+                <span class="ph-only dir-ph"><span class="dir-ph-arrow" aria-hidden="true">▲</span> LONG <span class="dir-ph-sub">· up</span></span>
+                <span class="dir-hint">price goes up</span>
+                <span class="dir-liq"><span class="dir-liq-w">Liquidation</span> <b id="liqLong">—</b></span>
+              </button>
+              <button class="dir-btn dir-short" type="button" data-side="short" aria-pressed="false">
+                <span class="dir-label">SELL / SHORT</span>
+                <span class="ph-only dir-ph"><span class="dir-ph-arrow" aria-hidden="true">▼</span> SHORT <span class="dir-ph-sub">· down</span></span>
+                <span class="dir-hint">price goes down</span>
+                <span class="dir-liq"><span class="dir-liq-w">Liquidation</span> <b id="liqShort">—</b></span>
+              </button>
+            </div>
+
+            <div class="field" id="amountBox">
+              <div class="field-head">
+                <label class="label" for="marginInput">Amount</label>
+                <span class="ph-only ph-amt-now" id="phAmtNow">—</span>
+                <span class="field-note">most you can lose</span>
+                <span class="ph-only ph-amt-bal">Balance <b id="phAmtBal">—</b></span>
+              </div>
+              <div class="input-group">
+                <span class="unit unit-pre" aria-hidden="true">$</span>
+                <input class="input" id="marginInput" type="number" min="10" step="any" inputmode="decimal" placeholder="Amount" value="10">
+                <span class="unit">USDC</span>
+              </div>
+              <div class="chip-row amt-chips" id="amtChips" role="group" aria-label="Amount">
+                <button class="pick" type="button" data-amt="10" aria-pressed="true">$10</button>
+                <button class="pick" type="button" data-amt="25" aria-pressed="false">$25</button>
+                <button class="pick" type="button" data-amt="50" aria-pressed="false">$50</button>
+                <button class="pick" type="button" data-amt="max" aria-pressed="false">Max</button>
+                <!-- phones (piece 14): the typed amount as a chip while one is set, and $… opens the in-sheet keypad -->
+                <button class="pick ph-only pick-typed" type="button" data-amt="typed" aria-pressed="false" hidden>$—</button>
+                <button class="pick ph-only pick-custom pick-amt-custom" type="button" data-amt="custom" aria-pressed="false" aria-label="Type an amount">$…</button>
+              </div>
+            </div>
+
+            <div class="field" id="levBox">
+              <div class="field-head">
+                <span class="label" id="levLabel">Leverage</span>
+                <span class="field-bal" id="levNow">20x</span>
+              </div>
+              <div class="chip-row lev-chips" id="levChips" role="group" aria-labelledby="levLabel"></div>
+              <div class="lev-custom" id="levCustom" hidden>
+                <div class="lev-row">
+                  <input class="slider" id="levSlider" type="range" min="0" max="1000" value="434" aria-label="Leverage">
+                  <div class="input-group lev-box">
+                    <input class="input lev-input" id="levInput" type="number" min="1" max="1000" step="1" inputmode="numeric" value="20" aria-label="Leverage">
+                    <span class="unit">x</span>
+                  </div>
+                </div>
+                <div class="slider-scale"><span class="safe">1x</span><span class="wild" id="levWild">1000x max</span></div>
+              </div>
+              <div class="lev-note" id="levNote">20x: a 4.75% move against you liquidates your $10.</div>
+            </div>
+
+            <!-- phones (piece 14): the keypad drawn inside the sheet, for the amount ($…) and a custom leverage
+                 (Custom). It writes into marginInput / levInput and dispatches 'input', so the checks are today's.
+                 'Use keyboard' shows the real input for VoiceOver and anyone who prefers it. -->
+            <div class="ph-only ph-kp" id="phKeypad" role="group" aria-label="Keypad" hidden>
+              <div class="ph-kp-top">
+                <div class="ph-kp-val" id="phKpVal" aria-live="polite">$ 0</div>
+                <div class="ph-kp-lim" id="phKpLim"></div>
+              </div>
+              <div class="ph-kp-keys">
+                <button class="ph-key" type="button" data-key="1">1</button>
+                <button class="ph-key" type="button" data-key="2">2</button>
+                <button class="ph-key" type="button" data-key="3">3</button>
+                <button class="ph-key" type="button" data-key="4">4</button>
+                <button class="ph-key" type="button" data-key="5">5</button>
+                <button class="ph-key" type="button" data-key="6">6</button>
+                <button class="ph-key" type="button" data-key="7">7</button>
+                <button class="ph-key" type="button" data-key="8">8</button>
+                <button class="ph-key" type="button" data-key="9">9</button>
+                <button class="ph-key ph-key-dot" type="button" data-key="." aria-label="Decimal point">.</button>
+                <button class="ph-key" type="button" data-key="0">0</button>
+                <button class="ph-key ph-key-back" type="button" data-key="back" aria-label="Delete the last digit">⌫</button>
+              </div>
+              <div class="ph-kp-acts">
+                <button class="ph-kp-kbd" id="phKpKbd" type="button">Use keyboard</button>
+                <button class="ph-kp-done" id="phKpDone" type="button">Done</button>
+              </div>
+            </div>
+
+            <div class="tp" id="previewBox">
+              <div class="tp-line"><span class="tp-k">Position size</span><span class="tp-v" id="orderValue">—</span></div>
+              <div class="tp-line"><span class="tp-k" id="moveKey">If the price moves 1% your way</span><span class="tp-v pos" id="moveWin">—</span></div>
+              <div class="tp-sent" id="opensNear">Opens near the oracle price in about 6 s</div>
+            </div>
+
+            <div class="ticket-go" id="ticketGo">
+              <div class="ticket-notice" id="ticketNotice" hidden></div>
+              <button class="btn btn-lg btn-block btn-go go-setup" id="actionBtn" type="submit">Connect wallet</button>
+              <div class="ticket-progress" id="ticketProgress" hidden aria-live="polite"></div>
+              <div class="hint" id="actionHint" aria-live="polite"></div>
+            </div>
+
+            <!-- phones (piece 13): the top of the More page, over the Details lines: the open price and timing,
+                 the fill note in calm words -->
+            <div class="ph-only ph-more-top" id="phMoreTop" hidden>
+              <p class="ph-more-line" id="phMoreOpens">Opens near the market price in about 6 s.</p>
+              <p class="ph-more-line">Fills at the price a few seconds after you tap. Prices on the chart come from Hyperliquid.</p>
+            </div>
+
+            <details class="details" id="detailsBox">
+              <summary>Details</summary>
+              <p class="dl" id="maxProfit">Win cap: —</p>
+              <p class="dl" id="capLine" hidden></p>
+              <p class="dl tp-amber" id="queueLine" hidden>The house is paying earlier winners first. A win right now may be paid later.</p>
+              <p class="dl" id="keptShare">Small wins are trimmed.</p>
+              <p class="dl" id="feeLine">Fee: — of winnings</p>
+              <p class="dl" id="borrowLine">Borrow: —</p>
+              <p class="dl" id="posCapLine">Biggest position: —</p>
+              <p class="dl">Hyperliquid 24h volume <b id="chipVol">—</b></p>
+              <p class="dl" id="fillsNote">Every trade fills at the oracle price a few seconds after you click. Prices on the chart come from Hyperliquid.</p>
+              <label class="details-chk"><input type="checkbox" id="autoFillChk" data-autofill checked> If a fill is slow, ask my wallet to finish it (recommended)</label>
+            </details>
+
+            <!-- phones (piece 13): the rest of the More page under the Details lines: the open price and timing,
+                 the fill note in calm words, the account numbers that left the ticket head, and the big-trade
+                 check's "don't ask" (the same LS.noConfirm the desktop modal writes). -->
+            <div class="ph-only ph-more" id="phMore" hidden>
+              <div class="ph-more-acct"><span>Balance <b class="js-more-bal">—</b></span><span>In trades <b class="js-more-margin">—</b></span><span>P&amp;L <b class="js-more-pnl">—</b></span></div>
+              <div class="ph-more-owed js-more-owed" hidden></div>
+              <label class="details-chk ph-more-chk"><input type="checkbox" id="phNoConfirm"> Don't ask before big trades (100x and up, or Max)</label>
+            </div>
+
+            <div class="session-row" id="sessionRow" hidden>
+              <button class="btn btn-sm" id="sessionBtn" type="button" disabled>Trade without popups</button>
+              <span class="xs faint truncate" id="sessionState">—</span>
+              <button class="btn btn-sm btn-ghost" id="sessionRevoke" type="button" hidden>Revoke</button>
+            </div>
+          </form>
+
+          <!-- phones (piece 14): the coin page inside the sheet. The list is anchored to the thumb (Recent at the
+               bottom, All coins above it, in today's order); the 16 px search is pinned under it and never
+               auto-focused. Opened by the sheet's coin pill, or straight from the market strip's coin button. -->
+          <div class="ph-only ph-cp" id="phCoinPage" role="listbox" aria-label="Pick a coin" hidden>
+            <div class="ph-cp-list" id="phCoinList" tabindex="-1"></div>
+            <div class="ph-cp-find">
+              <input class="input ph-cp-input" id="phCoinFind" type="search" placeholder="Find a coin" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search" aria-label="Find a coin">
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- History / Refer -->
+      <section class="trade-bottom panel" aria-label="History and referrals">
+        <div class="tabs" role="tablist">
+          <button class="tab" id="tabHistory" type="button" role="tab" aria-selected="true" aria-controls="panelHistory" data-tab="history">History</button>
+          <button class="tab" id="tabRefer" type="button" role="tab" aria-selected="false" aria-controls="panelRefer" data-tab="refer">Refer</button>
+        </div>
+
+        <div class="tab-panel" id="panelHistory" role="tabpanel" aria-labelledby="tabHistory">
+          <div class="pos-lines" id="histLines">
+            <div class="empty" id="histEmpty">Connect a wallet to load your history.</div>
+            <div class="hist-foot">
+              <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panelRefer" role="tabpanel" aria-labelledby="tabRefer" hidden>
+          <div class="refer">
+            <div>
+              <div class="kv"><span class="kv-key">Your code</span><span class="kv-val" id="rfCode">—</span></div>
+              <div class="kv"><span class="kv-key">Your link</span><span class="kv-val" id="rfLink">—</span></div>
+              <div class="kv"><span class="kv-key">Earned</span><span class="kv-val" id="rfEarned">—</span></div>
+              <div class="kv"><span class="kv-key">You get</span><span class="kv-val" id="rfShare">15% of their fees</span></div>
+              <div class="kv"><span class="kv-key">Referred by</span><span class="kv-val" id="rfBy">—</span></div>
+              <div class="quick"><button class="btn" type="button" id="rfCopy" hidden>Copy link</button></div>
+            </div>
+            <div>
+              <form class="refer-form" id="referForm" autocomplete="off" novalidate hidden>
+                <input class="input" id="referCode" type="text" maxlength="16" placeholder="your_code" spellcheck="false" aria-label="Referral code">
+                <button class="btn btn-primary" type="submit" id="referSubmit">Register</button>
+              </form>
+              <div class="hint" id="referHint" aria-live="polite">Connect a wallet to get a code.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Contracts & status (was the Status tab) -->
+    <details class="panel status-box" id="statusBox">
+      <summary class="panel-head">Contracts &amp; status</summary>
+      <div class="status-grid">
+        <div>
+          <h4>Chain</h4>
+          <div class="kv"><span class="kv-key">Network</span><span class="kv-val" id="stChain">—</span></div>
+          <div class="kv"><span class="kv-key">Latest block</span><span class="kv-val" id="stBlock">—</span></div>
+          <div class="kv"><span class="kv-key">RPC</span><span class="kv-val truncate" id="stRpc">—</span></div>
+          <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="stWallet">not connected</span></div>
+          <div class="kv"><span class="kv-key">Wallet chain</span><span class="kv-val" id="stWalletChain">—</span></div>
+          <h4>Rules</h4>
+          <div class="kv"><span class="kv-key">Win fee</span><span class="kv-val" id="stFee">—</span></div>
+          <div class="kv"><span class="kv-key">Loss fee, paid by the house</span><span class="kv-val" id="stLossFee">—</span></div>
+          <div class="kv"><span class="kv-key">Borrow-free hours</span><span class="kv-val" id="stFreeHours">—</span></div>
+          <div class="kv"><span class="kv-key">Minimum trade</span><span class="kv-val" id="stMinMargin">—</span></div>
+          <div class="kv"><span class="kv-key">To stakers</span><span class="kv-val" id="stStakerShare">—</span></div>
+          <div class="kv"><span class="kv-key">To referrers</span><span class="kv-val" id="stRefShare">—</span></div>
+          <div class="kv"><span class="kv-key">New trades paused</span><span class="kv-val" id="stPaused">—</span></div>
+          <div class="kv"><span class="kv-key">Auto-pause</span><span class="kv-val" id="stBreaker">—</span></div>
+          <div class="kv"><span class="kv-key">Markets on chain</span><span class="kv-val" id="stInstCount">—</span></div>
+          <div class="kv"><span class="kv-key">Keeper</span><span class="kv-val" id="stKeeper">—</span></div>
+        </div>
+        <div>
+          <h4>Contracts</h4>
+          <div class="kv"><span class="kv-key">Exchange</span><span class="kv-val" id="stExchange">—</span></div>
+          <div class="kv"><span class="kv-key">Exchange extension</span><span class="kv-val" id="stExchangeExt">—</span></div>
+          <div class="kv"><span class="kv-key">USDC</span><span class="kv-val" id="stUsdc">—</span></div>
+          <div class="kv"><span class="kv-key">Oracle</span><span class="kv-val" id="stOracle">—</span></div>
+          <div class="kv"><span class="kv-key">FETTI</span><span class="kv-val" id="stConfetti">—</span></div>
+          <div class="kv"><span class="kv-key">Staking</span><span class="kv-val" id="stStaking">—</span></div>
+          <div class="kv"><span class="kv-key">Referrals</span><span class="kv-val" id="stReferrals">—</span></div>
+          <div class="kv"><span class="kv-key">Session router</span><span class="kv-val" id="stRouter">—</span></div>
+          <div class="kv"><span class="kv-key">Market rules</span><span class="kv-val" id="stRules">—</span></div>
+          <div class="kv"><span class="kv-key">Deposit factory</span><span class="kv-val" id="stFactory">—</span></div>
+          <h4>This market</h4>
+          <div class="kv"><span class="kv-key">Market id</span><span class="kv-val" id="stInst">—</span></div>
+          <div class="kv"><span class="kv-key">Max leverage</span><span class="kv-val" id="stMaxLev">—</span></div>
+          <div class="kv"><span class="kv-key">Max open bets long / short</span><span class="kv-val" id="stCaps">—</span></div>
+          <div class="kv"><span class="kv-key">Biggest position now long / short</span><span class="kv-val" id="stPosCap">—</span></div>
+          <div class="kv"><span class="kv-key">Entry spread · borrow per hour</span><span class="kv-val" id="stMarketFees">—</span></div>
+          <div class="kv"><span class="kv-key">Oracle price</span><span class="kv-val" id="stOraclePx">—</span></div>
+        </div>
+      </div>
+    </details>
+
+    <section class="panel points-panel" id="pointsPanel" aria-label="Points"></section>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="#statusBox" id="statusLink">Contracts &amp; status</a>
+      <a href="docs.html">docs</a>
+      <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+    </footer>
+  </main>
+
+  <!-- Phones: BUY / LONG and SELL / SHORT pinned to the bottom; each opens the ticket sheet -->
+  <div class="mbar" id="mobileBar">
+    <div class="mbar-float">
+      <button class="mbar-status" id="barStatus" type="button" hidden></button>
+      <button class="mbar-chip" id="posChip" type="button" hidden>Your positions</button>
+    </div>
+    <button class="ph-only ph-pnl" id="phPnl" type="button" hidden><span class="ph-pnl-k">P&amp;L</span><b class="ph-pnl-v" id="phPnlV">—</b><span class="ph-pnl-mid" id="phPnlMid"></span><span class="ph-pnl-liq" id="phPnlLiq"><span class="ph-bar" id="phPnlBar"><i></i></span><span class="ph-away" id="phPnlAway"></span></span></button>
+    <div class="mbar-pair" id="mbarPair">
+      <button class="dir-btn dir-long is-solid" type="button" data-open-side="long"><span class="dir-label">BUY / LONG</span><span class="dir-hint">price goes up</span></button>
+      <button class="dir-btn dir-short is-solid" type="button" data-open-side="short"><span class="dir-label">SELL / SHORT</span><span class="dir-hint">price goes down</span></button>
+    </div>
+  </div>
+  <div class="sheet-scrim" id="sheetScrim" hidden></div>
+
+  <!-- Check before a big trade (100x and up, or Max), and Close all -->
+  <dialog class="modal sheet-modal" id="confirmModal" aria-labelledby="confirmTitle">
+    <div class="sheet-grab ph-only" aria-hidden="true"></div>
+    <form method="dialog" id="confirmForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="confirmTitle">Check your trade</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+      <div class="panel-body stack">
+        <div class="confirm-body" id="confirmBody"></div>
+        <label class="details-chk" id="confirmSkipRow" hidden><input type="checkbox" id="confirmSkip"> Don't ask again</label>
+        <div class="modal-actions">
+          <button class="btn" type="button" id="confirmBack" data-close>Back</button>
+          <button class="btn btn-primary" type="submit" id="confirmOk">Confirm</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- No wallet in this browser (a phone browser): open the page in a wallet app -->
+  <dialog class="modal sheet-modal" id="walletAppModal" aria-labelledby="walletAppTitle">
+    <div class="sheet-grab ph-only" aria-hidden="true"></div>
+    <div class="panel-head"><span id="walletAppTitle">Open in your wallet app</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="panel-body stack">
+      <div class="hint left">This browser has no wallet. Open Confetti in your wallet app's browser:</div>
+      <a class="btn btn-block" id="waPhantom" href="https://phantom.app/ul/browse/https%3A%2F%2Fconfetti.trade%2Ftrade.html?ref=https%3A%2F%2Fconfetti.trade" rel="noopener">Phantom</a>
+      <a class="btn btn-block" id="waMetaMask" href="https://metamask.app.link/dapp/confetti.trade/trade.html" rel="noopener">MetaMask</a>
+      <a class="btn btn-block" id="waCoinbase" href="https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fconfetti.trade%2Ftrade.html" rel="noopener">Coinbase Wallet</a>
+      <a class="btn btn-block" id="waOkx" href="okx://wallet/dapp/url?dappUrl=https%3A%2F%2Fconfetti.trade%2Ftrade.html" rel="noopener">OKX Wallet</a>
+      <button class="btn btn-block" id="waCopy" type="button">Copy link</button>
+      <div class="hint left">Or copy the link and paste it into your wallet's browser.</div>
+    </div>
+  </dialog>
+
+  <!-- Your address: copy, explorer, disconnect -->
+  <dialog class="modal sheet-modal" id="acctModal" aria-labelledby="acctTitle">
+    <div class="sheet-grab ph-only" aria-hidden="true"></div>
+    <div class="panel-head"><span id="acctTitle">Your wallet</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="panel-body stack">
+      <button class="btn btn-block" id="amCopy" type="button">Copy address</button>
+      <a class="btn btn-block" id="amExplorer" href="https://hyperevmscan.io" target="_blank" rel="noopener">View on explorer</a>
+      <button class="btn btn-block btn-accent" id="amDisconnect" type="button">Disconnect</button>
+    </div>
+  </dialog>
+
+  <!-- Add USDC -->
+  <dialog class="modal sheet-modal" id="depositModal" aria-labelledby="depositTitle">
+    <div class="sheet-grab ph-only" aria-hidden="true"></div>
+    <form method="dialog" id="depositForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="depositTitle">Add USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+      <div class="panel-body stack">
+        <div class="notice" id="depHype" hidden>You need a little HYPE on HyperEVM to pay network fees (about 0.01).</div>
+        <div class="label">Where is your USDC?</div>
+        <div class="seg" id="depWhere" role="group" aria-label="Where is your USDC?">
+          <button class="seg-item" type="button" data-where="wallet" aria-pressed="true">In this wallet</button>
+          <button class="seg-item" type="button" data-where="hl" aria-pressed="false">On Hyperliquid</button>
+        </div>
+      </div>
+      <div class="panel-body stack" id="depFromWallet">
+        <div class="kv"><span class="kv-key">In your wallet</span><span class="kv-val" id="depWallet">—</span></div>
+        <div class="kv"><span class="kv-key">Confetti balance</span><span class="kv-val" id="depAvailable">—</span></div>
+        <label class="label" for="depositAmount">Amount</label>
+        <div class="input-group">
+          <input class="input" id="depositAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00">
+          <span class="unit">USDC</span>
+        </div>
+        <div class="quick"><button class="btn" type="button" id="depMax">Max</button></div>
+        <div class="hint" id="depositHint">The first time takes two steps: approve USDC, then deposit it.</div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="depositSubmit">Deposit</button>
+        </div>
+      </div>
+      <div class="panel-body stack hl-dep" id="depFromHl" hidden>
+        <ol class="steps-list">
+          <li>Copy your Confetti deposit address. <button class="btn btn-sm" type="button" id="hlCopy" disabled>Copy</button>
+            <div class="hl-addr" id="hlProxy">—</div></li>
+          <li>On Hyperliquid, send USDC to it. The first send costs 1 USDC.</li>
+          <li>It arrives here by itself, usually within a minute.</li>
+        </ol>
+        <div class="kv"><span class="kv-key" id="hlPendingKey">Waiting</span><span class="kv-val" id="hlPending">—</span></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close>Close</button>
+          <button class="btn btn-primary" type="button" id="hlSweep" disabled>Add to my balance</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- One-click: authorize a session key -->
+  <dialog class="modal" id="sessionModal" aria-labelledby="sessionTitle">
+    <form method="dialog" id="sessionForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="sessionTitle">Trade without popups</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close>✕</button></div>
+      <div class="panel-body stack">
+        <label class="label" for="sessionCap">Cap per trade</label>
+        <div class="input-group">
+          <input class="input" id="sessionCap" type="number" min="10" step="any" inputmode="decimal" placeholder="50.00">
+          <span class="unit">USDC</span>
+        </div>
+        <label class="label" for="sessionDays">Lasts</label>
+        <select class="select" id="sessionDays">
+          <option value="1">1 day</option>
+          <option value="7" selected>7 days</option>
+          <option value="30">30 days</option>
+        </select>
+        <div class="kv"><span class="kv-key">Gas for the key</span><span class="kv-val">0.01 HYPE</span></div>
+        <div class="hint">The key lives in this browser: anyone who can open it can trade your balance, never withdraw it, until it expires or you revoke.</div>
+        <div class="hint" id="sessionHint" aria-live="polite"></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="sessionSubmit">Authorize</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Withdraw to your wallet -->
+  <dialog class="modal sheet-modal" id="withdrawModal" aria-labelledby="withdrawTitle">
+    <div class="sheet-grab ph-only" aria-hidden="true"></div>
+    <form method="dialog" id="withdrawForm" autocomplete="off" novalidate>
+      <div class="panel-head"><span id="withdrawTitle">Withdraw to your wallet</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+      <div class="panel-body stack">
+        <div class="hint left" id="wdTo">To your wallet on HyperEVM</div>
+        <div class="kv"><span class="kv-key">Confetti balance <span class="faint">(you can withdraw this)</span></span><span class="kv-val" id="wdAvailable">—</span></div>
+        <div class="kv"><span class="kv-key">In open trades <span class="faint">(close them first)</span></span><span class="kv-val" id="wdMargin">—</span></div>
+        <label class="label" for="withdrawAmount">Amount</label>
+        <div class="input-group">
+          <input class="input" id="withdrawAmount" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00">
+          <span class="unit">USDC</span>
+        </div>
+        <div class="quick"><button class="btn" type="button" id="wdMax">Max</button></div>
+        <div class="hint" id="withdrawHint">Withdraw your balance. Money in open trades comes back when you close.</div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="withdrawSubmit">Withdraw</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Phones: the Menu sheet (the header's Menu) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phMenuSheet" aria-labelledby="phMenuTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phMenuTitle">Menu</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <nav class="ph-menu-list" aria-label="Pages">
+      <a href="trade.html" aria-current="page">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html">$FETTI</a>
+      <a href="leaderboard.html">Leaderboard</a>
+      <a class="ph-menu-sub" href="docs.html">Docs</a>
+      <a class="ph-menu-sub" href="contracts.html">Contracts</a>
+    </nav>
+  </dialog>
+
+  <!-- Phones: the Account sheet (the header's balance) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phAcctSheet" aria-labelledby="phAcctTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phAcctTitle">Account</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="ph-acct-body">
+      <div class="ph-kv js-ph-num"><span>Balance</span><b class="js-ph-bal">—</b></div>
+      <div class="ph-kv js-ph-num"><span>In trades</span><b class="js-ph-margin">—</b></div>
+      <div class="ph-kv js-ph-num"><span>P&amp;L</span><b class="js-ph-pnl">—</b></div>
+      <div class="ph-owed js-ph-owed" hidden></div>
+      <div class="ph-acct-btns">
+        <button class="ph-btn js-ph-dep" type="button">+ Deposit</button>
+        <button class="ph-btn js-ph-wd" type="button">Withdraw</button>
+      </div>
+      <div class="ph-addr"><span class="ph-addr-v js-ph-addr">—</span><button class="ph-quiet js-ph-copy" type="button">Copy</button></div>
+      <a class="ph-quiet js-ph-explorer" href="https://hyperevmscan.io" target="_blank" rel="noopener">View on explorer</a>
+      <button class="ph-quiet js-ph-send" type="button" hidden>Send points</button>
+      <button class="ph-quiet ph-disc js-ph-disc" type="button">Disconnect</button>
+    </div>
+  </dialog>
+
+  <!-- Phones: the Position sheet. A row's details and the close check in one: the money coming
+       back sits over the Close button; Close all uses the same sheet with the count and the total.
+       While a close is in flight the button pair gives way to the status slot (trade.js). -->
+  <dialog class="sheet-modal ph-sheet ph-only ph-pos-sheet" id="phPosSheet" aria-labelledby="phPosTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head">
+      <span class="ph-ps-who js-ps-who" id="phPosTitle"><span class="ph-side js-ps-side">—</span><span class="ph-sym js-ps-sym">—</span><span class="ph-lev js-ps-lev"></span></span>
+      <button class="ph-x" type="button" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="ph-ps-body">
+      <div class="ph-ps-pnl js-ps-pnlrow"><b class="ph-ps-pnl-n js-ps-pnl">—</b><span class="ph-ps-pct js-ps-pct"></span></div>
+      <div class="ph-ps-liq js-ps-liqblock">
+        <span class="ph-bar js-ps-bar" aria-hidden="true"><i></i></span>
+        <div class="ph-ps-liqrow"><span>Liquidation <b class="js-ps-liq">—</b></span><span class="ph-away js-ps-away"></span></div>
+      </div>
+      <div class="ph-ps-grid js-ps-grid">
+        <div class="ph-ps-cell"><span>Entry</span><b class="js-ps-entry">—</b></div>
+        <div class="ph-ps-cell"><span class="js-ps-nowk">Now</span><b class="js-ps-now">—</b></div>
+        <div class="ph-ps-cell"><span>Put in</span><b class="js-ps-margin">—</b></div>
+        <div class="ph-ps-cell"><span>Size</span><b class="js-ps-size">—</b></div>
+      </div>
+      <div class="ph-ps-list js-ps-list" hidden></div>
+      <div class="ph-ps-back js-ps-back"><span class="js-ps-backk">You get back about</span> <b class="js-ps-est">—</b></div>
+      <div class="ph-ps-note js-ps-note"></div>
+      <div class="ph-ps-btns js-ps-pair">
+        <button class="ph-btn ph-ps-keep js-ps-keep" type="button" data-close>Keep open</button>
+        <button class="ph-btn ph-ps-close js-ps-close" type="button">Close</button>
+      </div>
+      <div class="ph-ps-status js-ps-status" hidden>
+        <div class="ph-ps-line js-ps-line" aria-live="polite">Closing…</div>
+        <span class="ph-ps-prog js-ps-prog" aria-hidden="true"><i></i></span>
+        <div class="ph-ps-sub js-ps-sub" hidden></div>
+        <div class="ph-ps-btns is-one js-ps-actrow" hidden>
+          <button class="ph-btn ph-ps-act js-ps-act" type="button" hidden>Finish now</button>
+          <button class="ph-btn ph-ps-done js-ps-done" type="button" data-close hidden>Done</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <!-- ethers v6 from cdnjs. lightweight-charts is not on cdnjs at all, so the exact
+       4.1.3 standalone build comes from jsdelivr with unpkg as a fallback. -->
+  <!-- Both carry the sha384 of the exact file (subresource integrity): ethers builds and signs
+       every transaction, so a modified copy from a CDN or an on-path attacker must be refused,
+       not run. The unpkg fallback serves the same npm file, hence the same hash. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" integrity="sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP" crossorigin="anonymous" referrerpolicy="no-referrer"
+          onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
+  <script src="keeper.js?v=house1" defer></script>
+  <script src="share.js?v=quiet2" defer></script>
+  <script src="trade.js?v=phone6" defer></script>
+  <script src="points.js?v=phone2" defer></script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+{
+  "version": 4,
+  "chainId": 999,
+  "chainIdHex": "0x3e7",
+  "chainName": "HyperEVM",
+  "rpcUrl": "https://hyperliquid.drpc.org",
+  "logRpcUrl": "https://rpc.purroofgroup.com",
+  "rpcBatchMaxCount": 1,
+  "explorerUrl": "https://hyperevmscan.io",
+  "nativeCurrency": {
+    "name": "HYPE",
+    "symbol": "HYPE",
+    "decimals": 18
+  },
+  "hyperliquidInfoUrl": "https://api.hyperliquid.xyz/info",
+  "contracts": {
+    "exchange": "0x533d0bc51bafeb1519f1bac93d48c175b1496063",
+    "exchangeExt": "0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0",
+    "usdc": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+    "oracle": "0x1fa6c831868527c65c33e14fd2456855458e03ba",
+    "confetti": "0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2",
+    "staking": "0x2bf4976eb70cdcc03871ab60977fc4292587ce9a",
+    "referrals": "0x1dcdbe02568169a777ad6d2b3c5edcf5058780da",
+    "priceSource": "0xFaF573187824D176fc74d1de91a072eb6ffa8494",
+    "marketRules": "0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d",
+    "sessionRouter": "0x5477ab941a551874596aeeb16d3bcf79a120351d",
+    "depositFactory": "0xe5bb8b4703787f428aaa6a3755add72b9c82fb75",
+    "v2Exchange": "0x257d667a52b282ac0b4c001fd437522bf6b9cbe2",
+    "v3Exchange": "0x723943c8fdd71e0e670b18d15be737222f3a0810",
+    "v3Staking": "0x167549bb697f96ee19e0ffbfa5ab5f6487f10051",
+    "v3Referrals": "0xdf0c59514877f38a7b59bd7db1422217ab25714b"
+  },
+  "swap": {
+    "router": "0xb4a9c4e6ea8e2191d2fa5b380452a634fb21240a",
+    "pair": "0x9cD9b6514f28325c8F18F1c5aBe311D5c737D930",
+    "whype": "0x5555555555555555555555555555555555555555"
+  },
+  "houseBots": [],
+  "pointsRelay": "",
+  "deployBlock": 48983821,
+  "v3DeployBlock": 48797405,
+  "v2DeployBlock": 48404443,
+  "logChunkBlocks": 20000,
+  "logChunksPerLoad": 10,
+  "$settings": "Stand-ins until the page reads the live values from the exchange (minMarginUsdc(), winFeeBps(), lossFeeBps(), borrowFreeHours(), maxWinBps()).",
+  "minMarginUsdc": 5,
+  "bustBufferPct": 95,
+  "bustGapBps": 5,
+  "winFeeBps": 500,
+  "lossFeeBps": 500,
+  "borrowFreeHours": 1,
+  "maxWinBps": 2500,
+  "impactDefaults": {
+    "$comment": "Used for PnL estimates only until the live curve is read from instrument(id). positionMultiplier 130,000,000 reproduces the published 88% / 74% kept-gain targets (1% / 0.1% move).",
+    "baseRateBps": 1000,
+    "rateMultiplier": 15000,
+    "referenceNotionalUsd": 20000,
+    "positionMultiplier": 130000000
+  },
+  "tiers": {
+    "A": {
+      "code": 0,
+      "maxLeverage": 1000,
+      "deadbandBps": 1,
+      "clampBps": 5
+    },
+    "B": {
+      "code": 1,
+      "maxLeverage": 250,
+      "deadbandBps": 3,
+      "clampBps": 25
+    },
+    "C": {
+      "code": 2,
+      "maxLeverage": 50,
+      "deadbandBps": 10,
+      "clampBps": 50
+    }
+  },
+  "markets": [
+    {
+      "symbol": "DOGE",
+      "coin": "DOGE",
+      "hlAssetIndex": 12,
+      "szDecimals": 0,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 10000000,
+      "launch": true
+    },
+    {
+      "symbol": "FARTCOIN",
+      "coin": "FARTCOIN",
+      "hlAssetIndex": 165,
+      "szDecimals": 1,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 150000,
+      "launch": true
+    },
+    {
+      "symbol": "VIRTUAL",
+      "coin": "VIRTUAL",
+      "hlAssetIndex": 162,
+      "szDecimals": 1,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 1000000,
+      "launch": true
+    },
+    {
+      "symbol": "WIF",
+      "coin": "WIF",
+      "hlAssetIndex": 98,
+      "szDecimals": 0,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 500000,
+      "launch": true
+    },
+    {
+      "symbol": "MELANIA",
+      "coin": "MELANIA",
+      "hlAssetIndex": 175,
+      "szDecimals": 1,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 150000,
+      "launch": true
+    },
+    {
+      "symbol": "FLOKI",
+      "coin": "kFLOKI",
+      "hlAssetIndex": 119,
+      "szDecimals": 0,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 150000,
+      "launch": true
+    },
+    {
+      "symbol": "PENGU",
+      "coin": "PENGU",
+      "hlAssetIndex": 163,
+      "szDecimals": 0,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 2000000,
+      "launch": true
+    },
+    {
+      "symbol": "PEOPLE",
+      "coin": "PEOPLE",
+      "hlAssetIndex": 100,
+      "szDecimals": 0,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 150000,
+      "launch": true
+    },
+    {
+      "symbol": "TRUMP",
+      "coin": "TRUMP",
+      "hlAssetIndex": 174,
+      "szDecimals": 1,
+      "tier": "B",
+      "maxLeverage": 250,
+      "oiCapPerSideUsd": 500000,
+      "launch": true
+    },
+    {
+      "symbol": "PEPE",
+      "coin": "kPEPE",
+      "hlAssetIndex": 15,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "oiCapPerSideUsd": 500000,
+      "launch": true
+    },
+    {
+      "symbol": "BTC",
+      "coin": "BTC",
+      "hlAssetIndex": 0,
+      "szDecimals": 5,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 10000000,
+      "launch": true
+    },
+    {
+      "symbol": "ETH",
+      "coin": "ETH",
+      "hlAssetIndex": 1,
+      "szDecimals": 4,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 10000000,
+      "launch": true
+    },
+    {
+      "symbol": "SHIB",
+      "coin": "kSHIB",
+      "hlAssetIndex": 38,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "PNUT",
+      "coin": "PNUT",
+      "hlAssetIndex": 153,
+      "szDecimals": 1,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "POPCAT",
+      "coin": "POPCAT",
+      "hlAssetIndex": 128,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "NEIRO",
+      "coin": "kNEIRO",
+      "hlAssetIndex": 148,
+      "szDecimals": 1,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "BABY",
+      "coin": "BABY",
+      "hlAssetIndex": 189,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "BONK",
+      "coin": "kBONK",
+      "hlAssetIndex": 85,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "LUNC",
+      "coin": "kLUNC",
+      "hlAssetIndex": 91,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "SPX",
+      "coin": "SPX",
+      "hlAssetIndex": 171,
+      "szDecimals": 1,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "BRETT",
+      "coin": "BRETT",
+      "hlAssetIndex": 134,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "BERA",
+      "coin": "BERA",
+      "hlAssetIndex": 180,
+      "szDecimals": 1,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "GOAT",
+      "coin": "GOAT",
+      "hlAssetIndex": 149,
+      "szDecimals": 0,
+      "tier": "B",
+      "maxLeverage": 250,
+      "launch": false
+    },
+    {
+      "symbol": "ANIME",
+      "coin": "ANIME",
+      "hlAssetIndex": 176,
+      "szDecimals": 0,
+      "tier": "C",
+      "maxLeverage": 50,
+      "launch": false
+    },
+    {
+      "symbol": "MOODENG",
+      "coin": "MOODENG",
+      "hlAssetIndex": 150,
+      "szDecimals": 0,
+      "tier": "C",
+      "maxLeverage": 50,
+      "launch": false
+    },
+    {
+      "symbol": "PURR",
+      "coin": "PURR",
+      "hlAssetIndex": 152,
+      "szDecimals": 0,
+      "tier": "C",
+      "maxLeverage": 50,
+      "launch": false
+    },
+    {
+      "symbol": "TURBO",
+      "coin": "TURBO",
+      "hlAssetIndex": 133,
+      "szDecimals": 0,
+      "tier": "C",
+      "maxLeverage": 50,
+      "launch": false
+    },
+    {
+      "symbol": "BOME",
+      "coin": "BOME",
+      "hlAssetIndex": 120,
+      "szDecimals": 0,
+      "tier": "C",
+      "maxLeverage": 50,
+      "launch": false
+    },
+    {
+      "symbol": "MEME",
+      "coin": "MEME",
+      "hlAssetIndex": 75,
+      "szDecimals": 0,
+      "tier": "C",
+      "maxLeverage": 50,
+      "launch": false
+    }
+  ]
+}

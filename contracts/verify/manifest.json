@@ -1,0 +1,137 @@
+{
+  "chainId": 999,
+  "deployBlock": 48983821,
+  "contracts": {
+    "PriceOracle": {
+      "address": "0x1fa6c831868527c65c33e14fd2456855458e03ba",
+      "fullyQualifiedName": "src/PriceOracle.sol:PriceOracle",
+      "creationTx": "0x65f766b1516bdd2d447faf941acb93d42083fc7d8c20a04f7179281497cbd69c",
+      "constructorArgs": "0x000000000000000000000000faf573187824d176fc74d1de91a072eb6ffa8494000000000000000000000000028e6bc799cab8c42a6f78a30b2c6d901e8a4161",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/PriceOracle.json",
+      "artifact": "out_e/PriceOracle.sol/PriceOracle.json",
+      "createdBy": "deploy script"
+    },
+    "Staking": {
+      "address": "0x2bf4976eb70cdcc03871ab60977fc4292587ce9a",
+      "fullyQualifiedName": "src/Staking.sol:Staking",
+      "creationTx": "0xf1875481e913aeb620e829929c009a28702233f910645b77aaed5f9543ba28ca",
+      "constructorArgs": "0x000000000000000000000000028e6bc799cab8c42a6f78a30b2c6d901e8a4161000000000000000000000000995b36d7e33680fc6fa1db6fa4dc8e475b5233a2000000000000000000000000b88339cb7199b77e23db6e890353e22632ba630f0000000000000000000000000000000000000000000000000000000000000e10",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/Staking.json",
+      "artifact": "out_e/Staking.sol/Staking.json",
+      "createdBy": "deploy script"
+    },
+    "ExchangeExt": {
+      "address": "0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0",
+      "fullyQualifiedName": "src/ExchangeExt.sol:ExchangeExt",
+      "creationTx": "0xbae3a959874226ac970e5068b907ce4d275cc744ba0e9ac285e2b98eb4d83222",
+      "constructorArgs": "0x000000000000000000000000b88339cb7199b77e23db6e890353e22632ba630f0000000000000000000000001fa6c831868527c65c33e14fd2456855458e03ba0000000000000000000000002bf4976eb70cdcc03871ab60977fc4292587ce9a000000000000000000000000028e6bc799cab8c42a6f78a30b2c6d901e8a4161",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/ExchangeExt.json",
+      "artifact": "out_e/ExchangeExt.sol/ExchangeExt.json",
+      "createdBy": "deploy script"
+    },
+    "Exchange": {
+      "address": "0x533d0bc51bafeb1519f1bac93d48c175b1496063",
+      "fullyQualifiedName": "src/Exchange.sol:Exchange",
+      "creationTx": "0x45d666bae56210ec2c97dbb680e85b55530d9d17e36d0a7fbfdc70e14adf7704",
+      "constructorArgs": "0x000000000000000000000000b88339cb7199b77e23db6e890353e22632ba630f0000000000000000000000001fa6c831868527c65c33e14fd2456855458e03ba0000000000000000000000002bf4976eb70cdcc03871ab60977fc4292587ce9a000000000000000000000000d23f1c74a64a5fb6f6a68da854d33d736918cbb0000000000000000000000000df0c59514877f38a7b59bd7db1422217ab25714b000000000000000000000000028e6bc799cab8c42a6f78a30b2c6d901e8a4161000000000000000000000000028e6bc799cab8c42a6f78a30b2c6d901e8a4161",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/Exchange.json",
+      "artifact": "out_e/Exchange.sol/Exchange.json",
+      "createdBy": "deploy script"
+    },
+    "Referrals": {
+      "address": "0x1dCDBe02568169A777Ad6D2b3C5edcF5058780dA",
+      "fullyQualifiedName": "src/Referrals.sol:Referrals",
+      "creationTx": "0x45d666bae56210ec2c97dbb680e85b55530d9d17e36d0a7fbfdc70e14adf7704",
+      "constructorArgs": "0x000000000000000000000000533d0bc51bafeb1519f1bac93d48c175b1496063000000000000000000000000df0c59514877f38a7b59bd7db1422217ab25714b",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/Referrals.json",
+      "artifact": "out_e/Referrals.sol/Referrals.json",
+      "createdBy": "Exchange constructor"
+    },
+    "MarketRules": {
+      "address": "0xE1E48BF50B8aF7D44e7f1ED3422598E381aAb72d",
+      "fullyQualifiedName": "src/MarketRules.sol:MarketRules",
+      "creationTx": "0x45d666bae56210ec2c97dbb680e85b55530d9d17e36d0a7fbfdc70e14adf7704",
+      "constructorArgs": "0x",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/MarketRules.json",
+      "artifact": "out_e/MarketRules.sol/MarketRules.json",
+      "createdBy": "Exchange constructor"
+    },
+    "SessionRouter": {
+      "address": "0x5477ab941a551874596AeEB16D3bCf79A120351d",
+      "fullyQualifiedName": "src/SessionRouter.sol:SessionRouter",
+      "creationTx": "0x45d666bae56210ec2c97dbb680e85b55530d9d17e36d0a7fbfdc70e14adf7704",
+      "constructorArgs": "0x000000000000000000000000533d0bc51bafeb1519f1bac93d48c175b1496063",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/SessionRouter.json",
+      "artifact": "out_e/SessionRouter.sol/SessionRouter.json",
+      "createdBy": "Exchange constructor"
+    },
+    "DepositProxyFactory": {
+      "address": "0xe5bb8b4703787f428aaa6a3755add72b9c82fb75",
+      "fullyQualifiedName": "src/deposit/DepositProxyFactory.sol:DepositProxyFactory",
+      "creationTx": "0x02b97feca1a4df48ede1d8eab43356878b52512473e8ecb7d124fa9934ab1393",
+      "constructorArgs": "0x000000000000000000000000533d0bc51bafeb1519f1bac93d48c175b1496063",
+      "compilerVersion": "v0.8.26+commit.8a97fa7a",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "cancun",
+      "viaIR": true,
+      "stdJson": "v4/999/std-json/DepositProxyFactory.json",
+      "artifact": "out_e/DepositProxyFactory.sol/DepositProxyFactory.json",
+      "createdBy": "deploy script"
+    }
+  },
+  "reused": {
+    "PrecompilePriceSource": "0xFaF573187824D176fc74d1de91a072eb6ffa8494"
+  }
+}

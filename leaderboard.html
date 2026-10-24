@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — leaderboard</title>
+  <meta name="description" content="Confetti leaderboards: points and realised PnL, read from HyperEVM.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+</head>
+<body class="tabs-page" data-page="leaderboard">
+
+  <header class="header container-fluid ph-head">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <nav class="nav nav-main" aria-label="Primary">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html">$FETTI</a>
+      <a href="leaderboard.html" aria-current="page">Leaderboard</a>
+    </nav>
+    <div class="header-actions">
+      <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
+    </div>
+    <a class="ph-only ph-pts is-idle" id="phPts" href="trade.html#pointsPanel" aria-label="Points"><i class="ph-pts-dot" aria-hidden="true"></i><span class="ph-pts-val" id="phPtsVal">Earn<span class="ph-pts-word"> points</span></span><span class="ph-pts-delta" id="phPtsDelta" aria-hidden="true"></span></a>
+    <button class="ph-only ph-acct is-out" id="phAcct" type="button" aria-haspopup="dialog" aria-controls="phAcctSheet"><span class="ph-acct-txt" id="phAcctTxt">Connect</span><span class="ph-acct-caret" aria-hidden="true"></span></button>
+    <button class="ph-only ph-menu" id="phMenu" type="button" aria-label="Menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="phMenuSheet"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></button>
+  </header>
+
+  <main class="container tab-main">
+    <div class="tab-title"><h1>Leaderboard</h1><span class="sub" id="lbNote"></span></div>
+
+    <div class="tab-grid">
+      <section class="panel" aria-label="Points">
+        <div class="panel-head"><span>Points</span><span class="count" id="lbPtsCount"></span></div>
+        <div class="pos-lines" id="lbPoints">
+          <div class="empty">Loading points…</div>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Realised PnL">
+        <div class="panel-head"><span>Realised PnL</span><span class="count" id="lbPnlCount"></span></div>
+        <div class="pos-lines" id="lbPnl">
+          <div class="empty">Scanning events…</div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+    </footer>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <!-- Phones: the Menu sheet (the header's Menu) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phMenuSheet" aria-labelledby="phMenuTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phMenuTitle">Menu</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <nav class="ph-menu-list" aria-label="Pages">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html">$FETTI</a>
+      <a href="leaderboard.html" aria-current="page">Leaderboard</a>
+      <a class="ph-menu-sub" href="docs.html">Docs</a>
+      <a class="ph-menu-sub" href="contracts.html">Contracts</a>
+    </nav>
+  </dialog>
+
+  <!-- Phones: the Account sheet (the header's account button) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phAcctSheet" aria-labelledby="phAcctTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phAcctTitle">Account</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="ph-acct-body">
+      <div class="ph-kv js-ph-num" hidden><span>Balance</span><b class="js-ph-bal">—</b></div>
+      <div class="ph-kv js-ph-num" hidden><span>In trades</span><b class="js-ph-margin">—</b></div>
+      <div class="ph-kv js-ph-num" hidden><span>P&amp;L</span><b class="js-ph-pnl">—</b></div>
+      <div class="ph-acct-btns">
+        <a class="ph-btn" href="trade.html">+ Deposit</a>
+        <a class="ph-btn" href="trade.html">Withdraw</a>
+      </div>
+      <div class="ph-addr"><span class="ph-addr-v js-ph-addr">—</span><button class="ph-quiet js-ph-copy" type="button">Copy</button></div>
+      <a class="ph-quiet js-ph-explorer" href="https://hyperevmscan.io" target="_blank" rel="noopener">View on explorer</a>
+      <button class="ph-quiet js-ph-send" type="button" hidden>Send points</button>
+      <button class="ph-quiet ph-disc js-ph-disc" type="button">Disconnect</button>
+    </div>
+  </dialog>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="tabs.js?v=phone4" defer></script>
+  <script src="points.js?v=phone2" defer></script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — terms</title>
+  <meta name="description" content="What confetti.trade is, who the counterparty is, how fills, fees, the haircut, the cap and the payout queue work, and who it is not for.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+  <style>
+    /* terms.html only. Tokens and components come from paper.css?v=v3tabs. */
+    .header .container { display: flex; align-items: center; gap: var(--gap); width: 100%; }
+    .header .nav { flex: none; }
+    .header-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+
+    .terms-main { max-width: 720px; padding-top: 28px; padding-bottom: 60px; }
+    .terms-main > header { margin-bottom: 24px; }
+    .terms-main h1 { margin-bottom: 6px; }
+    .lede { font-family: var(--font-display); font-size: 19px; line-height: 1.45; color: var(--ink-muted); max-width: 60ch; }
+    .dated { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .terms-main section { padding: 4px 0 20px; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
+    .terms-main section:last-of-type { border-bottom: 0; }
+    .terms-main h2 { font-size: var(--text-xl); margin-bottom: 10px; scroll-margin-top: calc(var(--header-h) + 20px); }
+    .terms-main p { max-width: 70ch; }
+    .terms-main p:last-child { margin-bottom: 0; }
+
+    .site-foot {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+      padding-top: 20px; padding-bottom: 40px; border-top: 1px solid var(--rule);
+      font-size: var(--text-xs); color: var(--ink-faint);
+    }
+    .site-foot .wordmark { font-size: var(--text-lg); }
+    .site-foot a { color: var(--ink-muted); }
+    .site-foot .spacer { flex: 1 1 auto; }
+
+    @media (max-width: 600px) {
+      .lede { font-size: 17px; }
+    }
+  </style>
+</head>
+<body class="docs">
+  <header class="header">
+    <div class="container">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <nav class="nav" aria-label="Site">
+        <a href="trade.html">Trade</a>
+        <a href="docs.html">Docs</a>
+        <a href="terms.html" aria-current="page">Terms</a>
+      </nav>
+      <div class="header-tools">
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <main class="terms-main" id="content">
+      <header>
+        <h1>Terms</h1>
+        <p class="lede">Using confetti.trade means you accept these.</p>
+        <p class="dated">Last changed 18 October 2026.</p>
+      </header>
+
+      <section id="what">
+        <h2>What this is</h2>
+        <p>Synthetic perpetuals on meme coins, up to 1000x, on HyperEVM (chain 999). You deposit USDC into the Exchange contract and trade against the house. The site is a front end to those contracts; it holds nothing and signs nothing.</p>
+        <p>Nothing here is advice.</p>
+      </section>
+
+      <section id="eligibility">
+        <h2>Who may use it</h2>
+        <p>You must be 18 or older and allowed to trade leveraged derivatives where you live.</p>
+      </section>
+
+      <section id="house">
+        <h2>The house is the counterparty</h2>
+        <p>Every position is against the house. There is no order book and no other trader on the other side. Your gain is the house's loss, and the other way round.</p>
+        <p>The house adds and withdraws its money at any time, down to what it owes queued winners and fees already earned. A win the house cash cannot cover waits in the queue.</p>
+      </section>
+
+      <section id="pricing">
+        <h2>Pricing and fills</h2>
+        <p>Every fill, close and liquidation settles on the HyperCore oracle price, never on a book. A trade is a request: it records the oracle price when you ask, nobody can fill it for 5 seconds, then for 3 seconds only the house's keeper may fill it, at the print it sees. After that anyone may fill it, at the worse of the two prints, until it expires at 60 seconds; then anyone may cancel it and the margin returns. You cannot cancel early. An open whose price jumped too far before the fill is refunded, as is one that would already be busted or no longer fits the limits.</p>
+        <p>A close fills 5 to 8 seconds after you request it; house cash can change in that time.</p>
+        <p>A position is liquidated once the oracle price touches its bust price, 5 bps away at 1000x. The whole margin is lost, 0.5% of it to whoever liquidates.</p>
+      </section>
+
+      <section id="fees">
+        <h2>Fees</h2>
+        <p>On a win you pay the impact haircut, then the win fee on what is left. On a loss you pay nothing beyond the loss. An open fills a small spread past the oracle print. Held past the free hours, a position pays a borrow fee for each whole hour, taken from its payout at close. Every rate is stamped on the position when it opens; the trade page shows them. A share of a referred trader's fees goes to the referrer.</p>
+      </section>
+
+      <section id="caps">
+        <h2>Limits and payout cap</h2>
+        <p>How big a position can be is set by the market and by the house's free cash, in the block it opens. What a position can win is capped when it opens: a multiple of its margin, or a share of the house's free cash if that is smaller. Anything above the cap is forfeited to the house. Losses stop at your margin.</p>
+      </section>
+
+      <section id="queue">
+        <h2>The payout queue</h2>
+        <p>A win the house cannot pay at once is a queued claim: first in, first out, paid from losses and house deposits by anyone who calls harvest. While the queue is not empty every new win joins it. A queued claim carries no interest and no date. Your margin always returns at once.</p>
+      </section>
+
+      <section id="keys">
+        <h2>Keys and custody</h2>
+        <p>The site never sees your keys. Every action is a transaction your own wallet signs and sends. Deposits sit in the Exchange contract until you withdraw them. Nobody can reverse a transaction or recover a wallet for you.</p>
+      </section>
+
+      <section id="risk">
+        <h2>No guarantees</h2>
+        <p>You can lose every dollar you deposit, quickly. The contracts are immutable and have not been audited by a third party. The site, the chain, the oracle feed and the keeper can all fail or fall behind; opens can be paused and a market retired. Everything is provided as is, with no warranty of any kind, and what the house owes you is what the contracts pay out, nothing more.</p>
+      </section>
+
+      <section id="changes">
+        <h2>Changes</h2>
+        <p>These terms can change. The date at the top is the current version; using the site after a change accepts it.</p>
+      </section>
+
+      <section id="contact">
+        <h2>Contact</h2>
+        <p><a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a> on X, or an issue at <a href="https://github.com/confettitrade/confetti/issues" target="_blank" rel="noopener">github.com/confettitrade/confetti/issues</a>.</p>
+        <p id="security">Security reports: the same channels, with the details kept private until fixed. There is no bounty programme yet. Machine-readable: <a href="/.well-known/security.txt">security.txt</a>.</p>
+      </section>
+    </main>
+  </div>
+
+  <footer class="container site-foot">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <span>synthetic perpetuals on meme coins · HyperEVM (999)</span>
+    <span class="spacer"></span>
+    <a href="trade.html">trade</a>
+    <a href="docs.html">docs</a>
+    <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+    <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+    <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+  </footer>
+
+  <script>
+    (function () {
+      document.documentElement.setAttribute('data-theme', 'night');
+    })();
+  </script>
+  <script src="points.js?v=phone2" defer></script>
+</body>
+</html>

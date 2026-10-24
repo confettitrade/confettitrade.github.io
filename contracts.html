@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — contracts</title>
+  <meta name="description" content="Every contract confetti.trade asks your wallet to use, with its verified source on Sourcify and hyperevmscan.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+  <style>
+    /* contracts.html (copied from terms.html). Tokens and components come from paper.css?v=v3tabs. */
+    .contract-list { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+    .contract-list li { padding: 14px 0; border-bottom: 1px solid var(--rule); }
+    .contract-list .c-name { font-weight: 600; color: var(--ink); }
+    .contract-list .c-what { color: var(--ink-muted); margin: 2px 0 6px; }
+    .contract-list .c-addr { font-family: var(--font-mono); font-size: var(--text-sm); word-break: break-all; color: var(--ink); }
+    .contract-list .c-src { margin-top: 6px; font-size: var(--text-sm); display: flex; gap: 14px; flex-wrap: wrap; }
+    .header .container { display: flex; align-items: center; gap: var(--gap); width: 100%; }
+    .header .nav { flex: none; }
+    .header-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+
+    .terms-main { max-width: 720px; padding-top: 28px; padding-bottom: 60px; }
+    .terms-main > header { margin-bottom: 24px; }
+    .terms-main h1 { margin-bottom: 6px; }
+    .lede { font-family: var(--font-display); font-size: 19px; line-height: 1.45; color: var(--ink-muted); max-width: 60ch; }
+    .dated { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+    .terms-main section { padding: 4px 0 20px; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
+    .terms-main section:last-of-type { border-bottom: 0; }
+    .terms-main h2 { font-size: var(--text-xl); margin-bottom: 10px; scroll-margin-top: calc(var(--header-h) + 20px); }
+    .terms-main p { max-width: 70ch; }
+    .terms-main p:last-child { margin-bottom: 0; }
+
+    .site-foot {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+      padding-top: 20px; padding-bottom: 40px; border-top: 1px solid var(--rule);
+      font-size: var(--text-xs); color: var(--ink-faint);
+    }
+    .site-foot .wordmark { font-size: var(--text-lg); }
+    .site-foot a { color: var(--ink-muted); }
+    .site-foot .spacer { flex: 1 1 auto; }
+
+    @media (max-width: 600px) {
+      .lede { font-size: 17px; }
+    }
+  </style>
+</head>
+<body class="docs">
+  <header class="header">
+    <div class="container">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <nav class="nav" aria-label="Site">
+        <a href="trade.html">Trade</a>
+        <a href="docs.html">Docs</a>
+        <a href="terms.html">Terms</a>
+      </nav>
+      <div class="header-tools">
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <main class="terms-main" id="content">
+      <header>
+        <h1>Contracts</h1>
+        <p class="lede">Every contract this site asks your wallet to use, and where to read its source.</p>
+        <p class="dated">Checked 23 October 2026. HyperEVM, chain 999.</p>
+      </header>
+
+      <section id="check">
+        <h2>Before you sign</h2>
+        <p>A wallet prompt from confetti.trade only ever names an address on this page. Approvals are for the exact amount you typed, never unlimited, and the site never asks you to sign a message or a permit. If a prompt names any other address, stop and tell us on <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>.</p>
+        <p>New sites can get a notice from a wallet's scanner until the scanner knows them. Each contract below has its full source published and matched byte for byte to what is on chain.</p>
+      </section>
+
+      <section id="current">
+        <h2>Current contracts</h2>
+        <ul class="contract-list">
+          <li><div class="c-name">Exchange</div><div class="c-what">Holds your USDC balance; opens, closes and pays out trades. Deposits approve this address.</div><div class="c-addr">0x533d0bc51bafeb1519f1bac93d48c175b1496063</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x533d0bc51bafeb1519f1bac93d48c175b1496063" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x533d0bc51bafeb1519f1bac93d48c175b1496063#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Exchange extension</div><div class="c-what">The second half of the exchange's code (it is too big for one contract).</div><div class="c-addr">0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Staking</div><div class="c-what">Where FETTI is staked for a share of the fees. Staking approves this address.</div><div class="c-addr">0x2bf4976eb70cdcc03871ab60977fc4292587ce9a</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x2bf4976eb70cdcc03871ab60977fc4292587ce9a" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x2bf4976eb70cdcc03871ab60977fc4292587ce9a#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">FETTI token</div><div class="c-what">The FETTI token itself.</div><div class="c-addr">0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Price oracle</div><div class="c-what">Reads Hyperliquid's prices for every market.</div><div class="c-addr">0x1fa6c831868527c65c33e14fd2456855458e03ba</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x1fa6c831868527c65c33e14fd2456855458e03ba" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x1fa6c831868527c65c33e14fd2456855458e03ba#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Price source</div><div class="c-what">The HyperEVM precompile reader the oracle uses.</div><div class="c-addr">0xFaF573187824D176fc74d1de91a072eb6ffa8494</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0xFaF573187824D176fc74d1de91a072eb6ffa8494" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0xFaF573187824D176fc74d1de91a072eb6ffa8494#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Referrals</div><div class="c-what">Referral codes and their share of fees.</div><div class="c-addr">0x1dcdbe02568169a777ad6d2b3c5edcf5058780da</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x1dcdbe02568169a777ad6d2b3c5edcf5058780da" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x1dcdbe02568169a777ad6d2b3c5edcf5058780da#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Market rules</div><div class="c-what">Per-market limits: leverage, caps and fees.</div><div class="c-addr">0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Session router</div><div class="c-what">One-click trading: the browser key you allow may file trades for you, nothing else.</div><div class="c-addr">0x5477ab941a551874596aeeb16d3bcf79a120351d</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x5477ab941a551874596aeeb16d3bcf79a120351d" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x5477ab941a551874596aeeb16d3bcf79a120351d#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Deposit factory</div><div class="c-what">Makes your personal deposit address for funds sent from Hyperliquid.</div><div class="c-addr">0xe5bb8b4703787f428aaa6a3755add72b9c82fb75</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0xe5bb8b4703787f428aaa6a3755add72b9c82fb75" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0xe5bb8b4703787f428aaa6a3755add72b9c82fb75#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+        </ul>
+        <p class="muted">USDC is Circle's native USDC on HyperEVM, <code>0xb88339CB7199b77E23DB6E890353E22632Ba630f</code>: not ours.</p>
+      </section>
+
+      <section id="older">
+        <h2>Older contracts</h2>
+        <p>Only used to bring an old balance or stake across. New trades never touch them.</p>
+        <ul class="contract-list">
+          <li><div class="c-name">Exchange v3 (older)</div><div class="c-what">Still used to withdraw an old v3 balance.</div><div class="c-addr">0x723943c8fdd71e0e670b18d15be737222f3a0810</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x723943c8fdd71e0e670b18d15be737222f3a0810" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x723943c8fdd71e0e670b18d15be737222f3a0810#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+          <li><div class="c-name">Staking v3 (older)</div><div class="c-what">Still used to move an old stake to the current staking.</div><div class="c-addr">0x167549bb697f96ee19e0ffbfa5ab5f6487f10051</div><div class="c-src"><a href="https://sourcify.dev/#/lookup/0x167549bb697f96ee19e0ffbfa5ab5f6487f10051" target="_blank" rel="noopener">Source on Sourcify ↗</a><a href="https://hyperevmscan.io/address/0x167549bb697f96ee19e0ffbfa5ab5f6487f10051#code" target="_blank" rel="noopener">Source on hyperevmscan ↗</a></div></li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <footer class="container site-foot">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <span>synthetic perpetuals on meme coins · HyperEVM (999)</span>
+    <span class="spacer"></span>
+    <a href="trade.html">trade</a>
+    <a href="docs.html">docs</a>
+    <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+    <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+    <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+  </footer>
+
+  <script>
+    (function () {
+      document.documentElement.setAttribute('data-theme', 'night');
+    })();
+  </script>
+  <script src="points.js?v=phone2" defer></script>
+</body>
+</html>
