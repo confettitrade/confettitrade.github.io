@@ -200,6 +200,8 @@
   var chart = {
     canvas: $('pvChart'),
     pill: $('pvPill'),
+    deskCanvas: $('dkPvChart'),   /* the desktop preview's chart (shown >= 901 px only; 0 wide otherwise, so skipped) */
+    deskPx: $('dkPvPx'),
     candles: null,     /* [{t, o, h, l, c}] oldest first */
     synthetic: false,  /* true when drawn from a placeholder walk */
     inFlight: false,
@@ -289,7 +291,17 @@
   }
 
   function drawChart() {
-    var canvas = chart.canvas;
+    drawOn(chart.canvas);
+    drawOn(chart.deskCanvas);
+    var ks = chart.candles;
+    if (chart.deskPx && ks && ks.length) {
+      chart.deskPx.textContent = fmtPrice(ks[ks.length - 1].c);
+      var open = $('dkPvOpen');
+      if (open) open.textContent = chart.deskPx.textContent;
+    }
+  }
+
+  function drawOn(canvas) {
     if (!canvas || !chart.candles || chart.candles.length === 0) return;
     var w = canvas.clientWidth;
     var h = canvas.clientHeight;
@@ -391,7 +403,7 @@
     ctx.fillText(tag, padL + cw + 6, ly);
 
     /* pill */
-    if (chart.pill) {
+    if (chart.pill && canvas === chart.canvas) {
       chart.pill.textContent = CHART_COIN + ' ' + fmtPrice(last.c) + (chart.synthetic ? ' · offline' : '');
       chart.pill.classList.toggle('pill-pos', last.c >= last.o);
       chart.pill.classList.toggle('pill-neg', last.c < last.o);
@@ -571,8 +583,32 @@
         list.forEach(function (a, i) {
           if (typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a) && !houseBots.idx[a.toLowerCase()]) { houseBots.idx[a.toLowerCase()] = i + 1; houseBots.n++; }
         });
+        renderLive(c);
       }).catch(function () { /* decoration */ });
     } catch (e) { /* no fetch */ }
+  }
+
+  /* The desktop hero's fact line: the live coins and their caps, from config.json's markets (launch true).
+     No money figure: the landing reads no chain, so it states nothing it cannot read. */
+  function renderLive(c) {
+    var host = $('heroLive');
+    var ms = c && Array.isArray(c.markets) ? c.markets.filter(function (m) { return m && m.launch; }) : [];
+    if (!host || !ms.length) return;
+    var byCap = {};
+    ms.forEach(function (m) { var l = Number(m.maxLeverage) || 0; if (l > 0) byCap[l] = (byCap[l] || 0) + 1; });
+    var caps = Object.keys(byCap).map(Number).sort(function (a, b) { return b - a; });
+    host.textContent = '';
+    function part(num, words, pre) {
+      if (host.firstChild) host.appendChild(document.createTextNode(' · '));
+      if (pre) host.appendChild(document.createTextNode(pre));
+      var b = document.createElement('b');
+      b.textContent = num;
+      host.appendChild(b);
+      host.appendChild(document.createTextNode(' ' + words));
+    }
+    part(String(ms.length), ms.length === 1 ? 'coin live' : 'coins live');
+    caps.forEach(function (l) { part(l + 'x', 'on ' + byCap[l], 'up to '); });
+    host.setAttribute('data-ready', '');
   }
 
   function init() {
@@ -596,7 +632,9 @@
       document.fonts.ready.then(function () { sizeTape(); scheduleDraw(); }, function () {});
     }
     if (typeof ResizeObserver === 'function' && chart.canvas) {
-      new ResizeObserver(function () { scheduleDraw(); }).observe(chart.canvas);
+      var ro = new ResizeObserver(function () { scheduleDraw(); });
+      ro.observe(chart.canvas);
+      if (chart.deskCanvas) ro.observe(chart.deskCanvas);
     }
   }
 

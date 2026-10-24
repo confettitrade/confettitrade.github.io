@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="paper.css?v=desk2">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -42,9 +42,10 @@
   <main class="container tab-main">
     <div class="tab-title"><h1>Leaderboard</h1><span class="sub" id="lbNote"></span></div>
 
-    <div class="tab-grid">
+    <div class="tab-grid lb-grid">
       <section class="panel" aria-label="Points">
         <div class="panel-head"><span>Points</span><span class="count" id="lbPtsCount"></span></div>
+        <div class="dk-thead dk-lb-pts" hidden><span class="dk-n">#</span><span>Wallet</span><span class="dk-n">Points</span></div>
         <div class="pos-lines" id="lbPoints">
           <div class="empty">Loading points…</div>
         </div>
@@ -52,6 +53,7 @@
 
       <section class="panel" aria-label="Realised PnL">
         <div class="panel-head"><span>Realised PnL</span><span class="count" id="lbPnlCount"></span></div>
+        <div class="dk-thead dk-lb-pnl" hidden><span class="dk-n">#</span><span>Wallet</span><span class="dk-n">Closed</span><span class="dk-n">P&amp;L</span></div>
         <div class="pos-lines" id="lbPnl">
           <div class="empty">Scanning events…</div>
         </div>
@@ -106,7 +108,7 @@
     </div>
   </dialog>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="tabs.js?v=phone4" defer></script>
+  <script src="tabs.js?v=desk2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

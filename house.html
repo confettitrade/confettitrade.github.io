@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="paper.css?v=desk2">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -66,8 +66,9 @@
       </div>
     </section>
 
-    <section class="panel tab-section" aria-label="Open interest by market">
+    <section class="panel tab-section" id="hsOiPanel" aria-label="Open interest by market">
       <div class="panel-head"><span>Open interest</span><span class="count" id="hsOiTotal"></span></div>
+      <div class="dk-thead dk-hs-oi" hidden><span>Coin</span><span>Tier</span><span class="dk-n">Long</span><span class="dk-n">Short</span><span class="dk-n">Cap per side</span><span class="dk-n">Leverage</span><span class="dk-n">Max long</span><span class="dk-n">Max short</span><span class="dk-st">Status</span></div>
       <div class="pos-lines" id="hsOi">
         <div class="empty">Loading…</div>
       </div>
@@ -75,6 +76,7 @@
 
     <section class="panel tab-section" aria-label="Payout queue">
       <div class="panel-head"><span>Payout queue</span><span class="count" id="hsQueueCount"></span></div>
+      <div class="dk-thead dk-hs-queue" hidden><span>Place</span><span>Wallet</span><span class="dk-n">Owed</span></div>
       <div class="pos-lines" id="hsQueue">
         <div class="empty">Loading…</div>
       </div>
@@ -82,6 +84,7 @@
 
     <section class="panel tab-section" aria-label="House deposits and withdrawals">
       <div class="panel-head"><span>House moves</span><span class="count" id="hsMovesCount"></span></div>
+      <div class="dk-thead dk-hs-moves" hidden><span>Time</span><span>Move</span><span class="dk-n">Amount</span><span class="dk-n">House after</span><span class="dk-n">Tx</span></div>
       <div class="pos-lines" id="hsMoves">
         <div class="empty">Loading…</div>
       </div>
@@ -136,7 +139,7 @@
   </dialog>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="keeper.js?v=house1" defer></script>
-  <script src="tabs.js?v=phone4" defer></script>
+  <script src="tabs.js?v=desk2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

@@ -1022,6 +1022,7 @@
     if (t && t.textContent !== txt) t.textContent = txt;
     b.classList.toggle('is-out', mode === 'out');
     b.classList.toggle('is-warn', mode === 'warn');
+    b.classList.toggle('is-addr', mode !== 'out' && txt === shortAddr(wallet.account));   /* the pill drops "points" so the wordmark stays whole (cf_FIX) */
     var label = mode === 'out' ? txt : mode === 'warn' ? 'Account ' + txt + ': wrong network' : 'Account: ' + (phNums ? 'balance ' : '') + txt;
     if (b.getAttribute('aria-label') !== label) b.setAttribute('aria-label', label);
     b.setAttribute('aria-haspopup', mode === 'out' ? 'false' : 'dialog');
@@ -1270,6 +1271,11 @@
   var portfolio = (function () {
     var pf = null;
 
+    /* desktop (>= 901 px, piece C): Open and History as the trade page's tables */
+    var DESK_MQ = window.matchMedia ? window.matchMedia('(min-width: 901px)') : null;
+    function isDesk() { return !!(DESK_MQ && DESK_MQ.matches); }
+    function dkCell(cls, text) { return el('div', 'dk-cell' + (cls ? ' ' + cls : ''), text); }
+
     function fresh(addr) {
       return {
         addr: addr, acct: null, positions: [], conf: null,
@@ -1382,7 +1388,50 @@
       }, function (e) { s.scanning = false; throw e; });
     }
 
+    /* Desktop: the trade page's nine columns: position, size, put in, entry, now, liquidation (price,
+       bar, distance in liqRoom's colours), P&L, %, and the Trade link; what a close pays now is the
+       P&L cell's title, the id the row's. */
+    function dkPositionLine(p) {
+      var sz = szOf(p.instrumentId), sym = symOf(p.instrumentId);
+      var line = el('div', 'pos-line dk-row ' + (p.isLong ? 'is-long' : 'is-short'));
+      line.title = 'Position #' + p.id + ' · size ' + fmtUsd(p.margin * p.leverage) + ' · put in ' + fmtUsd(p.margin);
+      var who = dkCell('dk-who');
+      who.appendChild(el('span', 'pc-side', p.isLong ? 'LONG' : 'SHORT'));
+      who.appendChild(el('span', 'pc-sym', sym));
+      who.appendChild(el('span', 'pc-lev', p.leverage + 'x'));
+      line.appendChild(who);
+      line.appendChild(dkCell('dk-num', fmtUsd(p.margin * p.leverage)));
+      line.appendChild(dkCell('dk-num', fmtUsd(p.margin)));
+      line.appendChild(dkCell('dk-num', fmtPrice(p.entry, sz)));
+      line.appendChild(dkCell('dk-num', fmtPrice(p.px, sz)));
+      var room = liqRoom(p, p.px);
+      var full = bustMovePct(p.leverage) / 100;
+      var liq = dkCell('dk-liq' + (room.cls ? ' ' + room.cls : ''));
+      liq.appendChild(el('span', 'dk-liq-px', fmtPrice(room.liq, sz)));
+      var bar = el('span', 'dk-bar'); bar.setAttribute('aria-hidden', 'true');
+      var fill = el('i'); fill.style.width = (isFinite(room.away) && full > 0 ? clamp(room.away / full, 0, 1) * 100 : 0).toFixed(1) + '%';
+      bar.appendChild(fill);
+      liq.appendChild(bar);
+      liq.appendChild(el('span', 'dk-away', isFinite(room.away) ? fmtAway(room.away) : ''));
+      liq.appendChild(el('span', 'dk-away-w', 'away'));
+      line.appendChild(liq);
+      if (room.cls === 'is-red') line.classList.add('is-near');
+      var known = p.pnl != null && isFinite(p.pnl);
+      var cls = known ? signCls(p.pnl) : '';
+      var pnl = dkCell('dk-num' + (cls ? ' ' + cls : ''), known ? fmtUsd(p.pnl, true) : '—');
+      if (p.payout != null) pnl.title = 'a close now pays about ' + fmtUsd(p.payout) + (p.fee ? ' · fee ' + fmtUsd(p.fee) : '');
+      line.appendChild(pnl);
+      line.appendChild(dkCell('dk-num dk-pct' + (cls ? ' ' + cls : ''), known ? fmtPct1(p.pnl / p.margin) : ''));
+      var act = dkCell('dk-act');
+      var go = el('a', 'btn btn-sm btn-ghost', 'Trade');
+      go.href = 'trade.html#' + encodeURIComponent(sym);
+      act.appendChild(go);
+      line.appendChild(act);
+      return line;
+    }
+
     function positionLine(p) {
+      if (isDesk()) return dkPositionLine(p);
       var sz = szOf(p.instrumentId);
       var line = el('div', 'pos-line');
       line.appendChild(el('span', 'sym', symOf(p.instrumentId)));
@@ -1468,7 +1517,7 @@
           else if (String(a.payer).toLowerCase() !== pf.addr.toLowerCase()) d.details = 'from ' + shortAddr(a.payer);
           break;
         case 'Withdrawn':
-          d.label = 'withdraw'; d.amount = -usd6(a.amountUsdc);
+          d.label = 'withdraw'; d.amount = -usd6(a.amountUsdc); d.flow = true;   /* to the wallet, not a loss: no pink (cf_FIX) */
           break;
         case 'PositionOpened':
           d.label = 'opened'; d.id = String(a.positionId); d.market = symOf(Number(a.instrumentId));
@@ -1504,10 +1553,11 @@
        liquidation adds its one plain sentence. The whole row is the transaction's explorer link;
        a win keeps Share. The same component, in the same words, as the trade page's rows
        (trade.js phHistoryLine). Every field today's line shows is here or in the row's title. */
-    function phHistoryLine(r) {
-      var a = r.args, d = describe(r);
-      var o = d.id ? pf.opened[d.id] : null;
-      var sz = o ? szOf(o.instrumentId) : (r.name === 'PositionOpened' ? szOf(Number(a.instrumentId)) : null);
+    /* The words of a history line under its title (piece 12's switch, lifted so the phone line and
+       the desktop cell (piece C) never drift): what, side, the detail parts, the liquidation
+       sentence, the row's tone. o: the position's open (pf.opened), sz its size decimals. */
+    function detailParts(r, d, o, sz) {
+      var a = r.args;
       var what = { deposit: 'Deposit', dividend: 'Dividend', withdraw: 'Withdrawal', opened: 'Opened', closed: 'Closed', liquidated: 'Liquidated', queued: 'Win owed', 'queue paid': 'Owed win paid', refunded: 'Refunded' }[d.label] || d.label;
       var side = d.side ? d.side.charAt(0).toUpperCase() + d.side.slice(1) : null;
       var parts = [], sentence = null, cls = '';
@@ -1532,6 +1582,15 @@
         case 'QueuePaid': if (a.remainingUsdc > 0n) parts.push(fmtUsd(usd6(a.remainingUsdc)) + ' still owed'); break;
         case 'OpenRequestCancelled': parts.push("didn't open"); break;
       }
+      return { what: what, side: side, parts: parts, sentence: sentence, cls: cls };
+    }
+
+    function phHistoryLine(r) {
+      var a = r.args, d = describe(r);
+      var o = d.id ? pf.opened[d.id] : null;
+      var sz = o ? szOf(o.instrumentId) : (r.name === 'PositionOpened' ? szOf(Number(a.instrumentId)) : null);
+      var dp = detailParts(r, d, o, sz), parts = dp.parts, sentence = dp.sentence, cls = dp.cls;
+      var what = dp.what, side = dp.side;
       var line = el('div', 'pos-line hist-line ph-hist' + cls);
       if (d.id) line.title = (d.id.charAt(0) === 'r' ? 'Request #' : 'Position #') + d.id.replace(/^r/, '') + (d.details ? ' · ' + d.details : '');
       var link = !!(r.tx && !DEMO);
@@ -1541,7 +1600,7 @@
       var w = el('span', 'ph-hist-what', what + ' ');
       if (d.market) { w.appendChild(el('b', null, d.market)); if (side) w.appendChild(document.createTextNode(' ' + side)); }
       top.appendChild(w);
-      if (d.amount != null) top.appendChild(el('b', 'ph-hist-money' + (d.signed ? (d.amount > 0 ? ' pos' : d.amount < 0 ? ' neg' : '') : ''), fmtUsd(d.amount, d.signed)));
+      if (d.amount != null) top.appendChild(el('b', 'ph-hist-money' + (d.signed && !d.flow ? (d.amount > 0 ? ' pos' : d.amount < 0 ? ' neg' : '') : ''), fmtUsd(d.amount, d.signed)));
       main.appendChild(top);
       var sub = el('span', 'ph-hist-sub');
       if (parts.length) sub.appendChild(document.createTextNode(parts.join(' · ') + ' · '));
@@ -1560,8 +1619,47 @@
       return line;
     }
 
+    /* Desktop: the trade page's seven History cells: time, what, position (+ #id in the title), amount,
+       details (detailParts, the phone line's words), share, tx. */
+    function dkHistoryLine(r) {
+      var a = r.args, d = describe(r);
+      var o = d.id ? pf.opened[d.id] : null;
+      var sz = o ? szOf(o.instrumentId) : (r.name === 'PositionOpened' ? szOf(Number(a.instrumentId)) : null);
+      var dp = detailParts(r, d, o, sz);
+      var line = el('div', 'pos-line hist-line dk-row');
+      if (d.details) line.title = d.details;
+      var time = timeSpan(r.block);
+      time.className = 'dk-cell dk-time';
+      line.appendChild(time);
+      line.appendChild(dkCell('dk-what', dp.what));
+      var pos = dkCell('dk-pos');
+      if (d.market) pos.appendChild(el('span', 'sym', d.market));
+      if (dp.side) pos.appendChild(el('span', d.side.charAt(0) === 'l' ? 'pos' : 'neg', dp.side));
+      if (d.id) pos.title = (d.id.charAt(0) === 'r' ? 'Request #' : 'Position #') + d.id.replace(/^r/, '');
+      line.appendChild(pos);
+      line.appendChild(dkCell('dk-num' + (d.amount != null && d.signed && !d.flow && signCls(d.amount) ? ' ' + signCls(d.amount) : ''), d.amount != null ? fmtUsd(d.amount, d.signed) : ''));
+      var text = dp.parts.join(' · ') + (dp.sentence ? (dp.parts.length ? ' · ' : '') + dp.sentence : '');
+      var det = dkCell('dk-detail', text);
+      if (text) det.title = text;
+      line.appendChild(det);
+      var sc = dkCell('dk-link');
+      var ow = r.name === 'PositionClosed' && d.amount > 0 ? o : null;
+      if (ow && window.ConfettiShare && wallet.account && sameAddr(pf.addr, wallet.account)) {
+        var share = el('a', 'faint', 'share');
+        share.href = '#'; share.setAttribute('role', 'button'); share.title = 'Share your win';
+        share.addEventListener('click', function (ev) { ev.preventDefault(); window.ConfettiShare.open(shareTrade(r, ow)); });
+        sc.appendChild(share);
+      }
+      line.appendChild(sc);
+      var tx = dkCell('dk-link');
+      tx.appendChild(explorerLink('tx', r.tx));
+      line.appendChild(tx);
+      return line;
+    }
+
     function historyLine(r) {
       if (isPhone()) return phHistoryLine(r);
+      if (isDesk()) return dkHistoryLine(r);
       var d = describe(r);
       var line = el('div', 'pos-line');
       if (d.details) line.title = d.details;
@@ -1570,7 +1668,7 @@
       if (d.market) line.appendChild(el('span', 'sym', d.market));
       if (d.id) line.appendChild(el('span', 'faint xs', '#' + d.id));
       if (d.side) line.appendChild(el('span', d.side.charAt(0) === 'l' ? 'pos' : 'neg', d.side));
-      if (d.amount != null) line.appendChild(el('span', d.signed ? signCls(d.amount) : '', fmtUsd(d.amount, d.signed)));
+      if (d.amount != null) line.appendChild(el('span', d.signed && !d.flow ? signCls(d.amount) : '', fmtUsd(d.amount, d.signed)));
       var o = r.name === 'PositionClosed' && d.amount > 0 ? pf.opened[d.id] : null;
       if (o && window.ConfettiShare && wallet.account && sameAddr(pf.addr, wallet.account)) {
         var share = el('a', 'faint', 'share');
@@ -1635,6 +1733,7 @@
         renderPhRows([]);
         fillLines($('pfOpen'), [], 'Connect a wallet to see your portfolio.');
         fillLines($('pfHist'), [], 'Connect a wallet to see your history.');
+        dkHeads(false, false);
         setText('pfOpenCount', ''); setText('pfHistCount', '');
         var mb = $('pfMore'); if (mb) mb.hidden = true;
         setText('pfRange', '');
@@ -1662,6 +1761,7 @@
       valCell('pfClosed', done ? fmtInt(pf.agg.closed) + ' · ' + fmtInt(pf.agg.won) + ' won' + (pf.agg.liq ? ' · ' + fmtInt(pf.agg.liq) + ' liquidated' : '') : '…');
 
       setText('pfOpenCount', pf.positions.length ? String(pf.positions.length) : '');
+      dkHeads(pf.positions.length > 0, pf.rows.length > 0);
       fillLines($('pfOpen'), pf.positions.map(positionLine), pf.acct ? 'No open positions.' : 'Loading…');
       renderPhRows(pf.positions);
 
@@ -1672,6 +1772,13 @@
       if (more) more.hidden = pf.rows.length <= pf.shown;
       setText('pfRange', done ? 'blocks ' + fmtInt(deployBlock()) + ' to ' + fmtInt(pf.scannedTo) : '');
       fetchTimes(shown.map(function (r) { return r.block; })).then(paintTimes);
+    }
+
+    /* the two column heads show on desktop while their table has a row */
+    function dkHeads(open, hist) {
+      var a = $('pfPosHead'), b = $('pfHistHead');
+      if (a) a.hidden = !(isDesk() && open);
+      if (b) b.hidden = !(isDesk() && hist);
     }
 
     function refresh() {
@@ -1705,6 +1812,8 @@
         var relayout = function () { render(); };
         if (PHONE_MQ.addEventListener) PHONE_MQ.addEventListener('change', relayout); else if (PHONE_MQ.addListener) PHONE_MQ.addListener(relayout);
       }
+      /* and crossing 901 px redraws them as the desktop tables or the lines */
+      if (DESK_MQ && DESK_MQ.addEventListener) DESK_MQ.addEventListener('change', function () { render(); });
       var a = who();
       pf = a ? fresh(a) : null;
       render();
@@ -1865,7 +1974,59 @@
       });
     }
 
+    /* Desktop (>= 901 px): the three lists are tables. Same facts, same formatters, one value per cell; the column
+       heads are static markup in house.html. Phones and tablets keep the lines below untouched. */
+    var DESK_MQ_H = (function () { try { return window.matchMedia('(min-width: 901px)'); } catch (e) { return null; } })();
+    function deskRows() { return !!(DESK_MQ_H && DESK_MQ_H.matches); }
+    function cell(cls, text) { return el('span', 'dk-c' + (cls ? ' ' + cls : ''), text); }
+
+    function moveRow(m) {
+      var line = el('div', 'pos-line dk-row dk-hs-moves');
+      var t = timeSpan(m.block);
+      t.className = 'dk-c faint';
+      line.appendChild(t);
+      line.appendChild(cell(m.out ? 'neg' : 'pos', m.out ? 'withdrawn' : 'deposited'));
+      line.appendChild(cell('dk-n ' + (m.out ? 'neg' : 'pos'), fmtUsd(m.amount)));
+      line.appendChild(cell('dk-n', fmtUsd(m.after)));
+      var tx = explorerLink('tx', m.tx);
+      tx.className = 'dk-c dk-n faint';
+      line.appendChild(tx);
+      return line;
+    }
+
+    function oiRow(m) {
+      var o = publicOi(m.id), lim = h.oi[m.id];
+      var line = el('div', 'pos-line dk-row dk-hs-oi');
+      line.appendChild(cell('dk-sym', m.sym));
+      var t = cell('dk-tier');
+      t.appendChild(el('span', 'badge badge-' + m.tier.toLowerCase(), m.tier));
+      line.appendChild(t);
+      /* the side colours only where there is money on that side; an empty side reads faint */
+      line.appendChild(cell('dk-n ' + (o && o.long > 0 ? 'pos' : 'faint'), o ? fmtUsdCompact(o.long) : '—'));
+      line.appendChild(cell('dk-n ' + (o && o.short > 0 ? 'neg' : 'faint'), o ? fmtUsdCompact(o.short) : '—'));
+      line.appendChild(cell('dk-n', m.longCap === m.shortCap ? fmtUsdCompact(m.longCap) : fmtUsdCompact(m.longCap) + ' / ' + fmtUsdCompact(m.shortCap)));
+      line.appendChild(cell('dk-n', m.maxLeverage + 'x'));
+      var shown = lim && !m.retired;
+      line.appendChild(cell('dk-n', shown && lim.maxLong != null ? fmtUsdCompact(lim.maxLong) : '—'));
+      line.appendChild(cell('dk-n', shown && lim.maxShort != null ? fmtUsdCompact(lim.maxShort) : '—'));
+      /* status: the market's own flags first; an open market reads 'open' only once the Guards say opens are open */
+      var gv = h.v, globalPaused = !!(gv && (gv.paused || gv.tripped));
+      line.appendChild(m.retired ? cell('dk-st faint', 'retired') : (m.opensPaused || globalPaused) ? cell('dk-st neg', 'opens paused') : cell('dk-st faint', gv ? 'open' : ''));
+      return line;
+    }
+
+    function queueRow(q) {
+      var line = el('div', 'pos-line dk-row dk-hs-queue');
+      line.appendChild(cell('faint', '#' + q.index));
+      var a = addrLink(q.to);
+      a.className = 'dk-c';
+      line.appendChild(a);
+      line.appendChild(cell('dk-n', fmtUsd(q.owed)));
+      return line;
+    }
+
     function moveLine(m) {
+      if (deskRows()) return moveRow(m);
       var line = el('div', 'pos-line');
       line.appendChild(timeSpan(m.block));
       line.appendChild(el('span', m.out ? 'neg' : 'pos', (m.out ? 'withdrawn ' : 'deposited ') + fmtUsd(m.amount)));
@@ -1885,6 +2046,7 @@
     }
 
     function oiLine(m) {
+      if (deskRows()) return oiRow(m);
       var o = publicOi(m.id);
       var line = el('div', 'pos-line');
       line.appendChild(el('span', 'sym', m.sym));
@@ -1903,6 +2065,7 @@
     }
 
     function queueLine(q) {
+      if (deskRows()) return queueRow(q);
       var line = el('div', 'pos-line');
       line.appendChild(el('span', 'faint xs', '#' + q.index));
       line.appendChild(addrLink(q.to));
@@ -1959,6 +2122,8 @@
       if (window.ConfettiKeeper) h.keeper = window.ConfettiKeeper.create({ provider: read.provider, logProvider: read.logProvider, exchange: read.ex, iface: exIface });
       render();
       setInterval(function () { if (!document.hidden) renderKeeper(); }, 1000);
+      /* crossing 901 px swaps lines for table rows and back */
+      if (DESK_MQ_H) { if (DESK_MQ_H.addEventListener) DESK_MQ_H.addEventListener('change', render); else if (DESK_MQ_H.addListener) DESK_MQ_H.addListener(render); }
     }
 
     return { init: init, refresh: refresh, every: EVERY_MS.house };
@@ -2067,7 +2232,7 @@
       return line;
     }
 
-    function fmtRaw(raw) { return window.ethers.formatUnits(raw, 18); }
+    function fmtRaw(raw) { return window.ethers.formatUnits(raw, 18).replace(/\.0$/, ''); }   /* Max fills "8000", not "8000.0" (cf_FIX) */
 
     function renderForms() {
       var me = c.me;
@@ -2667,6 +2832,7 @@
 
   var leaderboard = (function () {
     var lb = { pnl: {}, seen: {}, scannedTo: null };
+    var DESK_MQ_L = (function () { try { return window.matchMedia('(min-width: 901px)'); } catch (e) { return null; } })();
 
     /* House bots are left out only when config lists them: the configured
        addresses and the wallets the points snapshot flags as house. */
@@ -2742,7 +2908,9 @@
       fillLines($('lbPoints'), pts ? board(pts, function (r) { return el('span', null, fmtInt(Math.floor(r.v + 1e-9))); }) : [], pts ? 'No one yet.' : 'Loading points…');
       var pnl = pnlRows();
       setText('lbPnlCount', pnl ? fmtInt(pnl.length) + ' traders' : '');
-      fillLines($('lbPnl'), pnl ? board(pnl, function (r) { return el('span', signCls(r.v), fmtUsd(r.v, true)); }, function (r) { return r.n + ' closed'; }) : [], pnl ? 'No closed trades yet.' : 'Scanning events…');
+      /* desktop (>= 901 px): the count sits in its own CLOSED column, so the cell carries the number alone */
+      var desk = !!(DESK_MQ_L && DESK_MQ_L.matches);
+      fillLines($('lbPnl'), pnl ? board(pnl, function (r) { return el('span', signCls(r.v), fmtUsd(r.v, true)); }, function (r) { return desk ? fmtInt(r.n) : r.n + ' closed'; }) : [], pnl ? 'No closed trades yet.' : 'Scanning events…');
     }
 
     function refresh() {
@@ -2751,6 +2919,7 @@
 
     function init() {
       render();
+      if (DESK_MQ_L) { if (DESK_MQ_L.addEventListener) DESK_MQ_L.addEventListener('change', render); else if (DESK_MQ_L.addListener) DESK_MQ_L.addListener(render); }
       /* the points engine (points.js) loads on its own and keeps following the chain: redraw when it moves */
       var sig = '';
       setInterval(function () {

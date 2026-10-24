@@ -77,6 +77,15 @@
     if (PHONE_MQ.addEventListener) PHONE_MQ.addEventListener('change', fn);
     else if (PHONE_MQ.addListener) PHONE_MQ.addListener(fn);
   }
+  /* Desktop (>= 901 px, the width where the chart and the ticket sit side by side): one flag for every
+     desktop-only behaviour (the strip, the tables, the receipt), so phones and tablets stay as they are. */
+  var DESK_MQ = (function () { try { return window.matchMedia('(min-width: 901px)'); } catch (e) { return null; } })();
+  function isDesk() { return !!(DESK_MQ && DESK_MQ.matches); }
+  function onDeskChange(fn) {
+    if (!DESK_MQ) return;
+    if (DESK_MQ.addEventListener) DESK_MQ.addEventListener('change', fn);
+    else if (DESK_MQ.addListener) DESK_MQ.addListener(fn);
+  }
   /* A short buzz on phones that support it (iOS ignores it; the visual feedback carries it there). */
   function buzz(pattern) {
     if (!phoneFx()) return;
@@ -284,6 +293,17 @@
     if (!isFinite(q) || q <= 0) return '—';
     if (q >= 1000) return fmtInt(q);
     return String(Number(q.toPrecision(q >= 1 ? 4 : 3)));
+  }
+
+  /* "about 8,928,571 PEPE": a position's coin amount in the units its symbol names. Hyperliquid quotes the
+     k-markets (kPEPE, kFLOKI, kSHIB, kBONK, ...) per 1,000 coins, so notional / price counts thousands: times
+     1,000 to count the coins the label names. */
+  function coinsPerUnit(sym) {
+    var m = sym && state.bySym ? state.bySym[sym] : null;
+    return m && /^k[A-Z]/.test(m.coin || '') ? 1000 : 1;
+  }
+  function fmtCoinQty(notional, px, sym) {
+    return isFinite(notional) && px > 0 ? fmtQty(notional / px * coinsPerUnit(sym)) + ' ' + sym : '';
   }
 
   function sideWord(isLong) { return isLong ? 'Long' : 'Short'; }
@@ -912,12 +932,15 @@
   /* With volume on, the candles keep off the bottom fifth where the bars stand. */
   function priceMargins() { return { top: 0.12, bottom: chart.on.vol ? 0.24 : 0.08 }; }
 
+  /* the axis labels: 12 px on phones and on the desktop (the trader reads them all day), 11 on the tablet as before */
+  function chartFontSize() { return isPhone() || isDesk() ? 12 : 11; }
+
   function chartOptions() {
     var t = chartTheme();
     var LW = window.LightweightCharts;
     return {
       autoSize: true,
-      layout: { background: { type: 'solid', color: t.raised }, textColor: t.muted, fontFamily: t.mono, fontSize: isPhone() ? 12 : 11 },
+      layout: { background: { type: 'solid', color: t.raised }, textColor: t.muted, fontFamily: t.mono, fontSize: chartFontSize() },
       grid: { vertLines: { visible: false }, horzLines: { color: rgba(t.rule, 0.6), style: 1 } },
       rightPriceScale: { borderColor: t.ruleStrong, scaleMargins: priceMargins() },
       timeScale: { borderColor: t.ruleStrong, timeVisible: true, secondsVisible: false, rightOffset: 3, barSpacing: 7 },
@@ -963,7 +986,9 @@
     chart.api.subscribeCrosshairMove(onCrosshair);
     chart.api.subscribeClick(onChartClick);
     initChartReset();
-    onPhoneChange(function () { if (chart.api) chart.api.applyOptions({ layout: { fontSize: isPhone() ? 12 : 11 } }); });
+    var refont = function () { if (chart.api) chart.api.applyOptions({ layout: { fontSize: chartFontSize() } }); };
+    onPhoneChange(refont);
+    onDeskChange(refont);
   }
 
   /* RESET (the owner, 2026-10-22: "chart reset at the bottom of the chart ... like a little circle"): the circle under
@@ -1552,6 +1577,8 @@
     setText('marketPrice', fmtPrice(px, m.szDecimals));
     var pxEl = $('marketPrice');
     if (pxEl) pxEl.classList.toggle('is-long', fmtPrice(px, m.szDecimals).length > 8);
+    /* a k-market's price is for 1,000 coins (Hyperliquid's kPEPE): say so on hover; amounts count single coins */
+    if (pxEl) { var kt = coinsPerUnit(m.symbol) > 1 ? 'Price of 1,000 ' + m.symbol + ' (Hyperliquid ' + m.coin + ')' : ''; if (pxEl.title !== kt) pxEl.title = kt; }
     tickTint(m.symbol, px);
     var c = state.ctx[m.coin];
     var pct = c && c.prevDayPx > 0 && isFinite(px) ? px / c.prevDayPx - 1 : NaN;
@@ -1575,6 +1602,14 @@
     var oi = publicOi(m.symbol, m.instrumentId);
     setText('chipLongOi', oi ? fmtUsdCompact(oi.long) : (hasExchange() ? '—' : 'n/a'));
     setText('chipShortOi', oi ? fmtUsdCompact(oi.short) : (hasExchange() ? '—' : 'n/a'));
+    /* desktop at 1,440-1,599 px the strip has no room for "Traded here 24h"; its number rides in the Open bets title */
+    var oiChip = isDesk() && $('chipLongOi') ? $('chipLongOi').closest('.chip') : null;
+    if (oiChip) {
+      if (!oiChip.hasAttribute('data-title')) oiChip.setAttribute('data-title', oiChip.title);
+      var cv = $('chipConfVol') ? $('chipConfVol').textContent : '';
+      var oiTitle = oiChip.getAttribute('data-title') + (cv && cv !== '—' ? ' · traded here 24h ' + cv : '');
+      if (oiChip.title !== oiTitle) oiChip.title = oiTitle;
+    }
     setText('sheetTitle', m.symbol + ' · ' + fmtPrice(px, m.szDecimals));
     renderPhTicketHead(m, px, pct);
     document.title = (isFinite(px) ? fmtPrice(px, m.szDecimals) + ' ' : '') + m.symbol + ' — confetti_';
@@ -1613,6 +1648,13 @@
     var caps = [];
     live.forEach(function (m) { if (caps.indexOf(maxLev(m)) < 0) caps.push(maxLev(m)); });
     caps.sort(function (a, b) { return b - a; });
+    /* desktop (piece B): numbers in columns, with a head row: coin, price, 24h, leverage */
+    var dk = isDesk();
+    if (dk && live.length) {
+      var head = el('div', 'market-cols');
+      ['Coin', 'Price', '24h', 'Leverage'].forEach(function (t) { head.appendChild(el('span', null, t)); });
+      list.appendChild(head);
+    }
     caps.forEach(function (cap) {
       list.appendChild(el('div', 'label market-group', 'Up to ' + cap + 'x'));
       live.filter(function (m) { return maxLev(m) === cap; }).forEach(function (m) {
@@ -1628,6 +1670,7 @@
         row.appendChild(sym);
         row.appendChild(el('span', 'px', fmtPrice(marketPrice(m), m.szDecimals)));
         row.appendChild(el('span', 'chg', ''));
+        if (dk) row.appendChild(el('span', 'cap', 'up to ' + maxLev(m) + 'x'));
         row.addEventListener('click', function () { selectMarket(m.symbol); tourEvent('market'); });
         list.appendChild(row);
       });
@@ -1649,7 +1692,7 @@
       var c = state.ctx[m.coin];
       var pct = c && c.prevDayPx > 0 && isFinite(px) ? px / c.prevDayPx - 1 : NaN;
       var chg = rows[i].querySelector('.chg');
-      chg.textContent = isFinite(pct) ? fmtPct(pct, true) : '';
+      chg.textContent = isFinite(pct) ? fmtPct(pct, true) : isDesk() ? '—' : '';
       chg.className = 'chg ' + (pct > 0 ? 'pos' : pct < 0 ? 'neg' : 'faint');
     }
   }
@@ -1659,6 +1702,7 @@
     if (!menu) return;
     buildMarketMenu();
     menu.removeAttribute('hidden');
+    if (isDesk()) renderMarketMenuPrices();   /* desktop (piece B): the 24h column at once (buildMarketMenu ran while the menu was still hidden) */
     $('marketBtn').setAttribute('aria-expanded', 'true');
     var f = $('marketFilter');
     if (f && window.matchMedia && !window.matchMedia('(hover: none)').matches) f.focus();
@@ -1682,6 +1726,25 @@
       if (menu.hasAttribute('hidden')) openMarketMenu(); else closeMarketMenu();
     });
     if (filter) filter.addEventListener('input', buildMarketMenu);
+    /* keys (piece B): ArrowDown / ArrowUp walk the rows (aria-selected moves), Enter picks the row through its own
+       click handler (so the tour hears it), Escape stays the document's closer below */
+    menu.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp' && ev.key !== 'Enter') return;
+      var rows = Array.prototype.slice.call(menu.querySelectorAll('.market-row'));
+      if (!rows.length) return;
+      var i = -1;
+      rows.forEach(function (r, k) { if (r.getAttribute('aria-selected') === 'true') i = k; });
+      if (ev.key === 'Enter') {
+        if (ev.target !== filter && ev.target.classList && ev.target.classList.contains('market-row')) return;   /* a focused row's own Enter is its click */
+        ev.preventDefault();
+        (rows[i] || rows[0]).click();
+        return;
+      }
+      ev.preventDefault();
+      var next = i < 0 ? 0 : clamp(i + (ev.key === 'ArrowDown' ? 1 : -1), 0, rows.length - 1);
+      rows.forEach(function (r, k) { r.setAttribute('aria-selected', k === next ? 'true' : 'false'); });
+      if (rows[next].scrollIntoView) rows[next].scrollIntoView({ block: 'nearest' });
+    });
     document.addEventListener('click', function (ev) {
       if (menu.hasAttribute('hidden')) return;
       if (!menu.contains(ev.target) && !btn.contains(ev.target)) closeMarketMenu();
@@ -1957,7 +2020,7 @@
     /* phones: which row shows (a new coin opens on the row its saved leverage lives on; Higher / ‹ and the keypad move it) */
     host.classList.toggle('is-high', !!ui.phLevHigh && host.classList.contains('has-high'));
     var box = $('levCustom');
-    if (box) box.hidden = !custom;
+    if (box) box.hidden = !custom && !isDesk();
   }
 
   function setLev(v) {
@@ -2009,7 +2072,7 @@
     setText('liqLong', fmtPrice(bustPriceNum(px, true, form.lev), sz));
     setText('liqShort', fmtPrice(bustPriceNum(px, false, form.lev), sz));
     setText('levNote', form.lev + 'x: a ' + fmtMove(bustMovePct(form.lev)) + '% move against you liquidates your ' + (isFinite(margin) ? fmtUsdShort(margin) : 'amount') + '.');
-    setText('orderValue', isFinite(notional) ? fmtUsd(notional) + (px > 0 ? ' (about ' + fmtQty(notional / px) + ' ' + sym + ')' : '') : '—');
+    setText('orderValue', isFinite(notional) ? fmtUsd(notional) + (px > 0 ? ' (about ' + fmtCoinQty(notional, px, sym) + ')' : '') : '—');
     setText('moveKey', 'If ' + (sym || 'the price') + ' moves 1% your way');
     var win = isFinite(notional) && px > 0 ? estimateClose(pretendPos(px, margin), inst, px * (isLong ? 1.01 : 0.99), true) : null;
     setText('moveWin', win && !win.flat ? fmtUsd(win.pnl, true) : '—');
@@ -2039,6 +2102,59 @@
     setText('posCapLine', room != null ? 'Biggest ' + sym + ' ' + (isLong ? 'long' : 'short') + ' right now ' + fmtUsd(room) : 'Biggest position: —');
     /* phones (piece 13): the same numbers in the receipt rows */
     if (isPhone()) renderPhReceipt({ m: m, sz: sz, sym: sym, inst: inst, px: px, margin: margin, notional: notional, isLong: isLong, win: win, capUsd: capUsd, capped: capped });
+    /* desktop (piece B): the same numbers in the desktop receipt, right above OPEN */
+    else if (isDesk()) renderDkReceipt({ sz: sz, sym: sym, inst: inst, px: px, margin: margin, notional: notional, isLong: isLong, win: win });
+  }
+
+  /* Text into an element only when it changed: renderForm runs on every price tick. No layout read. */
+  function dkSet(id, text) { var n = $(id); if (n && n.textContent !== text) n.textContent = text; }
+
+  /* The desktop receipt (piece B), from renderForm's own locals (c: sz, sym, inst, px, margin, notional, isLong,
+     win), in the phone receipt's words: You risk, Position, Liquidation · a X% drop, If DOGE rises 1%, Opens near,
+     Costs. The notices (paused, HYPE) stay in #ticketNotice above OPEN; the check before a big trade reuses it. */
+  function dkReceiptRows(c) {
+    var lev = form.lev;
+    var qty = fmtCoinQty(c.notional, c.px, c.sym);
+    var costs = [];
+    if (c.inst && c.inst.entryDeadbandBps > 0) costs.push(pctText(c.inst.entryDeadbandBps / 1e4) + ' spread');
+    costs.push(feePctText() + ' of wins');
+    return {
+      risk: isFinite(c.margin) ? fmtUsd(c.margin) : '—',
+      size: isFinite(c.notional) ? fmtUsdShort(c.notional) + (qty ? ' · ' + qty : '') : '—',
+      liq: 'Liquidation ' + fmtPrice(bustPriceNum(c.px, c.isLong, lev), c.sz) + ' · a ' + fmtMove(bustMovePct(lev)) + '% ' + (c.isLong ? 'drop' : 'rise'),
+      moveK: 'If ' + (c.sym || 'the price') + (c.isLong ? ' rises' : ' falls') + ' 1%',
+      moveV: c.win && !c.win.flat ? fmtUsd(c.win.pnl, true) : '—',
+      movePos: !!(c.win && !c.win.flat && c.win.pnl > 0),
+      opens: 'Opens near ' + (c.px > 0 ? fmtPrice(c.px, c.sz) : 'the market price') + ' in about ' + fillSecs() + ' s',
+      costs: 'Costs ' + costs.join(' · ')
+    };
+  }
+
+  function renderDkReceipt(c) {
+    var r = dkReceiptRows(c);
+    dkSet('dkRcRisk', r.risk);
+    dkSet('dkRcSize', r.size);
+    dkSet('dkRcLiq', r.liq);
+    dkSet('dkRcMoveK', r.moveK);
+    dkSet('dkRcMoveV', r.moveV);
+    var mv = $('dkRcMoveV');
+    if (mv) mv.classList.toggle('pos', r.movePos);
+    dkSet('dkRcOpens', r.opens);
+    dkSet('dkRcCosts', r.costs);
+  }
+
+  /* The receipt rows as a block of their own, for the check before a big trade (desktop). */
+  function dkReceiptNode(r, loseText) {
+    var box = el('div', 'dk-rc dk-rc-check');
+    var a = el('div', 'dk-rc-a');
+    var c1 = el('div', 'dk-rc-cell'); c1.appendChild(el('span', 'dk-rc-k', 'You risk')); c1.appendChild(el('b', 'dk-rc-risk', r.risk));
+    var c2 = el('div', 'dk-rc-cell is-right'); c2.appendChild(el('span', 'dk-rc-k', 'Position')); c2.appendChild(el('b', 'dk-rc-size', r.size));
+    a.appendChild(c1); a.appendChild(c2); box.appendChild(a);
+    var b = el('div', 'dk-rc-b is-loss'); b.appendChild(el('span', null, r.liq + (loseText ? ': ' + loseText : ''))); box.appendChild(b);
+    var cc = el('div', 'dk-rc-c'); cc.appendChild(el('span', null, r.moveK)); cc.appendChild(el('b', r.movePos ? 'pos' : null, r.moveV)); box.appendChild(cc);
+    box.appendChild(el('div', 'dk-rc-d', r.opens));
+    box.appendChild(el('div', 'dk-rc-e', r.costs));
+    return box;
   }
 
   /* The most the ticket's trade could win after the fee (USD), as it would be stamped now; NaN
@@ -2207,6 +2323,12 @@
     /* phones (piece 13): OPEN says the trade, an armed OPEN says 'Tap again', the problem goes to row D */
     var ph = isPhone() ? phActionView({ label: label, cls: cls, disabled: disabled, note: note, err: err, setup: setup }) : null;
     if (ph) { label = ph.label; cls = ph.cls; note = ph.note; err = ph.err; }
+    /* desktop (piece B): OPEN says the trade (OPEN LONG · $25 × 50x); the hint keeps what happens next, or the problem */
+    else if (!setup && isDesk() && isFinite(form.margin) && form.margin > 0) {
+      label = 'OPEN ' + (form.side === 'long' ? 'LONG' : 'SHORT') + ' · ' + fmtUsdShort(form.margin) + ' × ' + form.lev + 'x';
+      cls += ' dk-trade';
+      if (!err) note = String(note || '').replace(/^(BUY \/ LONG|SELL \/ SHORT) .*? at \d+x\.\s*/, '');
+    }
     btn.className = cls;
     btn.textContent = label;
     btn.disabled = disabled;
@@ -2362,6 +2484,21 @@
       /* the phone's More page opens it for its lines (piece 13) without touching the remembered choice */
       details.addEventListener('toggle', function () { if (!more.setting && !more.on) lsSet(LS.details, details.open ? '1' : '0'); });
     }
+    /* desktop (piece B): Details ▾ in the receipt's costs row opens the same Details (its summary is hidden at
+       901 px and up); the lines open under the button area and fit the ticket */
+    var dkMore = $('dkDetailsBtn');
+    if (details && dkMore) {
+      var dkSync = function () {
+        dkMore.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+        setText('dkDetailsCaret', details.open ? '▴' : '▾');
+      };
+      dkMore.addEventListener('click', function () { details.open = !details.open; dkSync(); dkFitTicket(); });
+      details.addEventListener('toggle', dkSync);
+      dkSync();
+    }
+    /* desktop (piece B): crossing 901 px redraws the leverage row (the typed box shows at 901 and up), the
+       receipt and the button's words */
+    onDeskChange(function () { renderLeverage(); renderForm(); renderAction(); });
     var x = $('sheetClose');
     if (x) x.addEventListener('click', closeSheet);
     var scrim = $('sheetScrim');
@@ -2378,6 +2515,48 @@
     });
     syncAutoFill();
     watchPosPanel();
+    initDkFit();
+  }
+
+  /* cf_FIX: the desktop ticket fits a short screen (1366 x 768, a laptop with the points bar, the owed row, a v2 / v3
+     banner). Measured, never guessed: when its content is taller than its room, it tightens first (dk-tight: the
+     side pair 44 px, the amount 36 px, the notice's button beside its words, 4 px gaps); if Details still does not
+     fit, Details opens beside the ticket over the chart's right edge (dk-det-fly), so OPEN never moves and the
+     ticket never scrolls. A ResizeObserver on the ticket and its content and a resize listener run it; the
+     classes come off and on in one pass, so nothing paints in between. */
+  function dkFitTicket() {
+    var t = $('ticket'), d = $('detailsBox');
+    if (!t) return;
+    t.classList.remove('dk-tight'); t.classList.remove('dk-det-fly');
+    if (!isDesk()) return;
+    if (t.scrollHeight > t.clientHeight) t.classList.add('dk-tight');
+    if (d && d.open && t.scrollHeight > t.clientHeight) { t.classList.add('dk-det-fly'); dkFlyAt(); }
+  }
+  function dkFlyAt() {
+    var t = $('ticket'), btn = $('dkDetailsBtn'), d = $('detailsBox'), ch = $('chartBox');
+    if (!t || !btn || !d) return;
+    /* its foot level with the Details button, or with the chart's foot when that is higher and the lines still fit
+       under the ticket's top, so it never covers the positions table's Close buttons */
+    var foot = btn.getBoundingClientRect().bottom + 4, cb = ch ? ch.getBoundingClientRect().bottom : foot;
+    if (cb < foot && cb - d.offsetHeight >= t.getBoundingClientRect().top) foot = cb;
+    var v = Math.max(16, Math.round(innerHeight - foot)) + 'px';
+    if (t.style.getPropertyValue('--dk-fly-bottom') !== v) t.style.setProperty('--dk-fly-bottom', v);
+  }
+  function initDkFit() {
+    var t = $('ticket');
+    if (!t) return;
+    var queued = false;
+    var later = function () { if (queued) return; queued = true; requestAnimationFrame(function () { queued = false; dkFitTicket(); }); };
+    if (window.ResizeObserver) { var ro = new ResizeObserver(later); ro.observe(t); if (t.firstElementChild) ro.observe(t.firstElementChild); }
+    window.addEventListener('resize', later);
+    window.addEventListener('scroll', function () { if (t.classList.contains('dk-det-fly')) dkFlyAt(); }, { passive: true });
+    document.addEventListener('keydown', function (ev) {
+      var d = $('detailsBox');
+      if (ev.key === 'Escape' && d && d.open && t.classList.contains('dk-det-fly')) { d.open = false; dkFitTicket(); }
+    });
+    onDeskChange(function () { dkBannerRoom(); later(); });
+    window.addEventListener('resize', dkBannerRoom);
+    later();
   }
 
   function syncAutoFill() {
@@ -2427,10 +2606,18 @@
     ];
     var cap = ticketCapUsd();
     if (isFinite(cap)) lines.push('Wins above ' + fmtUsd(cap) + ' are capped.');
+    /* desktop (piece B): the same check as the ticket's receipt, and OK says the trade */
+    var node = null, ok = 'OPEN POSITION';
+    if (isDesk()) {
+      var notional = form.margin * form.lev;
+      node = dkReceiptNode(dkReceiptRows({ sz: sz, sym: m.symbol, inst: m.inst, px: px, margin: form.margin, notional: notional, isLong: isLong, win: win }), 'you lose ' + fmtUsdShort(form.margin));
+      if (isFinite(cap)) node.appendChild(el('div', 'dk-rc-f', 'Wins above ' + fmtUsd(cap) + ' are capped.'));
+      ok = 'OPEN ' + (isLong ? 'LONG' : 'SHORT') + ' · ' + fmtUsdShort(form.margin) + ' × ' + form.lev + 'x';
+    }
     return askConfirm({
       title: (isLong ? 'BUY / LONG ' : 'SELL / SHORT ') + m.symbol,
-      lines: lines,
-      ok: 'OPEN POSITION', okClass: isLong ? 'go-long' : 'go-short', back: 'Back', skipKey: LS.noConfirm
+      lines: lines, node: node,
+      ok: ok, okClass: (isLong ? 'go-long' : 'go-short') + (node ? ' dk-trade' : ''), back: 'Back', skipKey: LS.noConfirm
     });
   }
 
@@ -2445,11 +2632,14 @@
     var body = $('confirmBody');
     if (body) {
       body.textContent = '';
-      (o.lines || []).forEach(function (l) {
+      /* desktop (piece B): a prebuilt receipt in place of the lines */
+      if (o.node) body.appendChild(o.node);
+      else (o.lines || []).forEach(function (l) {
         var t = typeof l === 'string' ? { text: l } : l;
         body.appendChild(el('p', t.cls || null, t.text));
       });
     }
+    d.classList.toggle('is-dk-check', !!o.node);
     var skipRow = $('confirmSkipRow'), skip = $('confirmSkip');
     if (skipRow) skipRow.hidden = !o.skipKey;
     if (skip) skip.checked = false;
@@ -2992,7 +3182,7 @@
   function renderPhReceipt(c) {
     var lev = form.lev;
     setText('phRcRisk', isFinite(c.margin) ? fmtUsd(c.margin) : '—');
-    var qty = isFinite(c.notional) && c.px > 0 ? fmtQty(c.notional / c.px) + ' ' + c.sym : '';
+    var qty = fmtCoinQty(c.notional, c.px, c.sym);
     setText('phRcSizeUsd', isFinite(c.notional) ? fmtUsdShort(c.notional) : '—');
     setText('phRcSizeSep', qty ? ' · ' : '');
     setText('phRcSizeQty', qty);
@@ -3001,7 +3191,13 @@
     var liqText = 'Liquidation ' + fmtPrice(liq, c.sz) + ' · a ' + fmtMove(bustMovePct(lev)) + '% ' + (c.isLong ? 'drop' : 'rise');
     if (arm.on && isFinite(c.margin)) liqText += ': you lose ' + fmtUsdShort(c.margin);
     var b = $('phRcLiq');
-    if (b) { b.textContent = liqText; b.classList.toggle('is-armed', arm.on); }
+    if (b) {
+      b.textContent = liqText; b.classList.toggle('is-armed', arm.on);
+      /* armed, the row says what is lost too; where that wraps (360 and 375 wide), one step down to 14 px keeps it one
+         line, so the sheet does not grow and scroll at 360 x 640 (cf_FIX). Read only while armed. */
+      b.classList.remove('is-tight');
+      if (arm.on && b.offsetHeight > 30) b.classList.add('is-tight');
+    }
     setText('phRcMoveK', 'If ' + (c.sym || 'the price') + (c.isLong ? ' rises' : ' falls') + ' 1%');
     var mv = $('phRcMoveV');
     if (mv) { mv.textContent = c.win && !c.win.flat ? fmtUsd(c.win.pnl, true) : '—'; mv.className = c.win && !c.win.flat && c.win.pnl > 0 ? 'pos' : ''; }
@@ -3218,6 +3414,8 @@
     if (t && t.textContent !== txt) t.textContent = txt;
     b.classList.toggle('is-out', mode === 'out');
     b.classList.toggle('is-warn', mode === 'warn');
+    /* an address is wider than a balance: the points pill drops its second word so the wordmark stays whole (cf_FIX) */
+    b.classList.toggle('is-addr', !!wallet.account && mode !== 'out' && txt === shortAddr(wallet.account));
     var owed = !!(wallet.account && acct.loaded && acct.owed > 0);
     b.classList.toggle('has-owed', owed);
     var label = mode === 'out' ? txt : mode === 'warn' ? 'Account ' + txt + ': wrong network' : 'Account: balance ' + txt + (owed ? ', ' + fmtUsd(acct.owed) + ' owed to you' : '');
@@ -4057,6 +4255,20 @@
       if (b) b.hidden = !on;
       if (on) setText(k + 'Amt', l.total > 0 ? fmtUsd(l.total) : 'money');
     });
+    dkBannerRoom();
+  }
+
+  /* cf_FIX: the v2 / v3 banners push the grid down on desktop; their height (with the 8 px under each) goes into
+     --dk-banner-h, which the ticket's sticky top and max-height and the chart's height take off (trade.html), as
+     the owed row's 40 px does. 0 when none shows, and on phones and tablets. */
+  function dkBannerRoom() {
+    var h = 0;
+    if (isDesk()) ['v2Banner', 'v3Banner'].forEach(function (id) {
+      var b = $(id);
+      if (b && !b.hidden && b.offsetHeight) { var cs = getComputedStyle(b); h += b.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0); }
+    });
+    var v = Math.round(h) + 'px';
+    if (document.body.style.getPropertyValue('--dk-banner-h') !== v) document.body.style.setProperty('--dk-banner-h', v);
   }
 
   function refreshAccount() {
@@ -4339,9 +4551,14 @@
     if (strip) strip.hidden = !wallet.account;
     var mini = $('acctMini');
     if (mini) mini.hidden = !wallet.account;
+    /* desktop: the same three numbers in the top strip (#dkAcct) and the owed sentence under it (#dkOwed) */
+    var dk = $('dkAcct');
+    if (dk) dk.hidden = !wallet.account;
     if (!wallet.account || !hasExchange() || !acct.loaded) {
-      ['eqAvailable', 'eqMargin', 'eqPnl'].forEach(function (id) { setText(id, '—'); });
+      ['eqAvailable', 'eqMargin', 'eqPnl', 'dkBal', 'dkMargin', 'dkPnl'].forEach(function (id) { setText(id, '—'); });
       var pe = $('eqPnl'); if (pe) pe.className = '';
+      var dpe = $('dkPnl'); if (dpe) dpe.className = 'dk-acct-v';
+      renderDkOwed('');
       renderMiniAccount('—', '');
       renderPhAccount('');
       renderPhMoreAcct('');
@@ -4349,14 +4566,26 @@
       return;
     }
     var pnl = openPnl();
-    setText('eqAvailable', fmtUsd(acct.available));
-    setText('eqMargin', fmtUsd(acct.marginInUse + acct.pending));
+    var balText = fmtUsd(acct.available), inText = fmtUsd(acct.marginInUse + acct.pending), pnlText = fmtUsd(pnl, true);
+    var inTitle = acct.pending > 0 ? fmtUsd(acct.pending) + ' of it in trades still opening' : '';
+    var pnlCls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
+    setText('eqAvailable', balText);
+    setText('eqMargin', inText);
     var marginEl = $('eqMargin');
-    if (marginEl) marginEl.title = acct.pending > 0 ? fmtUsd(acct.pending) + ' of it in trades still opening' : '';
+    if (marginEl) marginEl.title = inTitle;
     var pnlEl = $('eqPnl');
     if (pnlEl) {
-      pnlEl.textContent = fmtUsd(pnl, true);
-      pnlEl.className = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
+      pnlEl.textContent = pnlText;
+      pnlEl.className = pnlCls;
+    }
+    setText('dkBal', balText);
+    setText('dkMargin', inText);
+    var dkm = $('dkMargin');
+    if (dkm) dkm.title = inTitle;
+    var dkp = $('dkPnl');
+    if (dkp) {
+      if (dkp.textContent !== pnlText) dkp.textContent = pnlText;
+      dkp.className = 'dk-acct-v' + (pnlCls ? ' ' + pnlCls : '');
     }
     var owedText = acct.owed > 0 ? 'Owed to you: ' + fmtUsd(acct.owed) + (acct.owedAt ? ' · #' + acct.owedAt + ' in line' : '') + ' · paid automatically' : '';
     var owed = $('acctOwed');
@@ -4364,10 +4593,21 @@
       owed.hidden = !owedText;
       if (owedText) owed.textContent = owedText;
     }
+    renderDkOwed(owedText);
     renderMiniAccount(fmtUsd(acct.available), owedText);
     renderPhAccount(owedText);
     renderPhMoreAcct(owedText);
     renderPosChip();
+  }
+
+  /* Desktop: "Owed to you: $X · #N in line · paid automatically" as a row under the strip. body.dk-owing lets the
+     desktop layout (paper.css, desk piece A) give the row its 40 px in the ticket's and the chart's sums. */
+  function renderDkOwed(owedText) {
+    var row = $('dkOwed');
+    if (!row) return;
+    row.hidden = !owedText;
+    if (owedText && row.textContent !== owedText) row.textContent = owedText;
+    document.body.classList.toggle('dk-owing', !!owedText);
   }
 
   /* Phones: "Balance $X · [+ Deposit] [Withdraw]" at the top of Your positions (the ticket's strip
@@ -4446,19 +4686,41 @@
     var px = closePriceFor(p);
     var est = positionEstimate(p);
     var known = isFinite(px) || !!p.preview;
+    /* desktop (>= 901): the table row splits the P&L into $ and % and the liquidation into price,
+       bar and distance, each in its own cell; the card keeps the one string */
+    var dk = card.classList.contains('dk-row');
+    var sign = est.pnl > 0 ? ' pos' : est.pnl < 0 ? ' neg' : '';
     var pnl = card.querySelector('[data-role="pnl"]');
     if (pnl) {
-      var t = known ? fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')' : '—';
+      var t = !known ? '—' : dk ? fmtUsd(est.pnl, true) : fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')';
       if (pnl.textContent !== t) pnl.textContent = t;
-      pnl.className = 'pc-pnl' + (est.pnl > 0 ? ' pos' : est.pnl < 0 ? ' neg' : '');
+      pnl.className = (dk ? 'dk-cell dk-num dk-pnl' : 'pc-pnl') + sign;
       pnl.title = known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') : '';
+    }
+    if (dk) {
+      var pct = setRole(card, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
+      if (pct) pct.className = 'dk-cell dk-num dk-pct' + sign;
     }
     setRole(card, 'now', isFinite(px) ? fmtPrice(px, sz) : '—');
     var room = liqRoom(p, px);
-    var liqEl = setRole(card, 'liq', fmtPrice(room.liq, sz) + (isFinite(room.away) ? ' (' + (room.away * 100).toFixed(room.away >= 0.01 ? 1 : 2) + '% away)' : ''));
-    if (liqEl) liqEl.className = 'pc-v' + (room.cls ? ' ' + room.cls : '');
+    var away = isFinite(room.away) ? (room.away * 100).toFixed(room.away >= 0.01 ? 1 : 2) + '%' : '';
+    if (dk) {
+      setRole(card, 'liq', fmtPrice(room.liq, sz));
+      setRole(card, 'away', away);
+      var lc = card.querySelector('.dk-liq');
+      if (lc) {
+        lc.className = 'dk-cell dk-liq' + (room.cls ? ' ' + room.cls : '');
+        var fill = lc.querySelector('.dk-bar i');
+        var full = bustMovePct(p.leverage) / 100;
+        if (fill) fill.style.width = (away && full > 0 ? clamp(room.away / full, 0, 1) * 100 : 0).toFixed(1) + '%';
+      }
+    } else {
+      var liqEl = setRole(card, 'liq', fmtPrice(room.liq, sz) + (away ? ' (' + away + ' away)' : ''));
+      if (liqEl) liqEl.className = 'pc-v' + (room.cls ? ' ' + room.cls : '');
+    }
     card.classList.toggle('is-near', room.cls === 'is-red');
-    setRole(card, 'est', known ? 'you get back about ' + fmtUsd(est.payout) : '');
+    var estEl = setRole(card, 'est', dk ? (known ? 'Close · about ' + fmtUsd(est.payout) : 'Close') : known ? 'you get back about ' + fmtUsd(est.payout) : '');
+    if (dk && estEl && pnl && estEl.title !== pnl.title) estEl.title = pnl.title;
   }
 
   /* The three request windows, measured on the chain clock from the request timestamp:
@@ -4695,14 +4957,146 @@
     var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
     card.setAttribute('data-req', r.id);
     card.title = 'Request #r' + r.id;
+    if (isDesk()) {
+      /* desktop: one 40 px row, "Opening Long DOGE 20x · $10", the sentence and its button */
+      card.classList.add('dk-row', 'dk-wide');
+      card.appendChild(dkWho(r.isLong, reqSym(r), r.leverage, 'Opening', ' · ' + fmtUsdShort(r.margin)));
+      card.appendChild(dkStatusEl(function () { openReqAction(r); }));
+      updateOpenProg(card, r);
+      return card;
+    }
     card.appendChild(makeProg('Opening ' + sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x · ' + fmtUsdShort(r.margin), function () { openReqAction(r); }));
     updateOpenProg(card, r);
     return card;
   }
 
   function updateOpenProg(card, r) {
+    var dkBox = card.querySelector('.dk-status');
+    if (dkBox) { dkSetStatus(dkBox, progressView('open', r, r.margin)); return; }
     var box = card.querySelector('.prog');
     if (box) setProg(box, progressView('open', r, r.margin));
+  }
+
+  /* ---- desktop (>= 901 px): positions as a table (piece C) ----
+     Each position is a 40 px row of nine cells on the --dk-pos-cols grid; a request, a close being
+     checked and a result are one wide row. The roles (pnl, now, liq, act, est) are the card's, so
+     fillPositionPnl and fillCardAction serve both. (isDesk / onDeskChange are piece A's, beside isPhone.) */
+
+  function dkCell(cls, text, role) {
+    var c = el('div', 'dk-cell' + (cls ? ' ' + cls : ''), text);
+    if (role) c.setAttribute('data-role', role);
+    return c;
+  }
+
+  /* The first cell: the side tag, the coin, the leverage (and a word before, a note after). */
+  function dkWho(isLong, sym, lev, pre, post) {
+    var who = dkCell('dk-who');
+    if (pre) who.appendChild(el('span', 'dk-pre', pre));
+    who.appendChild(el('span', 'pc-side', isLong ? 'LONG' : 'SHORT'));
+    who.appendChild(el('span', 'pc-sym', sym));
+    who.appendChild(el('span', 'pc-lev', lev + 'x' + (post || '')));
+    return who;
+  }
+
+  /* The Close cell while something is happening: the sentence (the card's step that is on),
+     the note under it, and the one button (Finish now, Try again, Get $X back). */
+  function dkStatusEl(onBtn) {
+    var box = el('div', 'dk-status');
+    var txt = el('div', 'dk-say-wrap');
+    var say = el('span', 'dk-say'); say.setAttribute('data-role', 'say');
+    var note = el('span', 'dk-note'); note.setAttribute('data-role', 'dknote');
+    txt.appendChild(say); txt.appendChild(note);
+    box.appendChild(txt);
+    var b = el('button', 'btn btn-sm');
+    b.type = 'button'; b.hidden = true; b.setAttribute('data-role', 'b1');
+    if (onBtn) b.addEventListener('click', onBtn);
+    box.appendChild(b);
+    return box;
+  }
+
+  /* v: progressView's shape (steps, cls, note, btn, btnCls, btnFree), as setProg reads it */
+  function dkSetStatus(box, v) {
+    var steps = v.steps || [], on = null;
+    for (var i = 0; i < steps.length; i++) if (/\bis-on\b/.test(steps[i][1] || '')) { on = steps[i]; break; }
+    if (!on) for (var j = steps.length - 1; j >= 0; j--) if (steps[j][0] && /\bis-done\b/.test(steps[j][1] || '')) { on = steps[j]; break; }
+    var cls = 'dk-status' + (v.cls ? ' ' + v.cls : '');
+    if (box.className !== cls) box.className = cls;
+    var say = setRole(box, 'say', on ? on[0] : '');
+    if (say) say.className = 'dk-say' + (on && /is-bad/.test(on[1]) ? ' is-bad' : on && /is-warn/.test(on[1]) ? ' is-warn' : '');
+    var note = setRole(box, 'dknote', v.note || '');
+    if (note) note.title = v.note || '';
+    var b1 = box.querySelector('[data-role="b1"]');
+    if (b1) {
+      if (b1.textContent !== (v.btn || '')) b1.textContent = v.btn || '';
+      b1.hidden = !v.btn;
+      b1.className = 'btn btn-sm' + (v.btnCls ? ' ' + v.btnCls : '');
+      b1.disabled = !v.btnFree && state.busy;
+    }
+  }
+
+  /* One open position as a table row: POSITION · SIZE · PUT IN · ENTRY · NOW · LIQUIDATION · P&L ·
+     % · CLOSE. pos-card, is-long / is-short, data-id and .close-btn stay for the tour and the
+     close path. */
+  function dkPositionRow(p) {
+    var m = positionMarket(p);
+    var sz = m ? m.szDecimals : null;
+    var row = el('div', 'pos-card dk-row ' + (p.isLong ? 'is-long' : 'is-short'));
+    row.setAttribute('data-id', String(p.id));
+    if (fx.fresh[String(p.id)]) delete fx.fresh[String(p.id)];
+    /* the size and the amount put in ride in the title too: a narrow window drops their columns */
+    row.title = 'Position #' + p.id + ' · size ' + fmtUsd(p.margin * p.leverage) + ' · put in ' + fmtUsd(p.margin);
+    row.appendChild(dkWho(p.isLong, m ? m.symbol : 'Market ' + p.instrumentId, p.leverage));
+    row.appendChild(dkCell('dk-num', fmtUsd(p.margin * p.leverage), 'size'));
+    row.appendChild(dkCell('dk-num', fmtUsd(p.margin), 'margin'));
+    row.appendChild(dkCell('dk-num', fmtPrice(p.entry, sz), 'entry'));
+    row.appendChild(dkCell('dk-num', '—', 'now'));
+    var liq = dkCell('dk-liq');
+    var lp = el('span', 'dk-liq-px', '—'); lp.setAttribute('data-role', 'liq');
+    liq.appendChild(lp);
+    var bar = el('span', 'dk-bar'); bar.setAttribute('aria-hidden', 'true');
+    bar.appendChild(el('i'));
+    liq.appendChild(bar);
+    var aw = el('span', 'dk-away'); aw.setAttribute('data-role', 'away');
+    liq.appendChild(aw);
+    liq.appendChild(el('span', 'dk-away-w', 'away'));
+    row.appendChild(liq);
+    row.appendChild(dkCell('dk-num dk-pnl', '—', 'pnl'));
+    row.appendChild(dkCell('dk-num dk-pct', '', 'pct'));
+    row.appendChild(dkCell('dk-act', null, 'act'));
+    fillCardAction(row, p);
+    fillPositionPnl(row, p);
+    return row;
+  }
+
+  /* The head's "Open 2 · In trades $20.00 · P&L -$4.62" and the column head, from the same locals
+     as the account strip (acct.marginInUse + acct.pending, openPnl()). */
+  function renderDkPosHead() {
+    var dk = isDesk();
+    var ready = !!(wallet.account && hasExchange() && acct.loaded);
+    var n = ready ? acct.positions.length + pendingOpenList().length : 0;
+    var sum = $('dkPosSum');
+    var head = document.querySelector('#posPanel .pos-head');
+    if (head) head.classList.toggle('is-dk', dk && ready);
+    if (sum) {
+      sum.hidden = !(dk && ready);
+      if (dk && ready) {
+        setText('dkPosN', String(n));
+        var money = $('dkPosMoney');
+        if (money) money.hidden = !acct.positions.length;
+        if (acct.positions.length) {
+          var pnl = openPnl();
+          setText('dkPosMargin', fmtUsd(acct.marginInUse + acct.pending));
+          var pe = $('dkPosPnl');
+          if (pe) {
+            var t = fmtUsd(pnl, true);
+            if (pe.textContent !== t) pe.textContent = t;
+            pe.className = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
+          }
+        }
+      }
+    }
+    var ch = $('dkPosHead');
+    if (ch) ch.hidden = !(dk && ready && acct.positions.length > 0);
   }
 
   /* Finish now (late) or Get $X back (expired) on an open request, by its phase at click time. */
@@ -4717,6 +5111,7 @@
      (amber, then red, as it nears), amount put in and size; CLOSE POSITION across the bottom with
      about what it gives back. With a close on its way the button becomes the progress card. */
   function positionCard(p) {
+    if (isDesk()) return dkPositionRow(p);
     var m = positionMarket(p);
     var sz = m ? m.szDecimals : null;
     var card = el('div', 'pos-card ' + (p.isLong ? 'is-long' : 'is-short'));
@@ -4770,10 +5165,20 @@
        result is being read from the logs; settling: the logs say it closed */
     var mode = ui.retrying[pid] && !ui.closing[pid] ? 'retrying' : cr ? 'req' : ui.closing[pid] ? 'wallet'
       : ui.checking[pid] ? 'checking' : ui.settling[pid] ? 'settling' : 'idle';
+    var dk = card.classList.contains('dk-row');
     if (act.getAttribute('data-mode') !== mode) {
       act.setAttribute('data-mode', mode);
       act.textContent = '';
-      if (mode === 'idle') {
+      if (dk) {
+        /* desktop: "Close · about $4.44" (the est role is the button's label), or the sentence */
+        if (mode === 'idle') {
+          var db = el('button', 'btn btn-sm close-btn', 'Close');
+          db.type = 'button';
+          db.setAttribute('data-role', 'est');
+          db.addEventListener('click', function () { tourEvent('close'); submitClose(posById(pid) || p); });
+          act.appendChild(db);
+        } else act.appendChild(dkStatusEl(function () { closeReqAction(posById(pid) || p); }));
+      } else if (mode === 'idle') {
         var b = el('button', 'btn btn-block close-btn', 'CLOSE POSITION');
         b.type = 'button';
         b.addEventListener('click', function () { tourEvent('close'); submitClose(posById(pid) || p); });
@@ -4790,13 +5195,14 @@
       if (cb) cb.disabled = state.busy;
       return;
     }
-    var box = act.querySelector('.prog');
+    var box = act.querySelector(dk ? '.dk-status' : '.prog');
     if (!box) return;
-    if (mode === 'wallet') setProg(box, { steps: [[state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Closing', ''], ['Closed', '']] });
-    else if (mode === 'retrying') setProg(box, { steps: [['Getting ready to close again…', 'is-on'], ['Closing again', ''], ['Closed', '']], note: 'Closing again. ' + (sessionLive() ? '' : 'Your wallet asks twice.') });
-    else if (mode === 'checking') setProg(box, CHECKING_VIEW);
-    else if (mode === 'settling') setProg(box, { cls: 'is-done', steps: [['Sent', 'is-done'], ['Closed', 'is-done'], ['Adding it to your balance…', 'is-on']] });
-    else setProg(box, progressView('close', cr, p.margin));
+    var put = dk ? dkSetStatus : setProg;
+    if (mode === 'wallet') put(box, { steps: [[state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Closing', ''], ['Closed', '']] });
+    else if (mode === 'retrying') put(box, { steps: [['Getting ready to close again…', 'is-on'], ['Closing again', ''], ['Closed', '']], note: 'Closing again. ' + (sessionLive() ? '' : 'Your wallet asks twice.') });
+    else if (mode === 'checking') put(box, CHECKING_VIEW);
+    else if (mode === 'settling') put(box, { cls: 'is-done', steps: [['Sent', 'is-done'], ['Closed', 'is-done'], ['Adding it to your balance…', 'is-on']] });
+    else put(box, progressView('close', cr, p.margin));
   }
 
   /* A close whose request is gone from chain, while the logs are read for how it ended. */
@@ -4832,6 +5238,7 @@
   function recentCard(r) {
     var card = el('div', 'result-card' + (r.cls ? ' ' + r.cls : ''));
     card.setAttribute('data-recent', r.key);
+    if (isDesk()) return dkRecentRow(card, r);
     var title = el('div', 'rc-title', r.title);
     /* phones (ph-only, so the desktop card is as before): the money on the title line, and one
        short line under it in place of the first line */
@@ -4839,6 +5246,31 @@
     card.appendChild(title);
     if (r.ph) { card.classList.add('has-ph'); card.appendChild(el('div', 'rc-line rc-ph ph-only', r.ph)); }
     (r.lines || []).forEach(function (l, i) { card.appendChild(el('div', 'rc-line' + (i === 0 && r.ph ? ' rc-main' : ''), l)); });
+    var row = el('div', 'rc-btns');
+    (r.buttons || []).forEach(function (b) {
+      var x = el('button', 'btn btn-sm', b.label);
+      x.type = 'button';
+      if (b.act) x.setAttribute('data-act', b.act);
+      x.addEventListener('click', b.fn);
+      row.appendChild(x);
+    });
+    var ok = el('button', 'btn btn-sm btn-ghost', 'OK');
+    ok.type = 'button';
+    ok.addEventListener('click', function () { dropRecent(r.key); });
+    row.appendChild(ok);
+    card.appendChild(row);
+    return card;
+  }
+
+  /* desktop: the result as one row: the title, its lines joined with " · " (the whole text in the
+     title), then the buttons and OK */
+  function dkRecentRow(card, r) {
+    card.classList.add('dk-row', 'dk-wide');
+    card.appendChild(el('div', 'rc-title', r.title));
+    var text = (r.lines || []).join(' · ');
+    var line = el('div', 'rc-line', text);
+    line.title = text;
+    card.appendChild(line);
     var row = el('div', 'rc-btns');
     (r.buttons || []).forEach(function (b) {
       var x = el('button', 'btn btn-sm', b.label);
@@ -4901,6 +5333,16 @@
     var card = el('div', 'pos-card is-pending' + (p && p !== true ? (p.isLong ? ' is-long' : ' is-short') : ''));
     card.setAttribute('data-check', pid);
     card.title = 'Position #' + pid;
+    if (isDesk()) {
+      card.classList.add('dk-row', 'dk-wide');
+      var known = p && p !== true;
+      if (known) { var m = positionMarket(p); card.appendChild(dkWho(p.isLong, m ? m.symbol : 'Market ' + p.instrumentId, p.leverage, 'Closing')); }
+      else card.appendChild(dkCell('dk-who', 'Closing your position'));
+      var st = dkStatusEl();
+      dkSetStatus(st, CHECKING_VIEW);
+      card.appendChild(st);
+      return card;
+    }
     var box = makeProg('Closing ' + (p && p !== true ? posLabel(p) : 'your position'));
     setProg(box, CHECKING_VIEW);
     card.appendChild(box);
@@ -4921,6 +5363,7 @@
     var opens = pendingOpenList();
     var n = acct.positions.length + opens.length;
     setText('posCount', n ? ' (' + n + ')' : '');
+    host.classList.toggle('dk-table', isDesk());
     var closing = Object.keys(ui.checking).length;
     var layout = $('tradeLayout');
     if (layout) layout.classList.toggle('has-pos', !!wallet.account && (n > 0 || closing > 0 || ui.recent.length > 0));
@@ -4932,6 +5375,7 @@
     ui.posSig = sig;
     clearCards(host);
     renderPosChip();
+    renderDkPosHead();
     if (!wallet.account) { empty.textContent = 'Connect a wallet to see your positions.'; empty.hidden = false; return; }
     if (!hasExchange()) { empty.textContent = 'Trading is off on this copy of the site.'; empty.hidden = false; return; }
     if (!acct.loaded) { empty.textContent = 'Loading your positions…'; empty.hidden = false; return; }
@@ -4962,6 +5406,7 @@
       var card = host.querySelector('.pos-card[data-req="' + r.id + '"]');
       if (card) updateOpenProg(card, r);
     });
+    renderDkPosHead();
     renderPhRows();
   }
 
@@ -5988,7 +6433,7 @@
       title: 'Close ' + list.length + ' position' + (list.length === 1 ? '' : 's') + '?',
       lines: [
         'You get back about ' + fmtUsd(back) + '.',
-        'Each one closes at the oracle price in about ' + fillSecs() + ' s.' + (sessionLive() ? '' : ' Your wallet asks once for each.')
+        'Each one closes at the market price in about ' + fillSecs() + ' s.' + (sessionLive() ? '' : ' Your wallet asks once for each.')
       ],
       ok: 'Close all', okClass: 'go-close', back: 'Keep open'
     })).then(function (yes) {
@@ -6991,6 +7436,7 @@
       case 'Withdrawn':
         d.label = 'Withdrawal';
         d.amount = -usd6ToNum(a.amountUsdc);
+        d.flow = true;   /* money moved to the wallet, not a loss: no pink (cf_FIX) */
         break;
       case 'PositionOpened':
         d.label = 'Opened';
@@ -7080,7 +7526,7 @@
     var w = el('span', 'ph-hist-what', d.label + ' ');
     if (d.market) { w.appendChild(el('b', null, d.market)); if (d.side) w.appendChild(document.createTextNode(' ' + d.side)); }
     top.appendChild(w);
-    if (d.amount != null) top.appendChild(el('b', 'ph-hist-money' + (d.signed ? (d.amount > 0 ? ' pos' : d.amount < 0 ? ' neg' : '') : ''), fmtUsd(d.amount, d.signed)));
+    if (d.amount != null) top.appendChild(el('b', 'ph-hist-money' + (d.signed && !d.flow ? (d.amount > 0 ? ' pos' : d.amount < 0 ? ' neg' : '') : ''), fmtUsd(d.amount, d.signed)));
     main.appendChild(top);
     var sub = el('span', 'ph-hist-sub');
     if (parts.length) sub.appendChild(document.createTextNode(parts.join(' · ') + ' · '));
@@ -7104,6 +7550,7 @@
      details, view (the transaction). Ids stay in the hover text. */
   function historyLine(r) {
     if (isPhone()) return phHistoryLine(r);
+    if (isDesk()) return dkHistoryLine(r);
     var d = describeRow(r);
     var line = el('div', 'pos-line hist-line');
     if (d.id) line.title = (d.id.charAt(0) === 'r' ? 'Request #' : 'Position #') + d.id.replace(/^r/, '');
@@ -7115,7 +7562,7 @@
     if (d.market) line.appendChild(el('span', 'sym', d.market));
     if (d.side) line.appendChild(el('span', /^Long/.test(d.side) ? 'pos' : 'neg', d.side));
     if (d.amount != null) {
-      var cls = d.signed ? (d.amount > 0 ? 'pos' : d.amount < 0 ? 'neg' : '') : '';
+      var cls = d.signed && !d.flow ? (d.amount > 0 ? 'pos' : d.amount < 0 ? 'neg' : '') : '';
       line.appendChild(el('span', cls || null, fmtUsd(d.amount, d.signed)));
     }
     if (d.details) line.appendChild(el('span', 'faint hist-detail', d.details));
@@ -7137,12 +7584,62 @@
     return line;
   }
 
+  /* Desktop (>= 901): seven cells in a fixed order, empty when there is nothing, so a Deposit
+     row lines up under an Opened row: time (the day when not today), what, position, amount,
+     details, share, view. The same fields as historyLine, from describeRow. */
+  function dkHistoryLine(r) {
+    var d = describeRow(r);
+    var line = el('div', 'pos-line hist-line dk-row');
+    if (d.id) line.title = (d.id.charAt(0) === 'r' ? 'Request #' : 'Position #') + d.id.replace(/^r/, '');
+    var time = el('div', 'dk-cell dk-time', fmtWhen(hist.blockTs[r.block]));
+    time.setAttribute('data-block', String(r.block));
+    time.title = blockTitle(r.block);
+    line.appendChild(time);
+    line.appendChild(el('div', 'dk-cell dk-what', d.label));
+    var pos = el('div', 'dk-cell dk-pos');
+    if (d.market) pos.appendChild(el('span', 'sym', d.market));
+    if (d.side) pos.appendChild(el('span', /^Long/.test(d.side) ? 'pos' : 'neg', d.side));
+    line.appendChild(pos);
+    var amt = el('div', 'dk-cell dk-num');
+    if (d.amount != null) {
+      var cls = d.signed && !d.flow ? (d.amount > 0 ? 'pos' : d.amount < 0 ? 'neg' : '') : '';
+      amt.textContent = fmtUsd(d.amount, d.signed);
+      if (cls) amt.classList.add(cls);
+    }
+    line.appendChild(amt);
+    var det = el('div', 'dk-cell dk-detail', d.details || '');
+    if (d.details) det.title = d.details;
+    line.appendChild(det);
+    var sc = el('div', 'dk-cell dk-link');
+    if (r.name === 'PositionClosed' && d.amount > 0 && window.ConfettiShare) {
+      var share = el('a', 'faint', 'share');
+      share.href = '#'; share.setAttribute('role', 'button'); share.title = 'Share your win';
+      share.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null));
+      });
+      sc.appendChild(share);
+    }
+    line.appendChild(sc);
+    var vc = el('div', 'dk-cell dk-link');
+    if (r.tx && !DEMO) {
+      var a = el('a', 'faint', 'view');
+      a.href = explorer('tx', r.tx); a.target = '_blank'; a.rel = 'noopener'; a.title = r.tx;
+      vc.appendChild(a);
+    }
+    line.appendChild(vc);
+    return line;
+  }
+
   function renderHistory() {
     var host = $('histLines');
     var empty = $('histEmpty');
     var more = $('histMoreBtn');
     if (!host) return;
     clearLines(host);
+    host.classList.toggle('dk-table', isDesk());
+    var hh = $('dkHistHead');
+    if (hh) hh.hidden = !(isDesk() && wallet.account && hasExchange() && hist.rows.length);
     if (!wallet.account) { empty.textContent = 'Connect a wallet to see your history.'; empty.removeAttribute('hidden'); }
     else if (!hasExchange()) { empty.textContent = 'Trading is off on this copy of the site.'; empty.removeAttribute('hidden'); }
     else if (!hist.rows.length) { empty.textContent = hist.loading ? 'Loading your history…' : 'No trades yet.'; empty.removeAttribute('hidden'); }
@@ -7175,7 +7672,7 @@
         if (blk) {
           hist.blockTs[b] = Number(blk.timestamp);
           var cells = document.querySelectorAll('#histLines [data-block="' + b + '"]');
-          for (var i = 0; i < cells.length; i++) { cells[i].textContent = cells[i].classList.contains('ph-hist-time') ? fmtWhen(hist.blockTs[b]) : fmtClock(hist.blockTs[b]); cells[i].title = blockTitle(b); }
+          for (var i = 0; i < cells.length; i++) { cells[i].textContent = cells[i].classList.contains('ph-hist-time') || cells[i].classList.contains('dk-time') ? fmtWhen(hist.blockTs[b]) : fmtClock(hist.blockTs[b]); cells[i].title = blockTitle(b); }
         }
       }).catch(function () {}).then(function () { tsInFlight--; next(); });
       next();
@@ -7405,6 +7902,8 @@
     if (more) more.addEventListener('click', function () { loadHistory(false); });
     var closeAllBtn = $('closeAllBtn');
     if (closeAllBtn) closeAllBtn.addEventListener('click', closeAll);
+    /* crossing 901 px: the positions and History redraw as tables (desktop) or cards and lines */
+    onDeskChange(function () { ui.posSig = null; renderPositions(); renderHistory(); });
     /* the old Status tab: Contracts & status, a closed box under the page, opened from the footer */
     var link = $('statusLink'), box = $('statusBox');
     if (link && box) link.addEventListener('click', function (ev) {
@@ -7491,6 +7990,8 @@
     });
     var tb = $('tourBtn');
     if (tb) tb.addEventListener('click', function () { startTour(0); });
+    /* the strip carries Balance · In trades · P&L and the owed row: the ticket's own strip may hide on desktop */
+    if ($('dkAcct') && $('dkOwed')) document.body.classList.add('dk-ready');
     initPhoneHeader();
     initPhonePositions();
   }
@@ -7530,17 +8031,20 @@
         var amt = isFinite(form.margin) && form.margin > 0 ? fmtUsdShort(form.margin) : 'amount';
         var w = $('moveWin');
         var pays = w && w.textContent !== '—' ? ', a 1% move your way pays about ' + w.textContent : '';
-        return 'Leverage multiplies your result. At ' + form.lev + 'x' + pays + '. A ' + fmtMove(bustMovePct(form.lev)) + '% move against you hits the liquidation price and your ' + amt + ' is gone. Higher leverage, smaller move.';
+        return 'Leverage multiplies your result. At ' + form.lev + 'x' + pays + '. A ' + fmtMove(bustMovePct(form.lev)) + '% move against you hits the liquidation price and you lose your ' + amt + '. Higher leverage, smaller move.';
       } },
     { id: 'preview', sheet: true, title: 'Your trade in dollars',
-      target: function () { return $('previewBox'); },
-      text: function () { return 'How big the position is, what a 1% move pays you, and the price it opens near. Each direction button shows its liquidation price.'; } },
-    { id: 'open', on: 'submit', sheet: true, title: 'OPEN POSITION',
+      target: function () { return isDesk() ? $('dkReceipt') : $('previewBox'); },
+      text: function () { return (isDesk() ? 'What you risk, how big the position is, the liquidation price, ' : 'How big the position is, ') + 'what a 1% move pays you, and the price it opens near. Each direction button shows its liquidation price.'; } },
+    /* desktop (cf_FIX): the button says the trade ("OPEN LONG · $5 × 20x"), positions are table rows with a Close
+       button that says the money, and Withdraw sits in the header: the steps say so */
+    { id: 'open', on: 'submit', sheet: true, title: function () { return isDesk() ? 'OPEN' : 'OPEN POSITION'; },
       target: function () { return tk.phase ? $('ticketProgress') : $('actionBtn'); },
       text: function () {
         if (!wallet.account) return 'Connect your wallet to keep going. This button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Then it says OPEN POSITION.';
         var b = $('actionBtn');
         var ready = b && !b.disabled && /^OPEN\b/i.test(b.textContent);
+        if (ready && isDesk()) return tapWord() + ' ' + b.textContent.trim() + ': the button says your trade. Your wallet shows it and asks you to confirm.';
         return ready ? tapWord() + ' OPEN POSITION. Your wallet shows the trade and asks you to confirm.'
           : 'Until you are set up, this button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Then it says OPEN POSITION.';
       } },
@@ -7554,11 +8058,12 @@
       target: function () { return isPhone() ? document.querySelector('#phRows .ph-row[data-pid]') || firstCard() : firstCard(); },
       text: function () {
         if (isPhone()) return 'Every open position gets a row at the top of the page: profit or loss in $ and %, and a bar for how far the price is from liquidation. It turns amber, then red, as the price gets close. Tap a row for the entry price, the price now, the liquidation price, about what you get back, and Close.';
+        if (isDesk()) return 'Every open position is a row in the table under the chart: its size, what you put in, the price you got in at, the price now, the liquidation price and how far away it is, and profit or loss in $ and %. The liquidation turns amber, then red, as the price gets close.';
         return 'Every open position gets a card' + (isSheetMode() ? ' at the top of the page' : ' under the chart') + ': profit or loss in $ and %, the price you got in at, the price now, and the liquidation price. It turns amber, then red, as the price gets close.';
       } },
     /* moves on when the close's result is in (reportCloseOutcome), not on the tap, so the card's
        Closing steps and its "Closed … back in your balance" stay in view */
-    { id: 'close', on: 'closed', sheet: false, title: 'CLOSE POSITION',
+    { id: 'close', on: 'closed', sheet: false, title: function () { return isDesk() ? 'Close' : 'CLOSE POSITION'; },
       target: function () {
         var c = firstCard();
         /* phones: the row; its sheet holds Close (the sheet sits above the tour while it is open) */
@@ -7567,6 +8072,7 @@
       },
       text: function () {
         if (isPhone()) return tapWord() + ' the row any time to take your money out: the sheet shows about what you get back, right over the Close button. It closes at the market price in about ' + fillSecs() + ' s, and the sheet shows the result.';
+        if (isDesk()) return tapWord() + ' Close any time to take your money out. The button says about what you get back. It closes at the market price in about ' + fillSecs() + ' s, right here in the row.';
         return tapWord() + ' CLOSE POSITION any time to take your money out. Under it: about what you get back. It closes at the market price in about ' + fillSecs() + ' s, right here on the card.';
       } },
     /* the result card's own Withdraw when there is one; else the account line's (on a phone the
@@ -7577,6 +8083,7 @@
         var r = document.querySelector('#posLines .result-card [data-act="withdraw"]');
         if (r) return r;
         if (isPhone() && $('phAcct')) return $('phAcct');
+        if (isDesk() && $('withdrawBtn') && !$('withdrawBtn').hidden) return $('withdrawBtn');   /* the ticket's strip is hidden on desktop */
         return isSheetMode() ? document.querySelector('#acctMini .js-wd') : $('acctWithdraw');
       },
       text: function () { return 'Withdraw sends your Confetti balance back to your wallet. That is every button. Replay this from "' + (isSheetMode() ? '? Help' : '? How to trade') + '".'; } }
@@ -7686,7 +8193,7 @@
     var s = TOUR[tour.i];
     if (isSheetMode()) { if (s.sheet === true) openSheet(); else if (s.sheet === false) closeSheet(); }
     setRole(tour.card, 'count', 'Step ' + (tour.i + 1) + ' of ' + TOUR.length);
-    setRole(tour.card, 'title', s.title);
+    setRole(tour.card, 'title', typeof s.title === 'function' ? s.title() : s.title);
     setRole(tour.card, 'text', s.text());
     var back = tour.card.querySelector('[data-role="back"]');
     if (back) back.hidden = tour.i === 0;
@@ -7867,6 +8374,8 @@
     if (Number(demoOpt('queued')) > 0) house.queued = Number(demoOpt('queued'));
     demoOpt('paused').split(',').forEach(function (s) { var pm = state.bySym[s]; if (pm && pm.inst) pm.inst.opensPaused = true; });
     ref.loaded = true; ref.locked = true;
+    /* F32: the desktop strip's house line and 24h chip, as the chain path fills them (phones keep their skeleton) */
+    if (isDesk()) { house.lp = 412300; setText('chipHouseLp', fmtUsdShort(house.lp)); refreshConfVol(); }
     if (state.market) selectMarket(state.market.symbol);
     renderWallet(); renderAccount(); renderPositions(); renderAction(); renderStatus(); renderRefer(); renderSession(); buildMarketMenu();
     toast('Demo: a pretend account on this computer. Nothing is sent.', null, null, 6000);

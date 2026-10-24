@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="paper.css?v=desk2">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -71,14 +71,16 @@
       <div class="panel-head"><span>Open</span><span class="count" id="pfOpenCount"></span></div>
       <!-- Phones: the 64 px position rows (the trade page's rows), each a link to trade.html#pos=<id> -->
       <div class="ph-only ph-rows pf-rows" id="pfRows"></div>
-      <div class="pos-lines" id="pfOpen">
+      <div class="pos-lines dk-table" id="pfOpen">
+        <div class="dk-only dk-head" id="pfPosHead" hidden aria-hidden="true"><span>Position</span><span class="dk-r">Size</span><span class="dk-r">Put in</span><span class="dk-r">Entry</span><span class="dk-r">Now</span><span>Liquidation</span><span class="dk-r">P&amp;L</span><span class="dk-r">%</span><span></span></div>
         <div class="empty">Connect a wallet to see your portfolio.</div>
       </div>
     </section>
 
     <section class="panel tab-section" aria-label="History">
       <div class="panel-head"><span>History</span><span class="count" id="pfHistCount"></span></div>
-      <div class="pos-lines" id="pfHist">
+      <div class="pos-lines dk-table" id="pfHist">
+        <div class="dk-only dk-head" id="pfHistHead" hidden aria-hidden="true"><span>Time</span><span>What</span><span>Position</span><span class="dk-r">Amount</span><span>Details</span><span></span><span>Tx</span></div>
         <div class="empty">Connect a wallet to see your history.</div>
       </div>
       <div class="hist-foot">
@@ -136,7 +138,7 @@
   </dialog>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="tabs.js?v=phone4" defer></script>
+  <script src="tabs.js?v=desk2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

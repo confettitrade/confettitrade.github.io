@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="paper.css?v=desk2">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -43,6 +43,9 @@
               <li><b>up to 1000x</b> on meme coins</li>
               <li>fully onchain on hyperliquid</li>
             </ul>
+
+            <!-- Desktop (>= 901 px): one line of facts read from config.json by landing.js; hidden until it has them. -->
+            <p class="hero-live" id="heroLive" hidden></p>
 
             <div class="hero-actions">
               <a class="btn btn-lg" href="trade.html">Trade</a>
@@ -149,6 +152,63 @@
             </div>
           </div>
 
+          <!-- Desktop (>= 901 px): the same preview drawn as today's trade page. Decorative and static
+               (sample numbers) except the chart and its price, which are the live DOGE candles.
+               Shown by paper.css's desk piece D block only; phones and tablets keep the preview above. -->
+          <div class="hero-preview dk-pv-wrap" aria-hidden="true" hidden>
+            <div class="preview-tilt">
+              <div class="preview dk-pv">
+
+                <div class="dk-pv-head">
+                  <span class="wordmark">confetti<span class="cursor cursor-block"></span></span>
+                  <span class="dk-pv-nav"><span class="is-current">Trade</span><span>Portfolio</span><span>House</span><span>$FETTI</span><span>Leaderboard</span></span>
+                  <span class="dk-pv-auth"><span class="btn">Deposit</span><span class="btn">Withdraw</span><span class="btn">0xDE00…0001</span></span>
+                </div>
+
+                <div class="dk-pv-strip">
+                  <span class="dk-pv-coin">DOGE <i>▾</i> <small>up to 1000x</small></span>
+                  <b class="dk-pv-px" id="dkPvPx">—</b>
+                  <span class="chip"><span class="chip-label">sample</span><span class="chip-value">numbers</span></span>
+                  <span class="dk-pv-grow"></span>
+                  <span class="dk-pv-acct"><i>Balance</i> <b>$40.00</b> <i>In trades</i> <b>$10.00</b> <i>P&amp;L</i> <b class="pos">+$0.94</b></span>
+                </div>
+
+                <div class="dk-pv-body">
+                  <div class="dk-pv-left">
+                    <div class="dk-pv-chart">
+                      <span class="dk-pv-tf"><span class="is-on">1m</span><span>5m</span><span>15m</span><span>1h</span><span>4h</span><span>1D</span></span>
+                      <canvas id="dkPvChart"></canvas>
+                    </div>
+                    <div class="dk-pv-pos">
+                      <div class="dk-pv-poshead"><span>Open 1 · In trades $10.00 · P&amp;L <b class="pos">+$0.94</b></span><span class="btn">Close all</span></div>
+                      <div class="dk-pv-tr dk-pv-th"><span>Position</span><span>Size</span><span>Put in</span><span>Entry</span><span>Now</span><span>P&amp;L</span><span>%</span><span></span></div>
+                      <div class="dk-pv-tr"><span><b class="pos">LONG</b> DOGE <i>20x</i></span><span>$200.00</span><span>$10.00</span><span>0.078680</span><span>0.079138</span><span class="pos">+$0.94</span><span class="pos">+9.4%</span><span><span class="dk-pv-close">Close · about $10.95</span></span></div>
+                    </div>
+                  </div>
+
+                  <div class="dk-pv-ticket">
+                    <div class="dk-pv-side"><span class="is-long">✓ BUY / LONG</span><span class="is-short">SELL / SHORT</span></div>
+                    <div class="dk-pv-lbl"><span>Amount</span><i>most you can lose</i></div>
+                    <div class="dk-pv-amt"><span class="dk-pv-in">$ 25</span><span>$10</span><span class="is-on">$25</span><span>$50</span><span>Max</span></div>
+                    <div class="dk-pv-lbl"><span>Leverage</span><b>50x</b></div>
+                    <div class="dk-pv-lev"><span>5x</span><span>10x</span><span>20x</span><span class="is-on">50x</span><span>100x</span><span>250x</span><span>500x</span><span>1000x</span></div>
+                    <div class="dk-pv-rc">
+                      <div class="dk-pv-rc2"><span><i>You risk</i><b>$25.00</b></span><span><i>Position</i><em>$1,250</em></span></div>
+                      <p>Liquidation · a 1.9% drop</p>
+                      <p class="dk-pv-rcw"><span>If DOGE rises 1%</span><b class="pos">+$11.80</b></p>
+                      <p class="dk-pv-rcm">Opens near <span id="dkPvOpen">—</span> in about 6 s</p>
+                      <p class="dk-pv-rcm">Costs 0.01% spread · 5% of wins</p>
+                    </div>
+                    <div class="dk-pv-go">OPEN LONG · $25 × 50x</div>
+                    <p class="dk-pv-hint">Your wallet asks you to confirm.</p>
+                    <div class="dk-pv-sess"><span class="btn">Trade without popups</span><i>not set up</i></div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -173,7 +233,7 @@
     </footer>
   </div>
 
-  <script src="landing.js" defer></script>
+  <script src="landing.js?v=desk1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

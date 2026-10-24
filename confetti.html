@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="paper.css?v=desk2">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -154,9 +154,10 @@
       </div>
     </section>
 
-    <section class="panel tab-section" aria-label="Reward pushes">
+    <section class="panel tab-section" id="cfPushBox" aria-label="Reward pushes">
       <div class="panel-head"><span>Pushes</span><span class="count" id="cfPushCount"></span></div>
-      <div class="pos-lines" id="cfPushes">
+      <div class="dk-only dk-head" id="cfPushHead" hidden aria-hidden="true"><span>Time</span><span>From</span><span class="dk-r">Amount</span><span></span><span class="dk-r">Tx</span></div>
+      <div class="pos-lines dk-table" id="cfPushes">
         <div class="empty">Loading…</div>
       </div>
     </section>
@@ -209,7 +210,7 @@
     </div>
   </dialog>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="tabs.js?v=phone4" defer></script>
+  <script src="tabs.js?v=desk2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

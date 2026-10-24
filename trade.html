@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=phone6">
+  <link rel="stylesheet" href="paper.css?v=desk2">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -124,18 +124,21 @@
     .lev-input { width: 72px; text-align: right; }
     .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
     @media (min-width: 901px) {
-      /* the ticket scrolls inside itself on a short screen and its button area is pinned to the
-         bottom of it, so OPEN POSITION is always on screen; the max-height leaves room for the
-         market bar above the column at scroll 0 */
-      html body.trade .trade-side { max-height: calc(100vh - var(--header-h) - 2 * var(--gap) - var(--pts-bar-h, 0px) - 56px); overflow-y: auto; overscroll-behavior: contain; }
+      /* the ticket sits under the strip and never moves: sticky at the y it starts at (header, points bar,
+         8, the strip, 8, the owed row and the v2 / v3 banners when they show: 160 at 900 tall); its max-height runs to 16 px over
+         the bottom (724 at 900). On a short screen it tightens and Details opens beside it (trade.js dkFitTicket,
+         cf_FIX), and its button area stays pinned to its bottom, so OPEN is always on screen. --dk-strip-h / --dk-owed-h: paper.css, desk piece A. */
+      html body.trade .trade-layout .trade-side { top: calc(var(--header-h) + var(--pts-bar-h, 0px) + 16px + var(--dk-strip-h, 48px) + var(--dk-owed-h, 0px) + var(--dk-banner-h, 0px)); max-height: calc(100vh - var(--header-h) - var(--pts-bar-h, 0px) - 32px - var(--dk-strip-h, 48px) - var(--dk-owed-h, 0px) - var(--dk-banner-h, 0px)); overflow-y: auto; overscroll-behavior: contain; }
       body.trade .ticket-go { position: sticky; bottom: 0; z-index: 3; margin: 0 -12px; padding: 8px 12px; background: var(--panel); }
-      /* with positions open the chart gives up height, so the first card's CLOSE POSITION is above the fold */
-      body.trade .trade-layout.has-pos .chart-box { height: clamp(220px, calc(100vh - 470px), 520px); }
+      /* one chart height with or without positions (it no longer jumps when the first one opens): the screen
+         less the chrome over it and the room the positions and three history rows take under it
+         (900 tall: 368 px; 1080: 548; 768: the 300 floor) */
+      body.trade .trade-layout .chart-box { height: clamp(300px, calc(100vh - 484px - var(--dk-strip-h, 48px) - var(--dk-owed-h, 0px) - var(--dk-banner-h, 0px)), 640px); }
       /* toasts sit over the chart (top right, under its toolbar), never over the ticket's button or
          progress card and never over the position cards' CLOSE POSITION at the bottom */
       body.trade .toasts {
-        top: calc(var(--header-h) + var(--pts-bar-h, 0px) + 104px); bottom: auto;
-        right: calc(max(var(--gutter), (100vw - var(--max-width)) / 2 + var(--gutter)) + var(--side-panel) + var(--gap));
+        top: calc(var(--header-h) + var(--pts-bar-h, 0px) + 104px + var(--dk-owed-h, 0px) + var(--dk-banner-h, 0px)); bottom: auto;
+        right: calc(var(--gutter) + var(--side-panel) + 8px);
       }
       body.trade .acct-mini { display: none; }
     }
@@ -499,8 +502,15 @@
         <span class="chip" title="Money in open trades on this coin, house bots left out"><span class="chip-label">Open bets</span><span class="chip-value"><span id="chipLongOi">—</span> long · <span id="chipShortOi">—</span> short</span></span>
         <span class="chip" title="Positions opened on Confetti in the last 24 hours, every coin, house bots included"><span class="chip-label">Traded here 24h</span><span class="chip-value" id="chipConfVol">—</span></span>
       </div>
+      <!-- desktop: the trader's own money on the strip's right (renderAccount writes it with the ticket's strip) -->
+      <span class="dk-only dk-acct" id="dkAcct" hidden>
+        <span class="dk-acct-k">Balance</span><b class="dk-acct-v" id="dkBal">—</b>
+        <span class="dk-acct-k">In trades</span><b class="dk-acct-v" id="dkMargin">—</b>
+        <span class="dk-acct-k">P&amp;L</span><b class="dk-acct-v" id="dkPnl">—</b>
+      </span>
       <button class="btn btn-sm tour-btn" id="tourBtn" type="button" title="How to trade: a short tour of every button" aria-label="How to trade">?<span class="tour-word">&nbsp;How to trade</span><span class="tour-short">&nbsp;Help</span></button>
     </div>
+    <div class="dk-only dk-owed" id="dkOwed" role="status" hidden></div>
 
     <div class="notice" id="v2Banner" hidden>You have <b id="v2Amt">money</b> on v2. <a class="btn btn-sm" id="stV2" href="v2.html">Move it</a></div>
     <div class="notice" id="v3Banner" hidden>You have <b id="v3Amt">money</b> on v3. <a class="btn btn-sm" id="stV3" href="v3.html">Move it</a></div>
@@ -544,7 +554,8 @@
       <!-- Your positions: one card each, CLOSE POSITION on every card -->
       <section class="trade-pos panel" id="posPanel" aria-label="Your positions">
         <div class="panel-head pos-head">
-          <span>Your positions<span class="count" id="posCount"></span></span>
+          <span class="pos-title">Your positions<span class="count" id="posCount"></span></span>
+          <span class="dk-only dk-pos-sum" id="dkPosSum" hidden>Open <b id="dkPosN">0</b><span id="dkPosMoney" hidden><i>·</i>In trades <b id="dkPosMargin">—</b><i>·</i>P&amp;L <b id="dkPosPnl">—</b></span></span>
           <button class="btn btn-sm" id="closeAllBtn" type="button" hidden>Close all</button>
         </div>
         <div class="ph-only ph-pos-head" id="phPosHead" hidden>
@@ -560,6 +571,7 @@
             <button class="btn btn-sm js-wd" type="button">Withdraw</button>
           </span>
         </div>
+        <div class="dk-only dk-head dk-pos-head" id="dkPosHead" hidden aria-hidden="true"><span>Position</span><span class="dk-r">Size</span><span class="dk-r">Put in</span><span class="dk-r">Entry</span><span class="dk-r">Now</span><span>Liquidation</span><span class="dk-r">P&amp;L</span><span class="dk-r">%</span><span class="dk-r">Close</span></div>
         <div class="pos-cards" id="posLines">
           <div class="empty" id="posEmpty">Connect a wallet to see your positions.</div>
         </div>
@@ -608,6 +620,12 @@
               <div class="ph-rc-e"><span class="ph-rc-costs" id="phRcCosts">Costs —</span><button class="ph-rc-more" id="phMoreBtn" type="button" aria-haspopup="true" aria-expanded="false">More <span aria-hidden="true">›</span></button></div>
               <span class="sr-only" id="phArmLive" aria-live="assertive"></span>
             </div>
+            <!-- desktop (piece B): room for the trading tools job. Hidden everywhere until that job sets
+                 <html data-tools="1">; then, at 901 px and up only, Market | Limit sits above the side pair. -->
+            <div class="dk-only dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type" hidden>
+              <button class="pick" type="button" data-otype="market" aria-pressed="true">Market</button>
+              <button class="pick" type="button" data-otype="limit" aria-pressed="false" disabled>Limit</button>
+            </div>
             <div class="side-pair" id="sidePair" role="group" aria-label="Direction">
               <button class="dir-btn dir-long" type="button" data-side="long" aria-pressed="true">
                 <span class="dir-label">BUY / LONG</span>
@@ -645,6 +663,13 @@
                 <button class="pick ph-only pick-custom pick-amt-custom" type="button" data-amt="custom" aria-pressed="false" aria-label="Type an amount">$…</button>
               </div>
             </div>
+            <!-- desktop (piece B): the trading tools job's Limit price row (hidden until data-tools) -->
+            <div class="dk-only dk-tools dk-tool-row" id="dkLimitBox" hidden>
+              <div class="input-group">
+                <label class="unit unit-pre dk-tool-k" for="dkLimitPx">Limit price</label>
+                <input class="input" id="dkLimitPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—" disabled>
+              </div>
+            </div>
 
             <div class="field" id="levBox">
               <div class="field-head">
@@ -663,6 +688,17 @@
                 <div class="slider-scale"><span class="safe">1x</span><span class="wild" id="levWild">1000x max</span></div>
               </div>
               <div class="lev-note" id="levNote">20x: a 4.75% move against you liquidates your $10.</div>
+            </div>
+            <!-- desktop (piece B): the trading tools job's Take profit / Stop loss rows (hidden until data-tools) -->
+            <div class="dk-only dk-tools dk-tool-row" id="dkTpSlBox" hidden>
+              <div class="input-group">
+                <label class="unit unit-pre dk-tool-k" for="dkTpPx">Take profit</label>
+                <input class="input" id="dkTpPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—" disabled>
+              </div>
+              <div class="input-group">
+                <label class="unit unit-pre dk-tool-k" for="dkSlPx">Stop loss</label>
+                <input class="input" id="dkSlPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—" disabled>
+              </div>
             </div>
 
             <!-- phones (piece 14): the keypad drawn inside the sheet, for the amount ($…) and a custom leverage
@@ -697,6 +733,19 @@
               <div class="tp-line"><span class="tp-k">Position size</span><span class="tp-v" id="orderValue">—</span></div>
               <div class="tp-line"><span class="tp-k" id="moveKey">If the price moves 1% your way</span><span class="tp-v pos" id="moveWin">—</span></div>
               <div class="tp-sent" id="opensNear">Opens near the oracle price in about 6 s</div>
+            </div>
+
+            <!-- desktop (piece B): the receipt, read right above the button that risks it. renderForm's numbers
+                 (renderDkReceipt); shown at 901 px and up only (hidden below by the attribute). -->
+            <div class="dk-only dk-rc" id="dkReceipt" hidden>
+              <div class="dk-rc-a">
+                <div class="dk-rc-cell"><span class="dk-rc-k">You risk</span><b class="dk-rc-risk" id="dkRcRisk">—</b></div>
+                <div class="dk-rc-cell is-right"><span class="dk-rc-k">Position</span><b class="dk-rc-size" id="dkRcSize">—</b></div>
+              </div>
+              <div class="dk-rc-b"><span id="dkRcLiq">Liquidation —</span></div>
+              <div class="dk-rc-c"><span id="dkRcMoveK">If the price moves 1% your way</span><b id="dkRcMoveV">—</b></div>
+              <div class="dk-rc-d" id="dkRcOpens">Opens near the market price in about 6 s</div>
+              <div class="dk-rc-e"><span id="dkRcCosts">Costs —</span><button class="dk-rc-more" id="dkDetailsBtn" type="button" aria-controls="detailsBox" aria-expanded="false">Details <span aria-hidden="true" id="dkDetailsCaret">▾</span></button></div>
             </div>
 
             <div class="ticket-go" id="ticketGo">
@@ -764,6 +813,7 @@
 
         <div class="tab-panel" id="panelHistory" role="tabpanel" aria-labelledby="tabHistory">
           <div class="pos-lines" id="histLines">
+            <div class="dk-only dk-head dk-hist-head" id="dkHistHead" hidden aria-hidden="true"><span>Time</span><span>What</span><span>Position</span><span class="dk-r">Amount</span><span>Details</span><span></span><span></span></div>
             <div class="empty" id="histEmpty">Connect a wallet to load your history.</div>
             <div class="hist-foot">
               <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
@@ -1093,7 +1143,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=phone6" defer></script>
+  <script src="trade.js?v=desk2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
