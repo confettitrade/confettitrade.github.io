@@ -53,11 +53,12 @@
   var INSTRUMENTS_EVERY_MS = 300000;
   var V2_EVERY_MS = 30000;
   var CANDLE_COUNT = 300;
-  /* While a request is pending the page polls it every second and redraws the countdown
-     four times a second; outcomes are read from the logs for up to this many tries. */
-  var PENDING_POLL_MS = 1000;
+  /* While a request is pending the page polls it every 400 ms (a fill is noticed within half a block,
+     not a second after: the owner, 2026-10-25, a friend's close "took 6 seconds") and redraws the
+     countdown four times a second; outcomes are read from the logs for up to this many tries (12 s). */
+  var PENDING_POLL_MS = 400;
   var COUNTDOWN_MS = 250;
-  var OUTCOME_TRIES = 12;
+  var OUTCOME_TRIES = 30;
   /* Blocks scanned back first for OpenRequested when pendingOf says a request exists that the
      page does not know (another tab, a reload): about ten minutes of 1 s blocks. When margin is
      still unaccounted for after that, the scan widens to deployBlock (an unfilled request
@@ -83,8 +84,24 @@
   function isDesk() { return !!(DESK_MQ && DESK_MQ.matches); }
   /* Your positions on a desktop: the cards (traders, 2026-10-25: they liked the boxes, not the lines); the table of
      desk piece C stays in the code behind this switch. History, Portfolio and $FETTI keep their tables. */
-  var POS_TABLE = false;
-  function posTable() { return POS_TABLE && isDesk(); }
+  var POS_VIEW_KEY = 'confetti.trade.posview';
+  function posTable() { return isDesk() && lsGet(POS_VIEW_KEY) === 'rows'; }
+  function initPosView() {
+    var box = $('posView'); if (!box) return;
+    var paint = function () {
+      var rows = lsGet(POS_VIEW_KEY) === 'rows';
+      Array.prototype.forEach.call(box.querySelectorAll('[data-view]'), function (b) { b.setAttribute('aria-pressed', (b.getAttribute('data-view') === 'rows') === rows ? 'true' : 'false'); });
+    };
+    Array.prototype.forEach.call(box.querySelectorAll('[data-view]'), function (b) {
+      b.addEventListener('click', function () {
+        lsSet(POS_VIEW_KEY, b.getAttribute('data-view'));
+        paint();
+        ui.posSig = ''; // the cards or rows are rebuilt from the same positions
+        renderPositions();
+      });
+    });
+    paint();
+  }
   function onDeskChange(fn) {
     if (!DESK_MQ) return;
     if (DESK_MQ.addEventListener) DESK_MQ.addEventListener('change', fn);
@@ -8920,6 +8937,7 @@
 
   function init() {
     try { initSwap(); } catch (e) { /* the swap card never blocks the page */ }
+    try { initPosView(); } catch (e) { /* the view switch never blocks the page */ }
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};

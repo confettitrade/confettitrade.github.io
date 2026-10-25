@@ -132,6 +132,9 @@
     .swap-card .sw-terms { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
     .swap-card .sw-slip { gap: 4px; }
     .swap-card #swGo { margin-top: 10px; }
+    .pos-head .pos-view { gap: 2px; margin-left: auto; margin-right: 8px; }
+    .pos-head .pos-view .pick { min-height: 24px; padding: 0 8px; font-size: 12px; }
+    .pos-head .pos-view + #closeAllBtn { margin-left: 0; }
     .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
     @media (min-width: 901px) {
       /* the ticket sits under the strip and never moves: sticky at the y it starts at (header, points bar,
@@ -566,6 +569,11 @@
         <div class="panel-head pos-head">
           <span class="pos-title">Your positions<span class="count" id="posCount"></span></span>
           <span class="dk-only dk-pos-sum" id="dkPosSum" hidden>Open <b id="dkPosN">0</b><span id="dkPosMoney" hidden><i>·</i>In trades <b id="dkPosMargin">—</b><i>·</i>P&amp;L <b id="dkPosPnl">—</b></span></span>
+          <!-- the owner, 2026-10-25: "you should just give people the choice": cards or rows, remembered -->
+          <span class="dk-only chip-row pos-view" id="posView" role="group" aria-label="Positions view">
+            <button class="pick" type="button" data-view="cards" aria-pressed="true">Cards</button>
+            <button class="pick" type="button" data-view="rows" aria-pressed="false">Rows</button>
+          </span>
           <button class="btn btn-sm" id="closeAllBtn" type="button" hidden>Close all</button>
         </div>
         <div class="ph-only ph-pos-head" id="phPosHead" hidden>
@@ -1188,7 +1196,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=cards1" defer></script>
+  <script src="trade.js?v=posview1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
