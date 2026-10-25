@@ -1662,7 +1662,7 @@
       if (filter && m.symbol.toLowerCase().indexOf(filter) === -1) return;
       (marketOnChain(m) ? live : soon).push(m);
     });
-    var firsts = ['BTC', 'ETH'];
+    var firsts = ['BTC', 'ETH', 'SOL']; // the majors first (the owner, 2026-10-25: 'put sol up under eth')
     function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
     live.sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); });
     var caps = [];
@@ -3047,7 +3047,7 @@
       (marketOnChain(m) ? live : soon).push(m);
     });
     /* today's order: BTC and ETH first, then the config order */
-    var firsts = ['BTC', 'ETH'];
+    var firsts = ['BTC', 'ETH', 'SOL']; // the majors first (the owner, 2026-10-25: 'put sol up under eth')
     function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
     live.sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); });
     var recent = recentCoins().map(function (s) { return state.bySym[s]; }).filter(function (m) { return m && live.indexOf(m) >= 0; });
