@@ -122,6 +122,16 @@
     .pos-head { font-size: var(--text-md); }
     .pos-head .count { margin-left: 4px; }
     .lev-input { width: 72px; text-align: right; }
+    /* the big Deposit USDC above Leverage (the owner, 2026-10-25) */
+    .tk-deposit { margin: 2px 0 14px; min-height: 48px; font-weight: 700; letter-spacing: 0.02em; }
+    /* the Swap card under the ticket (a plain shell until the designers' pass) */
+    .swap-card { margin-top: 14px; padding: 14px 16px 16px; border: 1px solid var(--rule); }
+    .swap-card .field { margin-top: 10px; }
+    .swap-card .sw-token { flex: 0 0 96px; width: 96px; }
+    .swap-card .sw-flip { display: block; margin: 6px auto 0; }
+    .swap-card .sw-terms { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .swap-card .sw-slip { gap: 4px; }
+    .swap-card #swGo { margin-top: 10px; }
     .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
     @media (min-width: 901px) {
       /* the ticket sits under the strip and never moves: sticky at the y it starts at (header, points bar,
@@ -671,6 +681,9 @@
               </div>
             </div>
 
+            <!-- the owner, 2026-10-25: "right above the leverage section on the right i want a large deposit USDC button" -->
+            <button class="btn btn-primary btn-lg btn-block tk-deposit" id="tkDeposit" type="button">Deposit USDC</button>
+
             <div class="field" id="levBox">
               <div class="field-head">
                 <span class="label" id="levLabel">Leverage</span>
@@ -770,6 +783,7 @@
               <p class="dl" id="keptShare">Small wins are trimmed.</p>
               <p class="dl" id="feeLine">Fee: — of winnings</p>
               <p class="dl" id="borrowLine">Borrow: —</p>
+              <p class="dl" id="whyFeeLine">The fee is higher than a 2 % venue's on purpose: it keeps the house cash that pays winners, shown live as HOUSE LP at the top of the page, and the entry spread makes printing a price and closing into it a losing trade.</p>
               <p class="dl" id="posCapLine">Biggest position: —</p>
               <p class="dl">Hyperliquid 24h volume <b id="chipVol">—</b></p>
               <p class="dl" id="fillsNote">Every trade fills at the oracle price a few seconds after you click. Prices on the chart come from Hyperliquid.</p>
@@ -802,6 +816,37 @@
             </div>
           </div>
         </div>
+
+        <!-- Swap (the owner, 2026-10-25: "i want to offer a swapping service on the site too", "right on the side").
+             A plain working shell: the designers restyle it (LEAD_NOTE: SWAP design); the ids are the contract. -->
+        <section class="panel swap-card dk-only" id="swapCard" aria-label="Swap">
+          <div class="panel-head"><span>Swap</span><span class="xs faint" id="swNote">HYPE · USDC · FETTI · HyperSwap</span></div>
+          <div class="field">
+            <div class="field-head"><span class="label">You pay</span><span class="field-bal">Balance <b id="swPayBal">—</b> <button class="btn btn-sm btn-ghost btn-plain" id="swMax" type="button">Max</button></span></div>
+            <div class="input-group">
+              <input class="input" id="swPay" type="number" min="0" step="any" inputmode="decimal" placeholder="0.0" aria-label="Amount you pay">
+              <select class="input sw-token" id="swPayToken" aria-label="Token you pay"><option>HYPE</option><option>USDC</option><option>FETTI</option></select>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-ghost btn-plain sw-flip" id="swFlip" type="button" aria-label="Flip the two tokens">⇅</button>
+          <div class="field">
+            <div class="field-head"><span class="label">You get</span><span class="field-bal">Balance <b id="swGetBal">—</b></span></div>
+            <div class="input-group">
+              <input class="input" id="swGet" type="text" readonly placeholder="0.0" aria-label="Amount you get">
+              <select class="input sw-token" id="swGetToken" aria-label="Token you get"><option>USDC</option><option>HYPE</option><option>FETTI</option></select>
+            </div>
+          </div>
+          <p class="dl" id="swQuote">Type an amount for a quote.</p>
+          <div class="dl sw-terms"><span id="swTerms">min received —</span>
+            <span class="chip-row sw-slip" id="swSlip" role="group" aria-label="Slippage">
+              <button class="pick" type="button" data-slip="0.5" aria-pressed="false">0.5%</button>
+              <button class="pick" type="button" data-slip="1" aria-pressed="true">1%</button>
+              <button class="pick" type="button" data-slip="3" aria-pressed="false">3%</button>
+            </span>
+          </div>
+          <button class="btn btn-primary btn-lg btn-block" id="swGo" type="button">Connect wallet</button>
+          <div class="hint" id="swHint" aria-live="polite"></div>
+        </section>
       </aside>
 
       <!-- History / Refer -->
@@ -1143,7 +1188,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=desk3" defer></script>
+  <script src="trade.js?v=swap4" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

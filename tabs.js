@@ -57,7 +57,10 @@
   var SWAP = {
     router: '0xb4a9c4e6ea8e2191d2fa5b380452a634fb21240a',
     pair: '0x9cD9b6514f28325c8F18F1c5aBe311D5c737D930',
-    whype: '0x5555555555555555555555555555555555555555'
+    whype: '0x5555555555555555555555555555555555555555',
+    // HyperSwap V3 for the trade page's swap card (HYPE <-> USDC): the SwapRouter and the 0.3 % pool
+    v3Router: '0x4E2960a8cd19B467b82d26D83fAcb0fAE26b094D',
+    v3UsdcPool: '0xe712d505572b3f84c1b4deb99e1beab9dd0e23c9'
   };
   /* ---- END PINNED SWAP ---- */
   var USDC = CONTRACTS.usdc;

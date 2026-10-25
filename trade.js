@@ -5768,6 +5768,7 @@
   /* The header: Connect, or the address (a tap opens Copy / explorer / Disconnect); Deposit and
      Withdraw only once a wallet is connected. */
   function renderWallet() {
+    if (typeof swOnWallet === 'function') swOnWallet();
     var btn = $('connectBtn');
     if (!btn) return;
     if (wallet.account) {
@@ -7968,6 +7969,7 @@
       if (wallet.account) openAccountMenu(); else connect();
     });
     $('depositBtn').addEventListener('click', openDeposit);
+    var tkDep = $('tkDeposit'); if (tkDep) tkDep.addEventListener('click', openDeposit);
     $('withdrawBtn').addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
     var ad = $('acctDeposit');
     if (ad) ad.addEventListener('click', openDeposit);
@@ -8674,7 +8676,246 @@
     try { renderAction(); } catch (e) { /* before start(): start renders it */ }
   }
 
+
+  /* ---- Swap --------------------------------------------------------------------------------------
+     The owner, 2026-10-25: "i want to offer a swapping service on the site too", "right on the side".
+     HYPE <-> USDC on HyperSwap V3 (the 0.3 % pool: 7,718 HYPE + $370K on 2026-10-25; the V2 pool holds
+     $1), HYPE <-> FETTI on HyperSwap V2 (FETTI's only pool). USDC <-> FETTI is two swaps through HYPE,
+     said so on the card. Quotes: V3 from the pool's own state (slot0 + liquidity, exact inside the
+     current tick, the router refuses anything worse than min received); V2 from the router. Sent from
+     the connected wallet (approve first for a token). The designers own the shell (LEAD_NOTE: SWAP
+     design); this binds to the sw* ids and fills every value. */
+
+  var SWAP_V2_ABI = [
+    'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)',
+    'function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable',
+    'function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)',
+  ];
+  var SWAP_V3_ROUTER_ABI = [
+    'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
+    'function unwrapWETH9(uint256 amountMinimum, address recipient) payable',
+    'function refundETH() payable',
+    'function multicall(bytes[] data) payable returns (bytes[] results)',
+  ];
+  var SWAP_V3_POOL_ABI = [
+    'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
+    'function liquidity() view returns (uint128)',
+    'function token0() view returns (address)',
+  ];
+  var Q96 = 79228162514264337593543950336n;
+  var sw = { pay: 'HYPE', get: 'USDC', slip: 1, quote: null, busy: false, step: null, timer: null, seq: 0, bal: {} };
+
+  function swapCfg() { return (cfg && cfg.swap) || {}; }
+  function swTokens() {
+    return {
+      HYPE: { sym: 'HYPE', dec: 18, native: true, addr: swapCfg().whype },
+      USDC: { sym: 'USDC', dec: 6, addr: cfg.contracts.usdc },
+      FETTI: { sym: 'FETTI', dec: 18, addr: cfg.contracts.confetti },
+    };
+  }
+  function swReady() { return !!(window.ethers && read.provider && isAddr(swapCfg().router) && isAddr(swapCfg().whype)); }
+  /* The venue for a pair: V3 for HYPE/USDC, V2 for HYPE/FETTI, none for USDC/FETTI (two steps). */
+  function swRoute(a, b) {
+    var set = [a, b].sort().join('/');
+    if (set === 'HYPE/USDC' && isAddr(swapCfg().v3Router) && isAddr(swapCfg().v3UsdcPool)) return { kind: 'v3', pool: swapCfg().v3UsdcPool, fee: Number(swapCfg().v3UsdcFee || 3000) };
+    if (set === 'FETTI/HYPE') return { kind: 'v2' };
+    return null;
+  }
+  function swFmt(units, dec) {
+    var n = Number(window.ethers.formatUnits(units, dec));
+    return n >= 1000 ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : String(Number(n.toPrecision(6)));
+  }
+
+  /* The least the trader accepts, in the token they get (base units, BigInt). slipPct is the slippage they
+     picked (0.5 / 1 / 3); impactPct is how far this size moves the pool (0.4 = 0.4 %). Returns a BigInt, or
+     null to refuse the swap (the card then says it is too big for the pool). The rule: a trade that moves
+     the pool lands a little worse than the single-tick quote, so the tolerance is the pick plus a tenth of
+     the impact; over 8 % impact the card refuses (the owner's own FETTI pool is thin; a size like that is
+     the market maker's business, not a tap on a card). */
+  function swMinOut(out, slipPct, impactPct) {
+    if (impactPct > 8) return null;
+    var pct = slipPct + impactPct / 10;
+    return out - (out * BigInt(Math.round(pct * 100))) / 10000n;
+  }
+
+  /* A V3 quote from the pool's state: exact while the trade stays inside the current tick's liquidity
+     (the whole $370K pool sits in wide ranges; a trade that crosses a tick gets a little less, and the
+     router refuses anything under min received). Returns { out, impact } in base units / percent. */
+  function swV3Quote(route, tokenIn, amountIn) {
+    var E = window.ethers;
+    var pool = new E.Contract(route.pool, SWAP_V3_POOL_ABI, read.provider);
+    return Promise.all([pool.slot0(), pool.liquidity(), pool.token0()]).then(function (r) {
+      var sqrtP = BigInt(r[0][0]), L = BigInt(r[1]);
+      var zeroForOne = String(r[2]).toLowerCase() === tokenIn.toLowerCase();
+      var inFee = amountIn - (amountIn * BigInt(route.fee)) / 1000000n;
+      var out, spotOutPerIn;
+      if (zeroForOne) {
+        // token0 in: the price falls. sqrtP' = L*sqrtP / (L + in*sqrtP/Q96); out1 = L*(sqrtP - sqrtP')/Q96
+        var sqrtNext = (L * sqrtP * Q96) / (L * Q96 + inFee * sqrtP);
+        out = (L * (sqrtP - sqrtNext)) / Q96;
+        spotOutPerIn = Number(sqrtP) / Number(Q96); spotOutPerIn = spotOutPerIn * spotOutPerIn;
+      } else {
+        // token1 in: the price rises. sqrtP' = sqrtP + in*Q96/L; out0 = L*(sqrtP' - sqrtP)*Q96/(sqrtP*sqrtP')
+        var sqrtUp = sqrtP + (inFee * Q96) / L;
+        out = (L * (sqrtUp - sqrtP) * Q96) / (sqrtP * sqrtUp);
+        var p = Number(sqrtP) / Number(Q96); spotOutPerIn = 1 / (p * p);
+      }
+      var got = Number(out) / Number(inFee);
+      var impact = spotOutPerIn > 0 ? Math.max(0, (1 - got / spotOutPerIn) * 100) : 0;
+      return { out: out, impact: impact };
+    });
+  }
+  function swV2Quote(tokenIn, tokenOut, amountIn) {
+    var E = window.ethers, router = new E.Contract(swapCfg().router, SWAP_V2_ABI, read.provider);
+    var path = [tokenIn, tokenOut], small = amountIn / 1000n || 1n;
+    return Promise.all([router.getAmountsOut(amountIn, path), router.getAmountsOut(small, path)]).then(function (r) {
+      var out = r[0][r[0].length - 1], outSmall = r[1][r[1].length - 1];
+      var impact = Number(outSmall) > 0 ? Math.max(0, (1 - (Number(out) / Number(amountIn)) / (Number(outSmall) / Number(small))) * 100) : 0;
+      return { out: out, impact: impact };
+    });
+  }
+
+  function swQuoteNow() {
+    var inp = $('swPay'), outEl = $('swGet');
+    var amt = Number(inp.value);
+    sw.quote = null;
+    if (!swReady() || !(amt > 0) || sw.pay === sw.get) { outEl.value = ''; setText('swQuote', 'Type an amount for a quote.'); setText('swTerms', 'min received —'); swRenderGo(); return; }
+    var route = swRoute(sw.pay, sw.get);
+    if (!route) { outEl.value = ''; setText('swQuote', 'USDC and FETTI trade through HYPE: swap to HYPE first, then to ' + sw.get + '.'); setText('swTerms', 'min received —'); swRenderGo(); return; }
+    var T = swTokens(), E = window.ethers;
+    var amountIn = E.parseUnits(String(amt), T[sw.pay].dec);
+    var seq = ++sw.seq;
+    var q = route.kind === 'v3' ? swV3Quote(route, T[sw.pay].addr, amountIn) : swV2Quote(T[sw.pay].addr, T[sw.get].addr, amountIn);
+    q.then(function (r) {
+      if (seq !== sw.seq) return;
+      var out = r.out, impact = r.impact;
+      var minOut = out > 0n ? swMinOut(out, sw.slip, impact) : null;
+      outEl.value = out > 0n ? swFmt(out, T[sw.get].dec) : '';
+      var unit = Number(E.formatUnits(out, T[sw.get].dec)) / amt;
+      setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + impact.toFixed(impact < 0.1 ? 2 : 1) + '% · ' + (route.kind === 'v3' ? 'HyperSwap V3' : 'HyperSwap V2'));
+      if (minOut == null) { setText('swTerms', 'Too big for this pool right now: try a smaller amount.'); swRenderGo(); return; }
+      sw.quote = { route: route, amountIn: amountIn, out: out, minOut: minOut, impact: impact };
+      setText('swTerms', 'min received ' + swFmt(minOut, T[sw.get].dec) + ' ' + sw.get);
+      swRenderGo();
+    }).catch(function () {
+      if (seq !== sw.seq) return;
+      outEl.value = ''; setText('swQuote', 'No quote right now. Try again in a moment.'); setText('swTerms', 'min received —'); swRenderGo();
+    });
+  }
+
+  function swRefreshBalances() {
+    var T = swTokens();
+    if (!wallet.account || !read.provider) { sw.bal = {}; swRenderBalances(); return; }
+    var E = window.ethers;
+    ['HYPE', 'USDC', 'FETTI'].forEach(function (k) {
+      var t = T[k];
+      var p = t.native ? read.provider.getBalance(wallet.account) : new E.Contract(t.addr, ERC20_ABI, read.provider).balanceOf(wallet.account);
+      p.then(function (b) { sw.bal[k] = b; swRenderBalances(); }).catch(function () { /* unreadable: keeps the dash */ });
+    });
+  }
+  function swRenderBalances() {
+    var T = swTokens();
+    setText('swPayBal', sw.bal[sw.pay] != null ? swFmt(sw.bal[sw.pay], T[sw.pay].dec) : '—');
+    setText('swGetBal', sw.bal[sw.get] != null ? swFmt(sw.bal[sw.get], T[sw.get].dec) : '—');
+  }
+  function swRenderGo() {
+    var b = $('swGo'); if (!b) return;
+    var label = !wallet.account ? 'Connect wallet'
+      : sw.busy ? (sw.step === 'approve' ? 'Approving ' + sw.pay + '…' : 'Swapping…')
+      : !sw.quote ? 'Swap'
+      : 'Swap ' + sw.pay + ' for ' + sw.get;
+    b.textContent = label;
+    b.disabled = !!(wallet.account && (sw.busy || !sw.quote));
+  }
+
+  function swSend(q, pay, get, desc) {
+    var E = window.ethers, deadline = Math.floor(Date.now() / 1000) + 120;
+    if (q.route.kind === 'v2') {
+      var v2 = new E.Contract(swapCfg().router, SWAP_V2_ABI, wallet.signer);
+      var path = [pay.addr, get.addr];
+      if (pay.native) return sendTx(desc, v2.swapExactETHForTokensSupportingFeeOnTransferTokens, [q.minOut, path, wallet.account, deadline, { value: q.amountIn }]);
+      return sendTx(desc, v2.swapExactTokensForETHSupportingFeeOnTransferTokens, [q.amountIn, q.minOut, path, wallet.account, deadline]);
+    }
+    var v3 = new E.Contract(swapCfg().v3Router, SWAP_V3_ROUTER_ABI, wallet.signer);
+    var params = {
+      tokenIn: pay.addr, tokenOut: get.addr, fee: q.route.fee,
+      // HYPE out: the router keeps the WHYPE and unwraps it to the wallet in the same call
+      recipient: get.native ? swapCfg().v3Router : wallet.account,
+      deadline: deadline, amountIn: q.amountIn, amountOutMinimum: q.minOut, sqrtPriceLimitX96: 0n,
+    };
+    var calls = [v3.interface.encodeFunctionData('exactInputSingle', [params])];
+    if (get.native) calls.push(v3.interface.encodeFunctionData('unwrapWETH9', [q.minOut, wallet.account]));
+    if (pay.native) calls.push(v3.interface.encodeFunctionData('refundETH', []));
+    return sendTx(desc, v3.multicall, [calls, pay.native ? { value: q.amountIn } : {}]);
+  }
+
+  function swGo() {
+    if (!wallet.account) { connect(); return; }
+    if (wallet.chainId !== CHAIN_ID) { toast('Switch your wallet to HyperEVM first.', 'err'); return; }
+    if (!sw.quote || sw.busy || !wallet.signer) return;
+    var T = swTokens(), E = window.ethers, q = sw.quote, pay = T[sw.pay], get = T[sw.get];
+    var spender = q.route.kind === 'v3' ? swapCfg().v3Router : swapCfg().router;
+    var desc = 'Swap ' + swFmt(q.amountIn, pay.dec) + ' ' + pay.sym + ' for ' + get.sym;
+    sw.busy = true; sw.step = null; swRenderGo(); setText('swHint', '');
+    var first = Promise.resolve();
+    if (!pay.native) {
+      var tok = new E.Contract(pay.addr, ERC20_ABI, wallet.signer);
+      first = tok.allowance(wallet.account, spender).then(function (allowance) {
+        if (allowance >= q.amountIn) return null;
+        sw.step = 'approve'; swRenderGo();
+        return sendTx('Approve ' + pay.sym, tok.approve, [spender, q.amountIn]);
+      });
+    }
+    first.then(function () {
+      sw.step = 'swap'; swRenderGo();
+      return swSend(q, pay, get, desc);
+    }).then(function (rc) {
+      toast(desc + ': done.' + (get.sym === 'USDC' ? ' Deposit USDC puts it on the exchange.' : ''), 'ok', txLink(rc.hash));
+      $('swPay').value = ''; sw.quote = null; $('swGet').value = '';
+      setText('swQuote', 'Type an amount for a quote.'); setText('swTerms', 'min received —');
+      swRefreshBalances(); refreshWalletUsdc();
+    }).catch(function (e) {
+      setText('swHint', 'The swap did not go through: ' + describeError(e));
+    }).then(function () { sw.busy = false; sw.step = null; swRenderGo(); });
+  }
+
+  function initSwap() {
+    var card = $('swapCard'); if (!card) return;
+    // the config and the read provider arrive after init: readiness is checked per quote, not here
+    var payT = $('swPayToken'), getT = $('swGetToken');
+    function onTokens() {
+      sw.pay = payT.value; sw.get = getT.value;
+      if (sw.pay === sw.get) { sw.get = sw.pay === 'USDC' ? 'HYPE' : 'USDC'; getT.value = sw.get; }
+      swRenderBalances(); swQuoteNow();
+    }
+    payT.addEventListener('change', onTokens);
+    getT.addEventListener('change', onTokens);
+    $('swFlip').addEventListener('click', function () {
+      var a = sw.pay; payT.value = sw.get; getT.value = a; onTokens();
+    });
+    $('swPay').addEventListener('input', function () {
+      clearTimeout(sw.timer); sw.timer = setTimeout(swQuoteNow, 300);
+    });
+    $('swMax').addEventListener('click', function () {
+      var T = swTokens(), b = sw.bal[sw.pay]; if (b == null) return;
+      // HYPE: keep 0.01 for gas
+      if (T[sw.pay].native) b = b > 10000000000000000n ? b - 10000000000000000n : 0n;
+      $('swPay').value = window.ethers.formatUnits(b, T[sw.pay].dec); swQuoteNow();
+    });
+    Array.prototype.forEach.call($('swSlip').querySelectorAll('[data-slip]'), function (b) {
+      b.addEventListener('click', function () {
+        sw.slip = Number(b.getAttribute('data-slip'));
+        Array.prototype.forEach.call($('swSlip').querySelectorAll('[data-slip]'), function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+        swQuoteNow();
+      });
+    });
+    $('swGo').addEventListener('click', swGo);
+    swRenderGo();
+  }
+  function swOnWallet() { try { swRefreshBalances(); swRenderGo(); } catch (e) { /* never blocks the page */ } }
+
   function init() {
+    try { initSwap(); } catch (e) { /* the swap card never blocks the page */ }
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};
