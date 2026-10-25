@@ -858,6 +858,7 @@
         if (isFinite(v) && v > 0) state.mids[m.coin] = v;
       });
       onPrices();
+      try { checkLimits(); } catch (e) { /* never stops the prices */ }
     }).catch(function () {
       state.midsFailures += 1;
       if (state.midsFailures >= 2) setLive(false);
@@ -2593,6 +2594,7 @@
     if (!hasExchange() || !acct.loaded) return;
     if (acct.available < minMargin()) { openDeposit(); return; }
     if (!(form.margin > 0) || orderProblem()) { renderAction(); return; }
+    if (lim.type === 'limit' && lim.firing === null) { placeLimit(); return; }
     if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') {
       if (isPhone()) {
         /* phones (piece 13): the first tap arms OPEN; the second tap has just passed every guard above
@@ -5790,6 +5792,7 @@
      Withdraw only once a wallet is connected. */
   function renderWallet() {
     if (typeof swOnWallet === 'function') swOnWallet();
+    if (typeof limLoad === 'function') try { limLoad(); } catch (e) { /* ignore */ }
     var btn = $('connectBtn');
     if (!btn) return;
     if (wallet.account) {
@@ -8935,9 +8938,116 @@
   }
   function swOnWallet() { try { swRefreshBalances(); swRenderGo(); } catch (e) { /* never blocks the page */ } }
 
+
+  /* ---- Limit orders (the owner, 2026-10-25: "add limit orders to confetti") --------------------------------
+     The Exchange has no order type but market (its session router is immutable, so a contract-side order book
+     would need a redeploy); this is the client-side kind: the order lives in this browser (per wallet), the page
+     watches the prices it already streams, and when the price reaches the limit it files the same open request
+     the BUY / SELL buttons file (the one-click session key, else the wallet), which the keeper fills a few seconds
+     later at the oracle. So an order fires only while this page is open: the hint under the price says so, and
+     the Orders tab lists what is waiting. Desktop only for now (the rows are dk-only). */
+  var lim = { type: 'market', px: NaN, orders: [], firing: null, lastTry: 0 };
+  var LIM_EXPIRY_MS = 24 * 3600 * 1000;
+  function limKey() { return wallet.account && !DEMO ? 'confetti.trade.limits.' + wallet.account.toLowerCase() : 'confetti.trade.limits.demo'; }
+  function limLoad() { try { lim.orders = JSON.parse(lsGet(limKey()) || '[]') || []; } catch (e) { lim.orders = []; } renderLimits(); }
+  function limSave() { lsSet(limKey(), JSON.stringify(lim.orders)); renderLimits(); }
+  /* The trigger rule (the owner's pick, 2026-10-25: early): a buy limit fires when the price is within LIM_TOL
+     above it, a sell limit within LIM_TOL below, so the fill, which lands at the oracle 2-3 s later, settles near
+     the limit instead of a hair past it. 0.001 = 0.1 %. */
+  var LIM_TOL = 0.001;
+  function limitCrossed(o, px) {
+    return o.isLong ? px <= o.limitPx * (1 + LIM_TOL) : px >= o.limitPx * (1 - LIM_TOL);
+  }
+  function limitLabel() {
+    var b = $('actionBtn'); if (!b || lim.type !== 'limit' || state.busy || tk.phase) return;
+    var t = b.textContent || '';
+    if (/^OPEN /.test(t)) b.textContent = t.replace(/^OPEN /, 'LIMIT ') + (lim.px > 0 ? ' @ ' + fmtPrice(lim.px, state.market ? state.market.szDecimals : 4) : '');
+  }
+  function setOrderType(type) {
+    lim.type = type;
+    var box = $('dkOrderType'); if (box) Array.prototype.forEach.call(box.querySelectorAll('[data-otype]'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-otype') === type ? 'true' : 'false'); });
+    var row = $('dkLimitBox'); if (row) row.hidden = type !== 'limit';
+    if (type === 'limit') {
+      var inp = $('dkLimitPx'), now = marketPrice(state.market);
+      if (inp && !(Number(inp.value) > 0) && isFinite(now) && now > 0) { inp.value = String(Number(now.toPrecision(6))); lim.px = Number(inp.value); }
+      if (inp) inp.focus();
+    }
+    renderAction();
+  }
+  function placeLimit() {
+    var m = state.market; if (!m) return;
+    var px = Number(lim.px), now = marketPrice(m), isLong = form.side === 'long';
+    if (!(px > 0)) { toast('Type a limit price.', 'err'); return; }
+    if (isFinite(now) && now > 0 && (isLong ? px >= now : px <= now)) {
+      toast((isLong ? 'A buy limit at or above the price' : 'A sell limit at or below the price') + ' would fill right now: use Market, or set the price ' + (isLong ? 'lower' : 'higher') + '.', 'err');
+      return;
+    }
+    var o = { id: 'L' + Date.now().toString(36), sym: m.symbol, coin: m.coin, isLong: isLong, margin: form.margin, lev: form.lev, limitPx: px, at: Date.now(), expires: Date.now() + LIM_EXPIRY_MS };
+    lim.orders.push(o); limSave();
+    toast('Limit placed: ' + sideWord(isLong) + ' ' + m.symbol + ' ' + form.lev + 'x · ' + fmtUsd(form.margin) + ' at ' + fmtPrice(px, m.szDecimals) + '. It fires from this page while it is open.', 'ok');
+    var tab = $('tabOrders'); if (tab) tab.click();
+  }
+  function cancelLimit(id) {
+    lim.orders = lim.orders.filter(function (o) { return o.id !== id; }); limSave();
+  }
+  function checkLimits() {
+    if (!lim.orders.length || lim.firing || state.busy || tk.phase) return;
+    var now = Date.now();
+    var gone = lim.orders.filter(function (o) { return o.expires < now; });
+    if (gone.length) { lim.orders = lim.orders.filter(function (o) { return o.expires >= now; }); limSave(); gone.forEach(function (o) { toast('Limit expired: ' + sideWord(o.isLong) + ' ' + o.sym + ' at ' + fmtPrice(o.limitPx, 4) + '.'); }); }
+    for (var i = 0; i < lim.orders.length; i++) {
+      var o = lim.orders[i], px = state.mids[o.coin];
+      if (px > 0 && limitCrossed(o, px)) { fireLimit(o, px); return; }
+    }
+  }
+  function fireLimit(o, px) {
+    if (!wallet.account || !hasExchange() || !acct.loaded) return;   // waits, connected or not
+    if (Date.now() - lim.lastTry < 15000) return;                    // one attempt per 15 s when something refuses
+    lim.lastTry = Date.now();
+    if (!tradeReady()) return;
+    if (acct.available < o.margin) { toast('Limit hit for ' + o.sym + ' but the balance is short of ' + fmtUsd(o.margin) + '. It stays placed.'); return; }
+    var m = state.bySym[o.sym]; if (!m || m.instrumentId == null) return;
+    lim.firing = o.id;
+    if (state.market !== m) selectMarket(o.sym);
+    setSide(o.isLong ? 'long' : 'short');
+    form.margin = o.margin; form.maxed = false; setLev(o.lev); renderForm(); renderAction();
+    lim.orders = lim.orders.filter(function (x) { return x.id !== o.id; }); limSave();
+    toast('Limit hit: ' + sideWord(o.isLong) + ' ' + o.sym + ' at ' + fmtPrice(px, m.szDecimals) + ' — opening.', 'ok');
+    submitOpen();
+    setTimeout(function () { lim.firing = null; }, 3000);
+  }
+  function renderLimits() {
+    var host = $('limLines'), empty = $('limEmpty'), tab = $('tabOrders'); if (!host || !empty) return;
+    Array.prototype.forEach.call(host.querySelectorAll('.lim-line'), function (n) { n.remove(); });
+    empty.hidden = lim.orders.length > 0;
+    empty.textContent = wallet.account || DEMO ? 'No limit orders. Pick Limit in the ticket, set a price, and place one.' : 'Connect a wallet to see your limit orders.';
+    if (tab) tab.textContent = 'Orders' + (lim.orders.length ? ' (' + lim.orders.length + ')' : '');
+    lim.orders.forEach(function (o) {
+      var line = el('div', 'lim-line'); line.setAttribute('data-id', o.id);
+      var side = el('span', 'lim-side ' + (o.isLong ? 'is-long' : 'is-short'), sideWord(o.isLong).toUpperCase());
+      var what = el('span', 'grow'); what.appendChild(el('b', '', o.sym + ' ' + o.lev + 'x')); what.appendChild(document.createTextNode(' · ' + fmtUsd(o.margin) + ' at '));
+      what.appendChild(el('b', '', fmtPrice(o.limitPx, (state.bySym[o.sym] || {}).szDecimals || 4)));
+      var now = state.mids[o.coin]; if (now > 0) what.appendChild(document.createTextNode(' · now ' + fmtPrice(now, (state.bySym[o.sym] || {}).szDecimals || 4)));
+      var when = el('span', 'xs faint', 'expires ' + fmtWhen(Math.floor(o.expires / 1000)));
+      var cancel = el('button', 'btn btn-sm', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', function () { cancelLimit(o.id); });
+      line.appendChild(side); line.appendChild(what); line.appendChild(when); line.appendChild(cancel);
+      host.insertBefore(line, empty.nextSibling);
+    });
+  }
+  function initLimits() {
+    var box = $('dkOrderType'); if (!box) return;
+    document.documentElement.setAttribute('data-limits', '1');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-otype]'), function (b) { b.addEventListener('click', function () { setOrderType(b.getAttribute('data-otype')); }); });
+    var inp = $('dkLimitPx'); if (inp) inp.addEventListener('input', function () { lim.px = Number(inp.value); renderAction(); });
+    var _renderAction = renderAction;
+    renderAction = function () { _renderAction(); limitLabel(); };
+    limLoad();
+  }
+
   function init() {
     try { initSwap(); } catch (e) { /* the swap card never blocks the page */ }
     try { initPosView(); } catch (e) { /* the view switch never blocks the page */ }
+    try { initLimits(); } catch (e) { /* limit orders never block the page */ }
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};

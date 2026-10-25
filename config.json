@@ -213,6 +213,16 @@
       "launch": true
     },
     {
+      "symbol": "PUMP",
+      "coin": "PUMP",
+      "hlAssetIndex": 200,
+      "szDecimals": 0,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 10000000,
+      "launch": true
+    },
+    {
       "symbol": "SHIB",
       "coin": "kSHIB",
       "hlAssetIndex": 38,

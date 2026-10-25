@@ -135,6 +135,18 @@
     .pos-head .pos-view { gap: 2px; margin-left: auto; margin-right: 8px; }
     .pos-head .pos-view .pick { min-height: 24px; padding: 0 8px; font-size: 12px; }
     .pos-head .pos-view + #closeAllBtn { margin-left: 0; }
+    /* limit orders (the owner, 2026-10-25): the Market | Limit row and the price row, on desktops */
+    html[data-limits="1"] body.trade #dkOrderType { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; }
+    html[data-limits="1"] body.trade #dkOrderType .pick { min-height: 28px; font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+    html[data-limits="1"] body.trade #dkLimitBox { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
+    html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
+    html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
+    .lim-line { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--rule); font-size: 13px; }
+    .lim-line .grow { flex: 1 1 auto; min-width: 0; }
+    .lim-line .lim-side { font-weight: 600; }
+    .lim-line .lim-side.is-long { color: var(--pos); }
+    .lim-line .lim-side.is-short { color: var(--neg); }
+    .lim-line b { font-family: var(--font-mono); font-weight: 500; }
     .fineprint { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); }
     @media (min-width: 901px) {
       /* the ticket sits under the strip and never moves: sticky at the y it starts at (header, points bar,
@@ -640,9 +652,9 @@
             </div>
             <!-- desktop (piece B): room for the trading tools job. Hidden everywhere until that job sets
                  <html data-tools="1">; then, at 901 px and up only, Market | Limit sits above the side pair. -->
-            <div class="dk-only dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type" hidden>
+            <div class="dk-only dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type">
               <button class="pick" type="button" data-otype="market" aria-pressed="true">Market</button>
-              <button class="pick" type="button" data-otype="limit" aria-pressed="false" disabled>Limit</button>
+              <button class="pick" type="button" data-otype="limit" aria-pressed="false">Limit</button>
             </div>
             <div class="side-pair" id="sidePair" role="group" aria-label="Direction">
               <button class="dir-btn dir-long" type="button" data-side="long" aria-pressed="true">
@@ -685,8 +697,9 @@
             <div class="dk-only dk-tools dk-tool-row" id="dkLimitBox" hidden>
               <div class="input-group">
                 <label class="unit unit-pre dk-tool-k" for="dkLimitPx">Limit price</label>
-                <input class="input" id="dkLimitPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—" disabled>
+                <input class="input" id="dkLimitPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—">
               </div>
+              <div class="hint" id="dkLimitHint">Opens when the price reaches it. Fires from this page while it is open; the fill lands at the oracle a few seconds later.</div>
             </div>
 
             <!-- the owner, 2026-10-25: "right above the leverage section on the right i want a large deposit USDC button" -->
@@ -861,6 +874,7 @@
       <section class="trade-bottom panel" aria-label="History and referrals">
         <div class="tabs" role="tablist">
           <button class="tab" id="tabHistory" type="button" role="tab" aria-selected="true" aria-controls="panelHistory" data-tab="history">History</button>
+          <button class="tab" id="tabOrders" type="button" role="tab" aria-selected="false" aria-controls="panelOrders" data-tab="orders">Orders</button>
           <button class="tab" id="tabRefer" type="button" role="tab" aria-selected="false" aria-controls="panelRefer" data-tab="refer">Refer</button>
         </div>
 
@@ -871,6 +885,12 @@
             <div class="hist-foot">
               <button class="btn btn-sm" id="histMoreBtn" type="button" disabled>Load older</button>
             </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panelOrders" role="tabpanel" aria-labelledby="tabOrders" hidden>
+          <div class="pos-lines" id="limLines">
+            <div class="empty" id="limEmpty">Connect a wallet to see your limit orders.</div>
           </div>
         </div>
 
@@ -1196,7 +1216,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=sol1" defer></script>
+  <script src="trade.js?v=limits2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
