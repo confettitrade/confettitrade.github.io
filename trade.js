@@ -81,6 +81,10 @@
      desktop-only behaviour (the strip, the tables, the receipt), so phones and tablets stay as they are. */
   var DESK_MQ = (function () { try { return window.matchMedia('(min-width: 901px)'); } catch (e) { return null; } })();
   function isDesk() { return !!(DESK_MQ && DESK_MQ.matches); }
+  /* Your positions on a desktop: the cards (traders, 2026-10-25: they liked the boxes, not the lines); the table of
+     desk piece C stays in the code behind this switch. History, Portfolio and $FETTI keep their tables. */
+  var POS_TABLE = false;
+  function posTable() { return POS_TABLE && isDesk(); }
   function onDeskChange(fn) {
     if (!DESK_MQ) return;
     if (DESK_MQ.addEventListener) DESK_MQ.addEventListener('change', fn);
@@ -4956,7 +4960,7 @@
     var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
     card.setAttribute('data-req', r.id);
     card.title = 'Request #r' + r.id;
-    if (isDesk()) {
+    if (posTable()) {
       /* desktop: one 40 px row, "Opening Long DOGE 20x · $10", the sentence and its button */
       card.classList.add('dk-row', 'dk-wide');
       card.appendChild(dkWho(r.isLong, reqSym(r), r.leverage, 'Opening', ' · ' + fmtUsdShort(r.margin)));
@@ -5070,7 +5074,7 @@
   /* The head's "Open 2 · In trades $20.00 · P&L -$4.62" and the column head, from the same locals
      as the account strip (acct.marginInUse + acct.pending, openPnl()). */
   function renderDkPosHead() {
-    var dk = isDesk();
+    var dk = posTable();
     var ready = !!(wallet.account && hasExchange() && acct.loaded);
     var n = ready ? acct.positions.length + pendingOpenList().length : 0;
     var sum = $('dkPosSum');
@@ -5110,7 +5114,7 @@
      (amber, then red, as it nears), amount put in and size; CLOSE POSITION across the bottom with
      about what it gives back. With a close on its way the button becomes the progress card. */
   function positionCard(p) {
-    if (isDesk()) return dkPositionRow(p);
+    if (posTable()) return dkPositionRow(p);
     var m = positionMarket(p);
     var sz = m ? m.szDecimals : null;
     var card = el('div', 'pos-card ' + (p.isLong ? 'is-long' : 'is-short'));
@@ -5237,7 +5241,7 @@
   function recentCard(r) {
     var card = el('div', 'result-card' + (r.cls ? ' ' + r.cls : ''));
     card.setAttribute('data-recent', r.key);
-    if (isDesk()) return dkRecentRow(card, r);
+    if (posTable()) return dkRecentRow(card, r);
     var title = el('div', 'rc-title', r.title);
     /* phones (ph-only, so the desktop card is as before): the money on the title line, and one
        short line under it in place of the first line */
@@ -5332,7 +5336,7 @@
     var card = el('div', 'pos-card is-pending' + (p && p !== true ? (p.isLong ? ' is-long' : ' is-short') : ''));
     card.setAttribute('data-check', pid);
     card.title = 'Position #' + pid;
-    if (isDesk()) {
+    if (posTable()) {
       card.classList.add('dk-row', 'dk-wide');
       var known = p && p !== true;
       if (known) { var m = positionMarket(p); card.appendChild(dkWho(p.isLong, m ? m.symbol : 'Market ' + p.instrumentId, p.leverage, 'Closing')); }
@@ -5362,7 +5366,7 @@
     var opens = pendingOpenList();
     var n = acct.positions.length + opens.length;
     setText('posCount', n ? ' (' + n + ')' : '');
-    host.classList.toggle('dk-table', isDesk());
+    host.classList.toggle('dk-table', posTable());
     var closing = Object.keys(ui.checking).length;
     var layout = $('tradeLayout');
     if (layout) layout.classList.toggle('has-pos', !!wallet.account && (n > 0 || closing > 0 || ui.recent.length > 0));
