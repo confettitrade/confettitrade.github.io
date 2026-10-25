@@ -933,7 +933,7 @@
   function priceMargins() { return { top: 0.12, bottom: chart.on.vol ? 0.24 : 0.08 }; }
 
   /* the axis labels: 12 px on phones and on the desktop (the trader reads them all day), 11 on the tablet as before */
-  function chartFontSize() { return isPhone() || isDesk() ? 12 : 11; }
+  function chartFontSize() { return isPhone() ? 12 : 11; }
 
   function chartOptions() {
     var t = chartTheme();
@@ -941,7 +941,7 @@
     return {
       autoSize: true,
       layout: { background: { type: 'solid', color: t.raised }, textColor: t.muted, fontFamily: t.mono, fontSize: chartFontSize() },
-      grid: { vertLines: { visible: false }, horzLines: { color: rgba(t.rule, 0.6), style: 1 } },
+      grid: { vertLines: { color: t.rule, style: 1 }, horzLines: { color: t.rule, style: 1 } },
       rightPriceScale: { borderColor: t.ruleStrong, scaleMargins: priceMargins() },
       timeScale: { borderColor: t.ruleStrong, timeVisible: true, secondsVisible: false, rightOffset: 3, barSpacing: 7 },
       /* let a phone scroll the page over the chart; horizontal drag and pinch still pan/zoom */
@@ -1076,7 +1076,6 @@
           return isFinite(k.t) && isFinite(k.o) && isFinite(k.h) && isFinite(k.l) && isFinite(k.c) && k.c > 0;
         }).slice(-CANDLE_COUNT);
         if (parsed.length === 0) throw new Error('no candles');
-        joinCandles(parsed);
         var reset = chart.coin !== coin;
         chart.coin = coin;
         chart.candles = parsed;
