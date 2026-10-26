@@ -8727,6 +8727,7 @@
     'function token0() view returns (address)',
   ];
   var Q96 = 79228162514264337593543950336n;
+  var SWAP_V3_USDC_FEE = 3000;   // the pool's fee tier, in hundredths of a bip
   var sw = { pay: 'HYPE', get: 'USDC', slip: 1, quote: null, busy: false, step: null, timer: null, seq: 0, bal: {} };
 
   function swapCfg() { return (cfg && cfg.swap) || {}; }
@@ -8741,7 +8742,8 @@
   /* The venue for a pair: V3 for HYPE/USDC, V2 for HYPE/FETTI, none for USDC/FETTI (two steps). */
   function swRoute(a, b) {
     var set = [a, b].sort().join('/');
-    if (set === 'HYPE/USDC' && isAddr(swapCfg().v3Router) && isAddr(swapCfg().v3UsdcPool)) return { kind: 'v3', pool: swapCfg().v3UsdcPool, fee: Number(swapCfg().v3UsdcFee || 3000) };
+    // the 0.3 % WHYPE/USDC pool on HyperSwap V3 (the SwapRouter is verified on hyperevmscan; factory 0xB1c0...02E3)
+    if (set === 'HYPE/USDC' && isAddr(swapCfg().v3Router) && isAddr(swapCfg().v3UsdcPool)) return { kind: 'v3', pool: swapCfg().v3UsdcPool, fee: SWAP_V3_USDC_FEE };
     if (set === 'FETTI/HYPE') return { kind: 'v2' };
     return null;
   }
