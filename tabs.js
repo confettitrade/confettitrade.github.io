@@ -2263,9 +2263,12 @@
       var a = apr();
       if (a) {
         valCell('cfPushed', fmtUsd(a.sum) + ' · ' + fmtInt(a.n) + ' push' + (a.n === 1 ? '' : 'es'), '', 'last ' + Math.max(1, Math.round(a.days)) + ' days');
-        var paid = a.paidDays ? fmtUsd(a.total) + ' paid over ' + a.paidDays + ' day' + (a.paidDays === 1 ? '' : 's') : '—';
+        /* before the APR is ripe (or without a FETTI price): the money paid so far and over how long, short enough
+           for its column; the note says when the rate shows (the owner, 2026-10-26: the long line ran into Pushed) */
+        var paid = a.paidDays ? fmtUsd(a.total) + ' · ' + a.paidDays + ' day' + (a.paidDays === 1 ? '' : 's') : '—';
+        var paidNote = a.paidDays ? 'paid so far' + (a.price == null ? '; the rate needs a FETTI price' : a.paidDays < APR_MIN_DAYS ? '; the rate shows after ' + APR_MIN_DAYS + ' days' : '') : '';
         valCell('cfApr', a.apr != null ? fmtPct(a.apr) : paid, a.apr > 0 ? 'pos' : 'faint',
-          a.apr != null ? 'last ' + Math.max(1, Math.round(a.days)) + ' days of pushes, annualised, on all stake at $' + fmtPrice(a.price) + ' per FETTI' : '');
+          a.apr != null ? 'last ' + Math.max(1, Math.round(a.days)) + ' days of pushes, annualised, on all stake at $' + fmtPrice(a.price) + ' per FETTI' : paidNote);
       }
       if (me) {
         valCell('cfWallet', fmtTok(tok18(me.walletRaw)));

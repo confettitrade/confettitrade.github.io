@@ -3428,7 +3428,7 @@ main > .notice { margin-bottom: var(--gap); }
   body[data-page="confetti"] .cf-pool .panel-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 0 20px; }
   body[data-page="confetti"] .cf-pool .kv { flex-direction: column; align-items: flex-start; gap: 2px; border: 0; padding: 0; }
   body[data-page="confetti"] .cf-pool .kv-key { font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
-  body[data-page="confetti"] .cf-pool .kv-val { text-align: left; font-size: 16px; font-weight: 600; white-space: nowrap; }
+  body[data-page="confetti"] .cf-pool .kv-val { text-align: left; font-size: 16px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
   #cfPushHead, #cfPushes.dk-table > .pos-line { grid-template-columns: 150px minmax(0, 1fr) 100px 0 112px; }
   #cfPushHead { display: grid; }   /* always on desktop (hidden below 901 by its attribute) */
   #cfPushes.dk-table { overflow: visible; }
