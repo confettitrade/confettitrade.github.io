@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=desk2">
+  <link rel="stylesheet" href="paper.css?v=funnel1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -135,12 +135,16 @@
     .pos-head .pos-view { gap: 2px; margin-left: auto; margin-right: 8px; }
     .pos-head .pos-view .pick { min-height: 24px; padding: 0 8px; font-size: 12px; }
     .pos-head .pos-view + #closeAllBtn { margin-left: 0; }
-    /* limit orders (the owner, 2026-10-25): the Market | Limit row and the price row, on desktops */
-    html[data-limits="1"] body.trade #dkOrderType { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; }
-    html[data-limits="1"] body.trade #dkOrderType .pick { min-height: 28px; font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-    html[data-limits="1"] body.trade #dkLimitBox { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
-    html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
-    html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
+    /* limit orders (the owner, 2026-10-25): the Market | Limit row and the price row, on desktops (from 901 px;
+       a tablet got them unstyled and a narrowed window kept Limit mode with no control to leave it) */
+    @media (min-width: 901px) {
+      html[data-limits="1"] body.trade #dkOrderType { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; }
+      html[data-limits="1"] body.trade #dkOrderType .pick { min-height: 28px; font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+      html[data-limits="1"] body.trade #dkLimitBox { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
+      html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
+      html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
+    }
+    @media (max-width: 900px) { body.trade #dkOrderType, body.trade #dkLimitBox { display: none; } }
     .lim-line { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--rule); font-size: 13px; }
     .lim-line .grow { flex: 1 1 auto; min-width: 0; }
     .lim-line .lim-side { font-weight: 600; }
@@ -497,6 +501,9 @@
     <button class="ph-only ph-acct is-out" id="phAcct" type="button" aria-haspopup="dialog" aria-controls="phAcctSheet"><span class="ph-acct-txt" id="phAcctTxt">Connect</span><span class="ph-acct-caret" aria-hidden="true"></span><i class="ph-acct-owed" aria-hidden="true"></i></button>
   </header>
 
+  <!-- the demo (?demo=1): shown by the page once the pretend account is up -->
+  <div class="demo-bar" id="demoBar" hidden><b>Demo</b><span>Pretend money. Nothing is sent, nothing is real.</span><a href="trade.html">Trade for real</a></div>
+
   <main class="container trade-main">
 
     <!-- Market: the coin button, the live price, two stats, How to trade -->
@@ -539,6 +546,7 @@
 
     <div class="notice" id="v2Banner" hidden>You have <b id="v2Amt">money</b> on v2. <a class="btn btn-sm" id="stV2" href="v2.html">Move it</a></div>
     <div class="notice" id="v3Banner" hidden>You have <b id="v3Amt">money</b> on v3. <a class="btn btn-sm" id="stV3" href="v3.html">Move it</a></div>
+    <div class="notice" id="usdcBanner" hidden>Trades are in USDC, not HYPE. You have <b id="usdcBannerHype">—</b> HYPE: swap it in one tap. <button class="btn btn-sm" id="usdcBannerGo" type="button">Swap HYPE for USDC</button></div>
 
     <div class="trade-layout" id="tradeLayout">
 
@@ -787,6 +795,7 @@
               <button class="btn btn-lg btn-block btn-go go-setup" id="actionBtn" type="submit">Connect wallet</button>
               <div class="ticket-progress" id="ticketProgress" hidden aria-live="polite"></div>
               <div class="hint" id="actionHint" aria-live="polite"></div>
+              <a class="ticket-demo" id="tryDemo" href="trade.html?demo=1" hidden>No wallet yet? Try the demo first: pretend money, nothing is sent.</a>
             </div>
 
             <!-- phones (piece 13): the top of the More page, over the Details lines: the open price and timing,
@@ -1048,6 +1057,11 @@
         </div>
       </div>
       <div class="panel-body stack" id="depFromWallet">
+        <div class="notice dep-swap" id="depSwap" hidden>
+          <div id="depSwapText">Trades are in USDC, not HYPE.</div>
+          <button class="btn btn-primary btn-block" type="button" id="depSwapGo" disabled>Swap HYPE for USDC</button>
+          <div class="hint" id="depSwapHint" aria-live="polite"></div>
+        </div>
         <div class="kv"><span class="kv-key">In your wallet</span><span class="kv-val" id="depWallet">—</span></div>
         <div class="kv"><span class="kv-key">Confetti balance</span><span class="kv-val" id="depAvailable">—</span></div>
         <label class="label" for="depositAmount">Amount</label>
@@ -1069,6 +1083,7 @@
           <li>On Hyperliquid, send USDC to it. The first send costs 1 USDC.</li>
           <li>It arrives here by itself, usually within a minute.</li>
         </ol>
+        <div class="hint" id="hlHypeNote">Only USDC arrives here. HYPE on Hyperliquid: sell it for USDC there and send that, or move it to this wallet and swap it under In this wallet.</div>
         <div class="kv"><span class="kv-key" id="hlPendingKey">Waiting</span><span class="kv-val" id="hlPending">—</span></div>
         <div class="modal-actions">
           <button class="btn" type="button" data-close>Close</button>
@@ -1216,7 +1231,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=limits3" defer></script>
+  <script src="trade.js?v=usdc2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

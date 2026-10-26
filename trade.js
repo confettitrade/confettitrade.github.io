@@ -31,14 +31,15 @@
 (function () {
   'use strict';
 
-  /* Local demo for screenshots: a pretend funded account, no wallet, no chain. Only on localhost or
-     127.0.0.1 with ?demo=1 (the account), ?demo=tour (and the tour), ?demo=pending (an open
-     request counting down in the ticket) or ?demo=idle (the account with nothing in flight). On any other host (confetti.trade) DEMO is null, and
-     every demo branch below starts by checking it, so nothing of the demo runs, loads or is stored. */
+  /* The demo: a pretend funded account, no wallet, no chain. ?demo=1 (the account), ?demo=tour (and the
+     tour), ?demo=pending (an open request counting down in the ticket) or ?demo=idle (the account with
+     nothing in flight). Built for screenshots on 127.0.0.1; public on every host since 2026-10-25 (the
+     owner: a visitor should try the page before buying eyes for it), reached from the 'Try the demo' link
+     under Connect wallet. Without the query DEMO is null, and every demo branch below starts by checking
+     it, so nothing of the demo runs, loads or is stored on a real visit. In the demo nothing is ever sent:
+     the bar under the header says so and links back to the real page. */
   var DEMO = (function () {
     try {
-      var h = String(location.hostname || '');
-      if (h !== 'localhost' && h !== '127.0.0.1') return null;
       var v = new URLSearchParams(location.search).get('demo');
       return v === '1' || v === 'tour' || v === 'pending' || v === 'idle' ? v : null;
     } catch (e) { return null; }
@@ -858,6 +859,7 @@
         if (isFinite(v) && v > 0) state.mids[m.coin] = v;
       });
       onPrices();
+      try { limTick(); } catch (e) { /* never stops the prices */ }
       try { checkLimits(); } catch (e) { /* never stops the prices */ }
     }).catch(function () {
       state.midsFailures += 1;
@@ -1546,6 +1548,8 @@
     if (!m) return;
     var changed = state.market !== m;
     state.market = m;
+    /* the limit price was the old market's number: clear it; Limit mode reseeds from this market's price */
+    if (changed) { lim.px = NaN; var lp = $('dkLimitPx'); if (lp) { lp.value = ''; var np = marketPrice(m); if (lim.type === 'limit' && isFinite(np) && np > 0) { lp.value = String(Number(np.toPrecision(6))); lim.px = Number(lp.value); } } }
     lsSet(LS.market, sym);
     try { history.replaceState(null, '', '#' + encodeURIComponent(sym)); } catch (e) { /* ignore */ }
 
@@ -2086,7 +2090,7 @@
     var sz = m ? m.szDecimals : null;
     var sym = m ? m.symbol : '';
     var inst = m && m.inst ? m.inst : null;
-    var px = openPriceFor(m);
+    var px = lim.type === 'limit' && lim.px > 0 ? lim.px : openPriceFor(m);   // a limit prices its own receipt
     var margin = isFinite(form.margin) && form.margin > 0 ? form.margin : NaN;
     var notional = isFinite(margin) ? margin * form.lev : NaN;
     var isLong = form.side === 'long';
@@ -2097,7 +2101,8 @@
     setText('moveKey', 'If ' + (sym || 'the price') + ' moves 1% your way');
     var win = isFinite(notional) && px > 0 ? estimateClose(pretendPos(px, margin), inst, px * (isLong ? 1.01 : 0.99), true) : null;
     setText('moveWin', win && !win.flat ? fmtUsd(win.pnl, true) : '—');
-    setText('opensNear', 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' in about ' + fillSecs() + ' s');
+    setText('opensNear', lim.type === 'limit' && lim.px > 0 ? 'Opens when ' + sym + ' reaches ' + fmtPrice(px, sz) + '; the fill lands at the oracle a few seconds after'
+      : 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' in about ' + fillSecs() + ' s');
     /* the win cap line (in Details) shows only when a 20% move would reach it */
     var capUsd = ticketCap(inst, margin);
     var big = isFinite(capUsd) && px > 0 ? estimateClose(pretendPos(px, margin), inst, px * (isLong ? 1.2 : 0.8), true) : null;
@@ -2117,7 +2122,7 @@
     setText('borrowLine', inst && inst.borrowRateX10 > 0
       ? 'Borrow: ' + borrowPctText(inst) + ' of the position per hour after the first ' + (fh == null ? '—' : fh === 1 ? 'hour' : fh + ' hours') + ', taken at close.'
       : 'Borrow: none.');
-    if (inst && inst.entryDeadbandBps > 0) setText('opensNear', 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' plus a ' + pctText(inst.entryDeadbandBps / 1e4) + ' spread, in about ' + fillSecs() + ' s');
+    if (inst && inst.entryDeadbandBps > 0 && !(lim.type === 'limit' && lim.px > 0)) setText('opensNear', 'Opens near ' + (px > 0 ? fmtPrice(px, sz) + ' (oracle price)' : 'the oracle price') + ' plus a ' + pctText(inst.entryDeadbandBps / 1e4) + ' spread, in about ' + fillSecs() + ' s');
     var mp = inst ? house.maxPos[inst.id] : null;
     var room = mp ? (isLong ? mp.long : mp.short) : null;
     setText('posCapLine', room != null ? 'Biggest ' + sym + ' ' + (isLong ? 'long' : 'short') + ' right now ' + fmtUsd(room) : 'Biggest position: —');
@@ -2146,7 +2151,8 @@
       moveK: 'If ' + (c.sym || 'the price') + (c.isLong ? ' rises' : ' falls') + ' 1%',
       moveV: c.win && !c.win.flat ? fmtUsd(c.win.pnl, true) : '—',
       movePos: !!(c.win && !c.win.flat && c.win.pnl > 0),
-      opens: 'Opens near ' + (c.px > 0 ? fmtPrice(c.px, c.sz) : 'the market price') + ' in about ' + fillSecs() + ' s',
+      opens: lim.type === 'limit' && lim.px > 0 ? 'Opens when ' + (state.market ? state.market.symbol : 'the price') + ' reaches ' + fmtPrice(c.px, c.sz) + '; the fill lands at the oracle a few seconds after'
+        : 'Opens near ' + (c.px > 0 ? fmtPrice(c.px, c.sz) : 'the market price') + ' in about ' + fillSecs() + ' s',
       costs: 'Costs ' + costs.join(' · ')
     };
   }
@@ -2298,10 +2304,11 @@
     var btn = $('actionBtn');
     var hint = $('actionHint');
     if (!btn) return;
+    var td = $('tryDemo'); if (td) td.hidden = !!(wallet.account || DEMO || !window.ethers);
     var m = state.market;
     var sym = m ? m.symbol : '';
     var label = 'OPEN POSITION', cls = 'btn btn-lg btn-block btn-go', disabled = false, note = '', err = false;
-    var notice = null, alt = null, setup = true, problem = null;
+    var notice = null, alt = null, setup = true, problem = null, swapState = false;
     var block = marketBlock();
     if (block) {
       disabled = true; notice = block; alt = altMarket();
@@ -2309,7 +2316,7 @@
       label = 'Wallet unavailable'; disabled = true; note = 'The wallet library did not load. Reload the page.'; err = true;
     } else if (!wallet.account) {
       label = 'Connect wallet';
-      note = wallet.eth || getInjected() ? 'Your wallet asks to connect, then to switch to HyperEVM if it is elsewhere. Nothing is signed.' : 'No wallet in this browser: tap to open Confetti in your wallet app.';
+      note = wallet.eth || getInjected() ? 'Trades are in USDC on HyperEVM; HYPE swaps for it here in one tap. Nothing is signed.' : 'No wallet in this browser: tap to open Confetti in your wallet app.';
     } else if (wallet.chainId !== CHAIN_ID) {
       label = 'Switch to HyperEVM'; note = 'Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM.';
     } else if (!hasExchange()) {
@@ -2317,10 +2324,18 @@
     } else if (!acct.loaded) {
       label = 'Loading your account…'; disabled = true;
     } else if (acct.available < minMargin()) {
-      label = 'Add USDC';
-      note = acct.walletUsdc >= 1 ? 'You have ' + fmtUsd(acct.walletUsdc) + ' USDC in your wallet. Add it to start.'
-        : acct.available > 0 ? 'Your balance is ' + fmtUsd(acct.available) + '. Trades start at ' + fmtUsd(minMargin()) + '.'
-        : 'Add at least ' + fmtUsd(minMargin()) + ' to start.';
+      /* the owner, 2026-10-25: "make it obvious that people need to convert their hyperliquid to usdc": a wallet
+         with HYPE and no USDC gets a button that names the step (it opens Add USDC on the one-tap swap) */
+      if (depSwapFirst() && $('depSwap')) {
+        swapState = true; label = 'Swap HYPE for USDC';
+        note = 'Trades are in USDC, not HYPE. One tap swaps your ' + (Number(ui.hypeWei) / 1e18).toFixed(2) + ' HYPE, then you deposit it.';
+      } else {
+        label = 'Add USDC';
+        note = acct.walletUsdc >= 1 ? 'You have ' + fmtUsd(acct.walletUsdc) + ' USDC in your wallet. Add it to start.'
+          : acct.available > 0 ? 'Your balance is ' + fmtUsd(acct.available) + '. Trades start at ' + fmtUsd(minMargin()) + '.'
+          : depSwapSmall() ? 'Trades are in USDC. The HYPE in this wallet buys about ' + fmtUsd(swHypeWorth(ui.hypeWei)) + ', under the ' + fmtUsdShort(minMargin()) + ' minimum: add USDC, or a little more HYPE.'
+          : 'Trades are in USDC on HyperEVM. Add at least ' + fmtUsdShort(minMargin()) + ' to start.';
+      }
     } else if (!(form.margin > 0)) {
       label = 'Enter an amount'; disabled = true;
     } else {
@@ -2350,15 +2365,27 @@
       cls += ' dk-trade';
       if (!err) note = String(note || '').replace(/^(BUY \/ LONG|SELL \/ SHORT) .*? at \d+x\.\s*/, '');
     }
+    var tkd = $('tkDeposit'); if (tkd) { var tkdText = swapState ? 'Swap HYPE for USDC' : 'Deposit USDC'; if (tkd.textContent !== tkdText) tkd.textContent = tkdText; }
     btn.className = cls;
     btn.textContent = label;
     btn.disabled = disabled;
     if (hint) { hint.textContent = tk.phase ? '' : note; hint.classList.toggle('is-err', err && !tk.phase); }
     renderTicketNotice(notice, alt);
     if (ph) { ui.phTk = { problem: problem, notice: notice, alt: alt, setup: setup }; renderPhRowD(); }
+    renderUsdcBanner();
     renderTicketProgress(false);
     var closeAll = $('closeAllBtn');
     if (closeAll) closeAll.disabled = state.busy;
+  }
+
+  /* Phones and tablets: the ticket is a sheet behind BUY / SELL, so a HYPE holder with no USDC saw $0.00 and
+     nothing naming USDC. This banner says it on the first screen, with the swap one tap away. Never on desktop
+     (the ticket is in view), never for a funded wallet or one holding USDC; it goes once the swap lands. */
+  function renderUsdcBanner() {
+    var b = $('usdcBanner'); if (!b) return;
+    var on = !!(isSheetMode() && wallet.account && wallet.chainId === CHAIN_ID && hasExchange() && acct.loaded && acct.available < minMargin() && depSwapFirst());
+    b.hidden = !on;
+    if (on) setText('usdcBannerHype', (Number(ui.hypeWei) / 1e18).toFixed(2));
   }
 
   /* The line above the button: a paused or coming-soon market (with an open one to switch to), or
@@ -2594,7 +2621,11 @@
     if (!hasExchange() || !acct.loaded) return;
     if (acct.available < minMargin()) { openDeposit(); return; }
     if (!(form.margin > 0) || orderProblem()) { renderAction(); return; }
-    if (lim.type === 'limit' && lim.firing === null) { placeLimit(); return; }
+    if (lim.type === 'limit' && lim.firing === null && isDesk()) {
+      /* the big-trade check happens here, at placement: nobody is watching when a limit fires */
+      if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') { confirmOpen().then(function (yes) { if (yes && !state.busy && !tk.phase && !orderProblem()) placeLimit(); }); return; }
+      placeLimit(); return;
+    }
     if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') {
       if (isPhone()) {
         /* phones (piece 13): the first tap arms OPEN; the second tap has just passed every guard above
@@ -5398,7 +5429,12 @@
     clearCards(host);
     renderPosChip();
     renderDkPosHead();
-    if (!wallet.account) { empty.textContent = 'Connect a wallet to see your positions.'; empty.hidden = false; return; }
+    if (!wallet.account) {
+      empty.textContent = 'Connect a wallet to see your positions. ';
+      /* the demo link a phone visitor sees without a tap (the ticket's own link sits inside the BUY sheet) */
+      if (!DEMO && window.ethers) { var td = el('a', 'empty-demo', 'No wallet yet? Try the demo.'); td.id = 'posTryDemo'; td.href = 'trade.html?demo=1'; empty.appendChild(td); }
+      empty.hidden = false; return;
+    }
     if (!hasExchange()) { empty.textContent = 'Trading is off on this copy of the site.'; empty.hidden = false; return; }
     if (!acct.loaded) { empty.textContent = 'Loading your positions…'; empty.hidden = false; return; }
     var items = posItems();
@@ -6278,7 +6314,7 @@
      (Confirm in your wallet, then Sent and the countdown to the fill), never back to the button
      in between; the request also shows under Your positions as a card. A keeper fills it a few
      seconds later. busy is released as soon as the request is mined, not after the reads. */
-  function submitOpen() {
+  function submitOpen(onFiled) {
     var m = state.market;
     if (!tradeReady()) return;
     if (!m || m.instrumentId == null) return;
@@ -6290,6 +6326,10 @@
     var maxed = form.maxed;
     var released = false;
     function release() { if (!released) { released = true; setBusy(false); } }
+    /* a limit order asks whether its request reached the chain (true once the receipt is read; a sent request
+       whose event the page could not read counts as filed, since the position will show) */
+    var told = false;
+    function tell(ok) { if (onFiled && !told) { told = true; try { onFiled(ok); } catch (e) { /* never blocks the ticket */ } } }
     setBusy(true);
     tkSet('wallet', { reqId: null, isLong: isLong, sym: m.symbol, lev: lev, margin: margin });
     sendTrade(desc, 'requestOpen', [m.instrumentId, isLong, margin6, lev, referrerArg()]).then(function (rc) {
@@ -6308,13 +6348,16 @@
         if (!maxed) lsSet(LS.amount, String(margin));
         noteRecent(m.symbol);
         tourEvent('submit');
+        tell(true);
       } else {
         tkSet('error', { msg: 'Sent, but the page could not read the request. Your positions show the result.' });
+        tell(true);
       }
       release();
       return afterTx();
     }).catch(function (e) {
       tkSet('error', { msg: describeError(e) });
+      tell(false);
     }).then(release);
   }
 
@@ -7123,7 +7166,7 @@
     if (!hasExchange()) { toast('Trading is off on this copy of the site.', 'err'); return; }
     var hint = $('depositHint');
     if (hint) hint.classList.remove('is-err');
-    setDepWhere(acct.walletUsdc >= 1 || !read.factory ? 'wallet' : 'hl');
+    setDepWhere(acct.walletUsdc >= 1 || !read.factory || depSwapShow() ? 'wallet' : 'hl');   // a HYPE holder lands on the one-tap swap, not the HyperCore tab
     renderDepositModal();
     openDialog('depositModal');
     refreshWalletUsdc();
@@ -7159,6 +7202,105 @@
     if (hype) hype.hidden = !(wallet.account && ui.hypeWei != null && ui.hypeWei < HYPE_LOW_WEI);
     renderDepositSubmit();
     renderHyperliquid();
+    try { renderDepSwap(); } catch (e) { /* the swap block never blocks the deposit */ }
+  }
+
+  /* ---- One tap from HYPE to USDC inside Add USDC (the owner, 2026-10-25: 'a one-tap HYPE to USDC swap on
+     the deposit path', so a visitor who arrives with HYPE and no USDC is not sent away to find a DEX). A
+     wallet with under the minimum trade in USDC and some HYPE sees what the whole stack buys, less 0.03 HYPE
+     kept for gas (the approve, the deposit, a trade or two), and one button that swaps it on the V3 pool: the
+     Swap card's own quote, tolerance and send (swV3Quote / swMinOut / swSend). After the swap the sheet
+     fills the amount with the new USDC, so the next tap is the deposit. A custom amount is the card's job. */
+  var DEP_SWAP_RESERVE_WEI = 30000000000000000n;
+  var depSwap = { quote: null, busy: false, seq: 0, hypeWei: null };
+  function depSwapShow() {
+    if (!(wallet.account && !DEMO && window.ethers && swReady() && swRoute('HYPE', 'USDC') && ui.hypeWei != null && acct.walletUsdc < minMargin())) return false;
+    var worth = swHypeWorth(ui.hypeWei);
+    if (isFinite(worth)) return worth + acct.walletUsdc >= minMargin();          // what the HYPE buys covers a first trade
+    return ui.hypeWei > DEP_SWAP_RESERVE_WEI * 2n;                               // the price is not known yet (asked on connect)
+  }
+  /* The ticket's 'Swap HYPE for USDC' and the phone banner are for an account that was never funded: a trader
+     whose money sits in open trades gets the usual words. */
+  function depSwapFirst() {
+    return depSwapShow() && !acct.positions.length && !(acct.marginInUse > 0) && !(acct.pending > 0);
+  }
+  /* A HYPE stack too small for the minimum trade, said in words instead of a dead-end button. */
+  function depSwapSmall() {
+    var worth = swHypeWorth(ui.hypeWei);
+    return !!(wallet.account && !DEMO && isFinite(worth) && worth > 0.5 && worth + acct.walletUsdc < minMargin());
+  }
+  function renderDepSwap() {
+    var box = $('depSwap'); if (!box) return;
+    var show = depSwapShow();
+    box.hidden = !show;
+    if (!show) { depSwap.quote = null; depSwap.hypeWei = null; return; }
+    if (depSwap.busy || (depSwap.hypeWei === ui.hypeWei && depSwap.quote && Date.now() - (depSwap.quote.at || 0) < SW_QUOTE_FRESH_MS)) { depSwapRenderGo(); return; }   // same stack, a quote still fresh
+    var T = swTokens(), route = swRoute('HYPE', 'USDC'), amountIn = ui.hypeWei - DEP_SWAP_RESERVE_WEI;
+    depSwap.hypeWei = ui.hypeWei; depSwap.quote = null; depSwapRenderGo();
+    setText('depSwapText', 'Trades are in USDC, not HYPE. This wallet has ' + (Number(ui.hypeWei) / 1e18).toFixed(2) + ' HYPE and '
+      + (acct.walletUsdc >= 0.01 ? fmtUsd(acct.walletUsdc) + ' USDC, under the ' + fmtUsdShort(minMargin()) + ' minimum.' : 'no USDC.'));
+    setText('depSwapHint', 'Getting a quote…');
+    var seq = ++depSwap.seq;
+    swV3Quote(route, T.HYPE.addr, amountIn).then(function (r) {
+      if (seq !== depSwap.seq) return;
+      var minOut = r.out > 0n ? swMinOut(r.out, 1, r.impact) : null;
+      if (minOut == null) { setText('depSwapHint', 'That much moves the pool too far for one tap. Use the Swap card with a smaller amount.'); depSwapRenderGo(); return; }
+      swNoteHypeUsd(amountIn, r.out);
+      var buys = Number(window.ethers.formatUnits(r.out, 6));
+      if (buys + acct.walletUsdc < minMargin()) {
+        /* the gate uses the same price, so this is rare: a stack that just dipped under the minimum */
+        depSwap.quote = null;
+        setText('depSwapHint', 'That buys about ' + fmtUsd(buys) + ': under the ' + fmtUsdShort(minMargin()) + ' minimum for a trade. Add USDC, or a little more HYPE.');
+        depSwapRenderGo(); renderAction(); return;
+      }
+      depSwap.quote = { route: route, amountIn: amountIn, out: r.out, minOut: minOut, impact: r.impact, at: Date.now(), slip: 1 };
+      setText('depSwapHint', swFmt(amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
+      depSwapRenderGo();
+    }).catch(function () {
+      if (seq !== depSwap.seq) return;
+      setText('depSwapHint', 'No quote right now. Try again in a moment.'); depSwapRenderGo();
+    });
+  }
+  function depSwapRenderGo() {
+    var b = $('depSwapGo'); if (!b) return;
+    var q = depSwap.quote;
+    b.textContent = depSwap.busy ? 'Swapping…' : q ? 'Swap ' + swFmt(q.amountIn, 18) + ' HYPE for ' + fmtUsd(Number(window.ethers.formatUnits(q.out, 6))) : 'Swap HYPE for USDC';
+    b.disabled = !!(depSwap.busy || !q || state.busy);
+  }
+  function depSwapGo() {
+    if (!depSwap.quote || depSwap.busy) return;
+    var T = swTokens(), q0 = depSwap.quote, q = null, desc = '', prevHype = ui.hypeWei;
+    depSwap.busy = true; depSwapRenderGo(); setText('depSwapHint', 'Check your wallet.');
+    swWalletReady('depSwapHint').then(function (ok) {
+      if (!ok) throw SW_STOP;
+      return swFresh(q0, T.HYPE, T.USDC);
+    }).then(function (fq) {
+      if (fq.fresh) {
+        /* the fresh quote goes on the button first; a worse one waits for a second tap on the new number */
+        depSwap.quote = fq; swNoteHypeUsd(fq.amountIn, fq.out);
+        var buys = Number(window.ethers.formatUnits(fq.out, 6));
+        setText('depSwapHint', swFmt(fq.amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
+        if (fq.worse) { depSwap.busy = false; depSwapRenderGo(); setText('depSwapHint', 'The price moved: the button shows the new amount. Tap it again to swap at that.'); throw SW_STOP; }
+      }
+      q = fq; desc = 'Swap ' + swFmt(q.amountIn, 18) + ' HYPE for USDC';
+      setText('depSwapHint', 'Confirm the swap in your wallet.');
+      return swSend(q, T.HYPE, T.USDC, desc);
+    }).then(function (rc) {
+      toast(desc + ': done.', 'ok', txLink(rc.hash));
+      depSwap.quote = null; depSwap.hypeWei = null;
+      return swAfterLanded(prevHype);
+    }).then(function () {
+      var inp = $('depositAmount'), hint = $('depositHint');
+      if (inp && acct.walletUsdc > 0) inp.value = String(Math.floor(acct.walletUsdc * 100) / 100);
+      if (hint) hint.classList.remove('is-err');
+      renderDepositSubmit();
+      if (hint) hint.textContent = 'Swapped. Now deposit it' + (acct.allowance + 1e-9 >= acct.walletUsdc ? ': one step.' : ': approve USDC, then deposit.');
+      if (typeof swRefreshBalances === 'function') swRefreshBalances();
+    }).catch(function (e) {
+      if (e === SW_STOP) return;
+      setText('depSwapHint', 'The swap did not go through: ' + swError(e));
+      if (depSwap.quote === q0) depSwap.quote.at = 0;   // the next tap asks the pool again
+    }).then(function () { depSwap.busy = false; renderDepSwap(); });
   }
 
   /* The deposit button names its step: Approve USDC (1 of 2) when the allowance is short, then
@@ -7177,7 +7319,8 @@
     if (b.textContent !== label) b.textContent = label;
     var hint = $('depositHint');
     if (hint && !hint.classList.contains('is-err') && !dep.step) {
-      hint.textContent = isFinite(v) && v > 0 && acct.allowance + 1e-9 >= v ? 'One step: deposit.' : 'The first time takes two steps: approve USDC, then deposit it.';
+      hint.textContent = depSwapShow() && acct.walletUsdc <= 0 ? 'Swap first. The deposit is the next tap.'
+        : isFinite(v) && v > 0 && acct.allowance + 1e-9 >= v ? 'One step: deposit.' : 'The first time takes two steps: approve USDC, then deposit it.';
     }
   }
 
@@ -7231,6 +7374,7 @@
         renderDepositSubmit();
       });
       $('depositAmount').addEventListener('input', function () { $('depositHint').classList.remove('is-err'); renderDepositSubmit(); });
+      var dsg = $('depSwapGo'); if (dsg) dsg.addEventListener('click', depSwapGo);
       var where = $('depWhere');
       if (where) where.addEventListener('click', function (ev) {
         var b = ev.target && ev.target.closest ? ev.target.closest('[data-where]') : null;
@@ -7919,9 +8063,9 @@
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].addEventListener('click', function (ev) { show(ev.currentTarget.getAttribute('data-tab')); });
     }
-    /* Your positions is its own panel now (always in view); the tabs are History and Refer */
+    /* Your positions is its own panel now (always in view); the tabs are History, Orders and Refer */
     var saved = lsGet(LS.tab);
-    show(saved === 'refer' ? 'refer' : 'history');
+    show(saved === 'refer' || saved === 'orders' ? saved : 'history');
     var more = $('histMoreBtn');
     if (more) more.addEventListener('click', function () { loadHistory(false); });
     var closeAllBtn = $('closeAllBtn');
@@ -7994,6 +8138,7 @@
     });
     $('depositBtn').addEventListener('click', openDeposit);
     var tkDep = $('tkDeposit'); if (tkDep) tkDep.addEventListener('click', openDeposit);
+    var ub = $('usdcBannerGo'); if (ub) ub.addEventListener('click', openDeposit);
     $('withdrawBtn').addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
     var ad = $('acctDeposit');
     if (ad) ad.addEventListener('click', openDeposit);
@@ -8066,12 +8211,12 @@
     { id: 'open', on: 'submit', sheet: true, title: function () { return isDesk() ? 'OPEN' : 'OPEN POSITION'; },
       target: function () { return tk.phase ? $('ticketProgress') : $('actionBtn'); },
       text: function () {
-        if (!wallet.account) return 'Connect your wallet to keep going. This button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Then it says OPEN POSITION.';
+        if (!wallet.account) return 'Connect your wallet to keep going. This button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Trades are in USDC on HyperEVM; if you hold HYPE, the same button swaps it in one tap. Then it says OPEN POSITION.';
         var b = $('actionBtn');
         var ready = b && !b.disabled && /^OPEN\b/i.test(b.textContent);
         if (ready && isDesk()) return tapWord() + ' ' + b.textContent.trim() + ': the button says your trade. Your wallet shows it and asks you to confirm.';
         return ready ? tapWord() + ' OPEN POSITION. Your wallet shows the trade and asks you to confirm.'
-          : 'Until you are set up, this button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Then it says OPEN POSITION.';
+          : 'Until you are set up, this button walks you through it: Connect wallet, Switch to HyperEVM, Add USDC. Trades are in USDC on HyperEVM; if you hold HYPE, the same button swaps it in one tap. Then it says OPEN POSITION.';
       } },
     { id: 'fill', on: 'opened', sheet: true, title: 'About 6 seconds',
       target: function () { return tk.phase ? $('ticketProgress') : null; },
@@ -8400,10 +8545,13 @@
     demoOpt('paused').split(',').forEach(function (s) { var pm = state.bySym[s]; if (pm && pm.inst) pm.inst.opensPaused = true; });
     ref.loaded = true; ref.locked = true;
     /* F32: the desktop strip's house line and 24h chip, as the chain path fills them (phones keep their skeleton) */
-    if (isDesk()) { house.lp = 412300; setText('chipHouseLp', fmtUsdShort(house.lp)); refreshConfVol(); }
+    house.lp = 412300; setText('chipHouseLp', fmtUsdShort(house.lp)); setText('chipHouseLpPh', fmtUsdK(house.lp));
+    var hl = $('chipHouse'); if (hl) hl.classList.add('is-loaded');   // the phone chip shows its value once loaded
+    if (isDesk()) refreshConfVol();
     if (state.market) selectMarket(state.market.symbol);
     renderWallet(); renderAccount(); renderPositions(); renderAction(); renderStatus(); renderRefer(); renderSession(); buildMarketMenu();
-    toast('Demo: a pretend account on this computer. Nothing is sent.', null, null, 6000);
+    var bar = $('demoBar'); if (bar) bar.hidden = false; else toast('Demo: a pretend account on this computer. Nothing is sent.', null, null, 6000);
+    document.documentElement.setAttribute('data-demo', '1');
     demoWhenPriced(demoSeed);
   }
 
@@ -8601,6 +8749,9 @@
     refreshSession();
     var dm = $('depositModal');
     if (dm && dm.open) refreshProxy();
+    /* the wallet's own HYPE and USDC, while the page is offering to swap them or the sheet is open (HYPE that arrives
+       or leaves between connects used to go unnoticed: the banner stayed, Max filled the old number) */
+    if ((dm && dm.open) || depSwapShow() || depSwapSmall()) { refreshWalletUsdc(); if (typeof swRefreshBalances === 'function') swRefreshBalances(); }
     if (keeper && Date.now() - keeperAt >= KEEPER_EVERY_MS) { keeperAt = Date.now(); keeper.refresh().then(renderStatus); }
   }
 
@@ -8653,7 +8804,10 @@
 
     tickMids(true);
     tickCtx(true);
-    setInterval(function () { tickMids(false); }, MIDS_EVERY_MS);
+    /* a hidden tab skips the price poll, except while a limit order waits: it still has to fire (the browser
+       slows a hidden tab's timer to about once a minute after five minutes, so a fire there is late by up to
+       a minute, never missed) */
+    setInterval(function () { tickMids(lim.orders.length > 0); }, MIDS_EVERY_MS);
     setInterval(function () { tickCtx(false); }, CTX_EVERY_MS);
     setInterval(function () { if (!document.hidden) loadCandles(); }, CANDLES_EVERY_MS);
     document.addEventListener('visibilitychange', onVisibility);
@@ -8712,8 +8866,10 @@
 
   var SWAP_V2_ABI = [
     'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)',
-    'function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable',
-    'function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline)',
+    /* HyperSwap's router takes a referrer address before the deadline (its bytecode holds only these selectors,
+       b4822be3 / 52aa4c22, checked 2026-10-25); the plain Uniswap signatures reverted before the wallet opened */
+    'function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, address referrer, uint256 deadline) payable',
+    'function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, address referrer, uint256 deadline)',
   ];
   var SWAP_V3_ROUTER_ABI = [
     'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
@@ -8729,6 +8885,104 @@
   var Q96 = 79228162514264337593543950336n;
   var SWAP_V3_USDC_FEE = 3000;   // the pool's fee tier, in hundredths of a bip
   var sw = { pay: 'HYPE', get: 'USDC', slip: 1, quote: null, busy: false, step: null, timer: null, seq: 0, bal: {} };
+  var SW_GAS_KEEP = 10000000000000000n;    // 0.01 HYPE stays in the wallet for network fees
+  var SW_QUOTE_FRESH_MS = 15000;           // an older quote is asked again right before the wallet opens
+  var SW_STOP = { stop: true };            // a step that already said why it stopped
+
+  /* The typed amount in base units, or null. Cut to the token's decimals (a seventh USDC decimal, or 1e-7 from
+     Number(), threw inside the quote timer and froze the card on its last quote). */
+  function swParse(text, dec) {
+    var s = String(text == null ? '' : text).trim().replace(/,/g, '');
+    if (!/^\d*\.?\d*$/.test(s) || s === '' || s === '.') return null;
+    var parts = s.split('.'), frac = (parts[1] || '').slice(0, dec);
+    try { var v = window.ethers.parseUnits((parts[0] || '0') + (frac ? '.' + frac : ''), dec); return v > 0n ? v : null; } catch (e) { return null; }
+  }
+
+  /* The wallet steps before a swap, as the trade button takes them: connected, on HyperEVM (switched for the
+     trader: the card used to toast "switch first" and stop), able to sign (an auto-connect that made no signer
+     was a silent no-op). Resolves true when ready, false once it has said why. */
+  function swWalletReady(hintId) {
+    if (!wallet.account) { connect(); return Promise.resolve(false); }
+    var p = Promise.resolve();
+    if (wallet.chainId !== CHAIN_ID) p = switchChain().then(function () { return onChainChanged(); });
+    return p.then(function () {
+      if (wallet.signer) return true;
+      return Promise.resolve(onChainChanged()).then(function () { return !!wallet.signer; });
+    }).then(function (ok) {
+      if (!ok) setText(hintId, 'Your wallet did not let the page sign. Disconnect it at the top of the page and connect again.');
+      return ok;
+    }, function (e) {
+      switchFailed(e);
+      setText(hintId, 'Your wallet stayed on ' + chainName(wallet.chainId) + '. Switch it to HyperEVM, then tap Swap again.');
+      return false;
+    });
+  }
+
+  /* The HYPE price in USDC, learned from every HYPE -> USDC quote (and asked once on connect): it decides whether
+     a wallet's HYPE is worth offering the one-tap swap for. */
+  function swNoteHypeUsd(amountIn, out) {
+    var E = window.ethers, h = Number(E.formatEther(amountIn)), u = Number(E.formatUnits(out, 6));
+    if (h > 0 && u > 0) sw.hypeUsd = u / h;
+  }
+  function swLearnHypeUsd() {
+    var route = swRoute('HYPE', 'USDC'); if (!route || !swReady() || sw.hypeUsd) return;
+    swV3Quote(route, swTokens().HYPE.addr, 1000000000000000000n).then(function (r) { swNoteHypeUsd(1000000000000000000n, r.out); renderAction(); try { renderDepSwap(); } catch (e) { /* the sheet may be closed */ } }).catch(function () { /* next quote */ });
+  }
+  /* What the wallet's HYPE buys, less the gas it keeps, in USDC; NaN until the price is known. */
+  function swHypeWorth(wei) {
+    if (wei == null || !sw.hypeUsd) return NaN;
+    var spend = wei > DEP_SWAP_RESERVE_WEI ? wei - DEP_SWAP_RESERVE_WEI : 0n;
+    return Number(window.ethers.formatEther(spend)) * sw.hypeUsd;
+  }
+
+  /* After a swap lands the public RPC can serve the old balance for a few seconds: read again until the HYPE
+     stack moved (or six tries), so the banner, the ticket and the sheet do not keep offering HYPE that is gone. */
+  function swAfterLanded(prevHype) {
+    var tries = 0;
+    function again() {
+      return refreshWalletUsdc().then(function () {
+        tries += 1;
+        if ((prevHype != null && ui.hypeWei !== prevHype) || tries >= 6) { if (typeof swRefreshBalances === 'function') swRefreshBalances(); return; }
+        return new Promise(function (r) { setTimeout(r, 1500); }).then(again);
+      });
+    }
+    return again();
+  }
+
+  /* The card's boxes from a quote (the first quote, or a re-quote right before the wallet opens). */
+  function swShowQuote(q) {
+    var T = swTokens(), E = window.ethers, amt = Number(E.formatUnits(q.amountIn, T[sw.pay].dec));
+    var outEl = $('swGet'); if (outEl) outEl.value = q.out > 0n ? swFmt(q.out, T[sw.get].dec) : '';
+    var unit = amt > 0 ? Number(E.formatUnits(q.out, T[sw.get].dec)) / amt : 0;
+    setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + q.impact.toFixed(q.impact < 0.1 ? 2 : 1) + '% · ' + (q.route.kind === 'v3' ? 'HyperSwap V3' : 'HyperSwap V2'));
+    setText('swTerms', 'min received ' + swFmt(q.minOut, T[sw.get].dec) + ' ' + sw.get);
+  }
+
+  /* A quote older than SW_QUOTE_FRESH_MS is asked again right before the wallet opens, so min received comes from
+     the pool as it is now (a quote typed, then a connect and a network switch, reverted on "Too little received"). */
+  function swFresh(q, payT, getT) {
+    if (Date.now() - (q.at || 0) < SW_QUOTE_FRESH_MS) return Promise.resolve(q);
+    /* the fresh quote is shown before anything is sent; a worse one stops here (fq.worse) so the trader taps
+       again on the number they can see, never signs for less than the screen said */
+    var pr = q.route.kind === 'v3' ? swV3Quote(q.route, payT.addr, q.amountIn) : swV2Quote(payT.addr, getT.addr, q.amountIn);
+    return pr.then(function (r) {
+      var minOut = r.out > 0n ? swMinOut(r.out, q.slip != null ? q.slip : sw.slip, r.impact) : null;
+      if (minOut == null) throw new Error('Too big for this pool right now: try a smaller amount.');
+      var fq = { route: q.route, amountIn: q.amountIn, out: r.out, minOut: minOut, impact: r.impact, at: Date.now(), slip: q.slip, fresh: true };
+      fq.worse = q.minOut != null && minOut < q.minOut;
+      return fq;
+    });
+  }
+
+  /* A swap's failure in a trader's words (the router's own reasons are terse). */
+  function swError(e) {
+    var raw = String((e && (e.shortMessage || e.reason || e.message)) || '');
+    if (/too little received|INSUFFICIENT_OUTPUT_AMOUNT/i.test(raw)) return 'the price moved before you confirmed. Tap Swap again for a fresh quote.';
+    if (/too old|deadline|EXPIRED/i.test(raw)) return 'it waited too long in your wallet. Tap Swap again.';
+    if (/insufficient funds/i.test(raw)) return 'not enough HYPE for this amount plus the network fee. Max keeps 0.01 HYPE for fees.';
+    if (/\bSTF\b|transfer.?from failed/i.test(raw)) return 'the token transfer was refused: check the amount and the approval, then try again.';
+    return describeError(e);
+  }
 
   function swapCfg() { return (cfg && cfg.swap) || {}; }
   function swTokens() {
@@ -8809,7 +9063,18 @@
     var route = swRoute(sw.pay, sw.get);
     if (!route) { outEl.value = ''; setText('swQuote', 'USDC and FETTI trade through HYPE: swap to HYPE first, then to ' + sw.get + '.'); setText('swTerms', 'min received —'); swRenderGo(); return; }
     var T = swTokens(), E = window.ethers;
-    var amountIn = E.parseUnits(String(amt), T[sw.pay].dec);
+    var amountIn = swParse(inp.value, T[sw.pay].dec);
+    if (amountIn == null) { outEl.value = ''; setText('swQuote', 'Type an amount for a quote.'); setText('swTerms', 'min received —'); swRenderGo(); return; }
+    /* the whole HYPE balance typed by hand left nothing for gas, and the wallet's error read like no HYPE at all */
+    var bal = sw.bal[sw.pay];
+    if (bal != null) {
+      var room = T[sw.pay].native ? (bal > SW_GAS_KEEP ? bal - SW_GAS_KEEP : 0n) : bal;
+      if (amountIn > room) {
+        outEl.value = '';
+        setText('swQuote', T[sw.pay].native ? 'Keep about 0.01 HYPE for network fees: Max fills the most you can swap.' : 'That is more ' + sw.pay + ' than this wallet has.');
+        setText('swTerms', 'min received —'); swRenderGo(); return;
+      }
+    }
     var seq = ++sw.seq;
     var q = route.kind === 'v3' ? swV3Quote(route, T[sw.pay].addr, amountIn) : swV2Quote(T[sw.pay].addr, T[sw.get].addr, amountIn);
     q.then(function (r) {
@@ -8820,7 +9085,8 @@
       var unit = Number(E.formatUnits(out, T[sw.get].dec)) / amt;
       setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + impact.toFixed(impact < 0.1 ? 2 : 1) + '% · ' + (route.kind === 'v3' ? 'HyperSwap V3' : 'HyperSwap V2'));
       if (minOut == null) { setText('swTerms', 'Too big for this pool right now: try a smaller amount.'); swRenderGo(); return; }
-      sw.quote = { route: route, amountIn: amountIn, out: out, minOut: minOut, impact: impact };
+      sw.quote = { route: route, amountIn: amountIn, out: out, minOut: minOut, impact: impact, at: Date.now(), slip: sw.slip };
+      if (sw.pay === 'HYPE' && sw.get === 'USDC') swNoteHypeUsd(amountIn, out);
       setText('swTerms', 'min received ' + swFmt(minOut, T[sw.get].dec) + ' ' + sw.get);
       swRenderGo();
     }).catch(function () {
@@ -8832,6 +9098,7 @@
   function swRefreshBalances() {
     var T = swTokens();
     if (!wallet.account || !read.provider) { sw.bal = {}; swRenderBalances(); return; }
+    swLearnHypeUsd();
     var E = window.ethers;
     ['HYPE', 'USDC', 'FETTI'].forEach(function (k) {
       var t = T[k];
@@ -8847,7 +9114,7 @@
   function swRenderGo() {
     var b = $('swGo'); if (!b) return;
     var label = !wallet.account ? 'Connect wallet'
-      : sw.busy ? (sw.step === 'approve' ? 'Approving ' + sw.pay + '…' : 'Swapping…')
+      : sw.busy ? (sw.step === 'approve' ? 'Approving ' + sw.pay + '…' : sw.step === 'swap' ? 'Swapping…' : 'Check your wallet…')
       : !sw.quote ? 'Swap'
       : 'Swap ' + sw.pay + ' for ' + sw.get;
     b.textContent = label;
@@ -8855,12 +9122,13 @@
   }
 
   function swSend(q, pay, get, desc) {
-    var E = window.ethers, deadline = Math.floor(Date.now() / 1000) + 120;
+    /* 20 minutes: min received protects the price; a 2-minute deadline failed a wallet confirm that took longer */
+    var E = window.ethers, deadline = Math.floor(Date.now() / 1000) + 1200;
     if (q.route.kind === 'v2') {
       var v2 = new E.Contract(swapCfg().router, SWAP_V2_ABI, wallet.signer);
       var path = [pay.addr, get.addr];
-      if (pay.native) return sendTx(desc, v2.swapExactETHForTokensSupportingFeeOnTransferTokens, [q.minOut, path, wallet.account, deadline, { value: q.amountIn }]);
-      return sendTx(desc, v2.swapExactTokensForETHSupportingFeeOnTransferTokens, [q.amountIn, q.minOut, path, wallet.account, deadline]);
+      if (pay.native) return sendTx(desc, v2.swapExactETHForTokensSupportingFeeOnTransferTokens, [q.minOut, path, wallet.account, E.ZeroAddress, deadline, { value: q.amountIn }]);
+      return sendTx(desc, v2.swapExactTokensForETHSupportingFeeOnTransferTokens, [q.amountIn, q.minOut, path, wallet.account, E.ZeroAddress, deadline]);
     }
     var v3 = new E.Contract(swapCfg().v3Router, SWAP_V3_ROUTER_ABI, wallet.signer);
     var params = {
@@ -8876,32 +9144,44 @@
   }
 
   function swGo() {
+    if (sw.busy) return;
     if (!wallet.account) { connect(); return; }
-    if (wallet.chainId !== CHAIN_ID) { toast('Switch your wallet to HyperEVM first.', 'err'); return; }
-    if (!sw.quote || sw.busy || !wallet.signer) return;
-    var T = swTokens(), E = window.ethers, q = sw.quote, pay = T[sw.pay], get = T[sw.get];
-    var spender = q.route.kind === 'v3' ? swapCfg().v3Router : swapCfg().router;
-    var desc = 'Swap ' + swFmt(q.amountIn, pay.dec) + ' ' + pay.sym + ' for ' + get.sym;
+    if (!sw.quote) return;
+    var T = swTokens(), E = window.ethers, q0 = sw.quote, pay = T[sw.pay], get = T[sw.get], q = null, desc = '';
+    var spender = q0.route.kind === 'v3' ? swapCfg().v3Router : swapCfg().router;
     sw.busy = true; sw.step = null; swRenderGo(); setText('swHint', '');
-    var first = Promise.resolve();
-    if (!pay.native) {
+    var prevHype = ui.hypeWei;
+    function take(fq) {
+      if (fq.fresh) { sw.quote = fq; swShowQuote(fq); if (sw.pay === 'HYPE' && sw.get === 'USDC') swNoteHypeUsd(fq.amountIn, fq.out); }
+      if (fq.worse) { setText('swHint', 'The price moved: the new amount is shown. Tap Swap again to swap at it.'); throw SW_STOP; }
+      q = fq; desc = 'Swap ' + swFmt(q.amountIn, pay.dec) + ' ' + pay.sym + ' for ' + get.sym;
+    }
+    swWalletReady('swHint').then(function (ok) {
+      if (!ok) throw SW_STOP;
+      return swFresh(q0, pay, get);
+    }).then(function (fq) {
+      take(fq);
+      if (pay.native) return null;
       var tok = new E.Contract(pay.addr, ERC20_ABI, wallet.signer);
-      first = tok.allowance(wallet.account, spender).then(function (allowance) {
+      return tok.allowance(wallet.account, spender).then(function (allowance) {
         if (allowance >= q.amountIn) return null;
         sw.step = 'approve'; swRenderGo();
-        return sendTx('Approve ' + pay.sym, tok.approve, [spender, q.amountIn]);
+        return sendTx('Approve ' + pay.sym, tok.approve, [spender, q.amountIn]).then(function () {
+          return swFresh(q, pay, get).then(take);      // the approval took its time: the quote is checked again
+        });
       });
-    }
-    first.then(function () {
+    }).then(function () {
       sw.step = 'swap'; swRenderGo();
       return swSend(q, pay, get, desc);
     }).then(function (rc) {
       toast(desc + ': done.' + (get.sym === 'USDC' ? ' Deposit USDC puts it on the exchange.' : ''), 'ok', txLink(rc.hash));
       $('swPay').value = ''; sw.quote = null; $('swGet').value = '';
       setText('swQuote', 'Type an amount for a quote.'); setText('swTerms', 'min received —');
-      swRefreshBalances(); refreshWalletUsdc();
+      swAfterLanded(prevHype);
     }).catch(function (e) {
-      setText('swHint', 'The swap did not go through: ' + describeError(e));
+      if (e === SW_STOP) return;
+      setText('swHint', 'The swap did not go through: ' + swError(e));
+      if (sw.quote === q0) sw.quote.at = 0;       // the next tap asks the pool again
     }).then(function () { sw.busy = false; sw.step = null; swRenderGo(); });
   }
 
@@ -8947,12 +9227,33 @@
      watches the prices it already streams, and when the price reaches the limit it files the same open request
      the BUY / SELL buttons file (the one-click session key, else the wallet), which the keeper fills a few seconds
      later at the oracle. So an order fires only while this page is open: the hint under the price says so, and
-     the Orders tab lists what is waiting. Desktop only for now (the rows are dk-only). */
-  var lim = { type: 'market', px: NaN, orders: [], firing: null, lastTry: 0 };
+     the Orders tab lists what is waiting. Desktop only for now (the controls show from 901 px).
+
+     Reviewed 2026-10-25 (four lenses, three refuters a claim). Since then: the ticket's own checks run on the
+     order's numbers before anything is sent; the order is stamped claimed and leaves the list only once the chain
+     has the request, a refusal holds it five minutes and its row says why; storage is the one list across tabs
+     (another tab's write reloads it here, a claim stamp keeps two tabs from sending the same order); the
+     placement guard uses the trigger's own band; a duplicate is refused; the price clears on a market switch;
+     the rows tick with the price; a browser that keeps no storage says so; below 901 px the ticket stays on
+     Market. */
+  var lim = { type: 'market', px: NaN, orders: [], firing: null, unsaved: false, forKey: null };
   var LIM_EXPIRY_MS = 24 * 3600 * 1000;
+  var LIM_CLAIM_MS = 60000;        // a claimed order is on its way from some tab for this long
+  var LIM_HOLD_MS = 5 * 60000;     // a refused order waits this long before it tries again
   function limKey() { return wallet.account && !DEMO ? 'confetti.trade.limits.' + wallet.account.toLowerCase() : 'confetti.trade.limits.demo'; }
-  function limLoad() { try { lim.orders = JSON.parse(lsGet(limKey()) || '[]') || []; } catch (e) { lim.orders = []; } renderLimits(); }
-  function limSave() { lsSet(limKey(), JSON.stringify(lim.orders)); renderLimits(); }
+  function limLoad() {
+    var k = limKey(), raw = lsGet(k);
+    if (raw == null && lim.unsaved && lim.forKey === k) { renderLimits(); return; }   // storage blocked: this tab's list stays
+    lim.forKey = k;
+    try { lim.orders = JSON.parse(raw || '[]') || []; } catch (e) { lim.orders = []; }
+    renderLimits();
+  }
+  function limSave() {
+    var s = JSON.stringify(lim.orders); lsSet(limKey(), s);
+    /* a browser that keeps no site data said "placed" and lost the order on the next wallet event */
+    if (lim.orders.length && lsGet(limKey()) !== s && !lim.unsaved) { lim.unsaved = true; lim.forKey = limKey(); toast('This browser is not saving orders: the limit lives only until this tab closes.', 'err'); }
+    renderLimits();
+  }
   /* The trigger rule (the owner's pick, 2026-10-25: early): a buy limit fires when the price is within LIM_TOL
      above it, a sell limit within LIM_TOL below, so the fill, which lands at the oracle 2-3 s later, settles near
      the limit instead of a hair past it. 0.001 = 0.1 %. */
@@ -8964,6 +9265,7 @@
     var b = $('actionBtn'); if (!b || lim.type !== 'limit' || state.busy || tk.phase) return;
     var t = b.textContent || '';
     if (/^OPEN /.test(t)) b.textContent = t.replace(/^OPEN /, 'LIMIT ') + (lim.px > 0 ? ' @ ' + fmtPrice(lim.px, state.market ? state.market.szDecimals : 4) : '');
+    var h = $('actionHint'); if (h && !h.classList.contains('is-err')) h.textContent = 'Stored in this browser. Fires while this page is open.';
   }
   function setOrderType(type) {
     lim.type = type;
@@ -8974,75 +9276,161 @@
       if (inp && !(Number(inp.value) > 0) && isFinite(now) && now > 0) { inp.value = String(Number(now.toPrecision(6))); lim.px = Number(inp.value); }
       if (inp) inp.focus();
     }
-    renderAction();
+    renderForm(); renderAction();
   }
   function placeLimit() {
     var m = state.market; if (!m) return;
     var px = Number(lim.px), now = marketPrice(m), isLong = form.side === 'long';
     if (!(px > 0)) { toast('Type a limit price.', 'err'); return; }
-    if (isFinite(now) && now > 0 && (isLong ? px >= now : px <= now)) {
+    /* the trigger fires inside LIM_TOL of the price, so a limit inside that band is a market order with a
+       two-toast delay: refuse it with the same words */
+    if (isFinite(now) && now > 0 && limitCrossed({ isLong: isLong, limitPx: px }, now)) {
       toast((isLong ? 'A buy limit at or above the price' : 'A sell limit at or below the price') + ' would fill right now: use Market, or set the price ' + (isLong ? 'lower' : 'higher') + '.', 'err');
       return;
     }
-    var o = { id: 'L' + Date.now().toString(36), sym: m.symbol, coin: m.coin, isLong: isLong, margin: form.margin, lev: form.lev, limitPx: px, at: Date.now(), expires: Date.now() + LIM_EXPIRY_MS };
+    /* a double-click, or Enter twice in the price box, placed the same limit twice */
+    var dup = lim.orders.some(function (x) { return x.sym === m.symbol && x.isLong === isLong && x.limitPx === px && x.margin === form.margin && x.lev === form.lev; });
+    if (dup) { toast('That limit is already placed: see Orders.', 'err'); return; }
+    var o = { id: 'L' + Date.now().toString(36), sym: m.symbol, coin: m.coin, isLong: isLong, margin: form.margin, lev: form.lev, maxed: !!form.maxed, limitPx: px, szDec: m.szDecimals, at: Date.now(), expires: Date.now() + LIM_EXPIRY_MS };
     lim.orders.push(o); limSave();
     toast('Limit placed: ' + sideWord(isLong) + ' ' + m.symbol + ' ' + form.lev + 'x · ' + fmtUsd(form.margin) + ' at ' + fmtPrice(px, m.szDecimals) + '. It fires from this page while it is open.', 'ok');
+    var b = $('actionBtn'); if (b) { b.disabled = true; setTimeout(renderAction, 600); }
     var tab = $('tabOrders'); if (tab) tab.click();
+  }
+  /* The price digits of an order's market (the ticket's rule); 0 is a value: DOGE, WIF, PEPE, PUMP and most
+     of the book have 0 size decimals. Orders saved before szDec existed fall back to the market's. */
+  function limDec(o) {
+    if (o.szDec != null) return o.szDec;
+    var m = state.bySym[o.sym]; return m && m.szDecimals != null ? m.szDecimals : 4;
   }
   function cancelLimit(id) {
     lim.orders = lim.orders.filter(function (o) { return o.id !== id; }); limSave();
   }
+  /* The ticket's own checks (balance, min margin, the leverage cap, a paused market, room on the book), asked
+     with the order's numbers instead of the form's. */
+  function limitProblem(o, m) {
+    var keep = { market: state.market, side: form.side, margin: form.margin, lev: form.lev };
+    state.market = m; form.side = o.isLong ? 'long' : 'short'; form.margin = o.margin; form.lev = o.lev;
+    var why = '';
+    try { why = orderProblem() || ''; } finally { state.market = keep.market; form.side = keep.side; form.margin = keep.margin; form.lev = keep.lev; }
+    return why;
+  }
+  /* A refused order stays placed, waits LIM_HOLD_MS, and its row says why (once, in a toast). */
+  function limHold(o, why) {
+    var cur = lim.orders.filter(function (x) { return x.id === o.id; })[0] || o;
+    cur.hold = why; cur.until = Date.now() + LIM_HOLD_MS; delete cur.claimed; limSave();
+    toast('Limit for ' + o.sym + ' is held: ' + why + ' It stays placed; Cancel it in Orders if you did not want it.');
+  }
+  /* Why a row is not firing, in a few words (blank while it simply waits for its price). */
+  function limStatus(o) {
+    if (!wallet.account) return 'waiting for a wallet';
+    if (!sessionLive() && wallet.chainId !== CHAIN_ID) return 'waiting: wallet on another network';
+    if (o.claimed) return 'opening';
+    if (o.until > Date.now()) return 'held: ' + o.hold;
+    if (acct.loaded && acct.available < o.margin) return 'waiting: balance short';
+    return '';
+  }
   function checkLimits() {
-    if (!lim.orders.length || lim.firing || state.busy || tk.phase) return;
+    if (!lim.orders.length) return;
     var now = Date.now();
-    var gone = lim.orders.filter(function (o) { return o.expires < now; });
-    if (gone.length) { lim.orders = lim.orders.filter(function (o) { return o.expires >= now; }); limSave(); gone.forEach(function (o) { toast('Limit expired: ' + sideWord(o.isLong) + ' ' + o.sym + ' at ' + fmtPrice(o.limitPx, 4) + '.'); }); }
+    var gone = lim.orders.filter(function (o) { return o.expires < now; });    // the sweep runs whatever the ticket shows
+    if (gone.length) { lim.orders = lim.orders.filter(function (o) { return o.expires >= now; }); limSave(); gone.forEach(function (o) { toast('Limit expired: ' + sideWord(o.isLong) + ' ' + o.sym + ' at ' + fmtPrice(o.limitPx, limDec(o)) + '.'); }); }
+    /* a refunded (or opened / error) card used to block every limit until OK was pressed; only a request on its
+       way to the chain does now */
+    if (lim.firing || state.busy || tk.phase === 'wallet' || tk.phase === 'req') return;
     for (var i = 0; i < lim.orders.length; i++) {
       var o = lim.orders[i], px = state.mids[o.coin];
-      if (px > 0 && limitCrossed(o, px)) { fireLimit(o, px); return; }
+      if (o.claimed) {
+        if (now - o.claimed < LIM_CLAIM_MS) continue;                                  // some tab is sending it
+        /* a claim this old means the tab that sent it went away mid-request: the outcome is unknown, so the
+           order waits for the user rather than opening a second position */
+        delete o.claimed; o.hold = 'another tab was sending it. Check Your positions, then Cancel it or place it again.'; o.until = o.expires; limSave();
+        continue;
+      }
+      if (o.until > now) continue;                                                     // held after a refusal
+      if (o.hold) { delete o.hold; delete o.until; limSave(); }
+      if (px > 0 && limitCrossed(o, px) && fireLimit(o, px)) return;                   // a refused order lets the next one try
     }
   }
+  /* A crossed order: the ticket's checks, a fresh read of storage (another tab may have fired or cancelled it),
+     the claim stamp, then the same open request the button files. Returns true once a request is on its way. */
   function fireLimit(o, px) {
-    if (!wallet.account || !hasExchange() || !acct.loaded) return;   // waits, connected or not
-    if (Date.now() - lim.lastTry < 15000) return;                    // one attempt per 15 s when something refuses
-    lim.lastTry = Date.now();
-    if (!tradeReady()) return;
-    if (acct.available < o.margin) { toast('Limit hit for ' + o.sym + ' but the balance is short of ' + fmtUsd(o.margin) + '. It stays placed.'); return; }
-    var m = state.bySym[o.sym]; if (!m || m.instrumentId == null) return;
+    if (!wallet.account || !hasExchange() || !acct.loaded) return false;      // waits, connected or not
+    if (!sessionLive() && wallet.chainId !== CHAIN_ID) return false;          // waits too; the row says so
+    if (Date.now() - (o.tried || 0) < 15000) return false;                    // one attempt per 15 s per order
+    o.tried = Date.now();
+    if (!tradeReady()) return false;
+    var m = state.bySym[o.sym]; if (!m || m.instrumentId == null) return false;
+    var why = limitProblem(o, m);
+    if (why) { limHold(o, why); return false; }
+    var fresh = []; try { fresh = JSON.parse(lsGet(limKey()) || '[]') || []; } catch (e) { fresh = []; }
+    var mine = fresh.filter(function (x) { return x.id === o.id; })[0];
+    if (lsGet(limKey()) != null && (!mine || (mine.claimed && Date.now() - mine.claimed < LIM_CLAIM_MS))) { limLoad(); return false; }   // gone, or another tab has it
     lim.firing = o.id;
     if (state.market !== m) selectMarket(o.sym);
     setSide(o.isLong ? 'long' : 'short');
-    form.margin = o.margin; form.maxed = false; setLev(o.lev); renderForm(); renderAction();
-    lim.orders = lim.orders.filter(function (x) { return x.id !== o.id; }); limSave();
+    form.margin = o.margin; form.maxed = !!o.maxed; form.lev = o.lev;         // form.lev direct: no clamp, no LS.lev write
+    var mi = $('marginInput'); if (mi) mi.value = String(o.margin);          // the box says what the button says
+    renderAmountChips(); renderLeverage(); renderForm(); renderAction();
+    o.claimed = Date.now(); limSave();                                        // claimed, not gone: other tabs skip it
     toast('Limit hit: ' + sideWord(o.isLong) + ' ' + o.sym + ' at ' + fmtPrice(px, m.szDecimals) + ' — opening.', 'ok');
-    submitOpen();
+    submitOpen(function (filed) {
+      if (filed) { lim.orders = lim.orders.filter(function (x) { return x.id !== o.id; }); limSave(); }
+      else limHold(o, 'the request was not sent.');
+    });
+    if (!state.busy) limHold(o, 'the wallet cannot trade right now.');       // submitOpen returned before sending
+    setOrderType('market');     // the ticket is back on Market: the next click is not a second limit at a stale price
+    lim.px = NaN; var lp = $('dkLimitPx'); if (lp) lp.value = '';
     setTimeout(function () { lim.firing = null; }, 3000);
+    return true;
   }
   function renderLimits() {
     var host = $('limLines'), empty = $('limEmpty'), tab = $('tabOrders'); if (!host || !empty) return;
     Array.prototype.forEach.call(host.querySelectorAll('.lim-line'), function (n) { n.remove(); });
     empty.hidden = lim.orders.length > 0;
-    empty.textContent = wallet.account || DEMO ? 'No limit orders. Pick Limit in the ticket, set a price, and place one.' : 'Connect a wallet to see your limit orders.';
+    empty.textContent = !(wallet.account || DEMO) ? 'Connect a wallet to see your limit orders.'
+      : !isDesk() ? 'Limit orders are on the desktop site for now.'
+      : 'No limit orders. Pick Limit in the ticket, set a price, and place one.';
     if (tab) tab.textContent = 'Orders' + (lim.orders.length ? ' (' + lim.orders.length + ')' : '');
     lim.orders.forEach(function (o) {
       var line = el('div', 'lim-line'); line.setAttribute('data-id', o.id);
       var side = el('span', 'lim-side ' + (o.isLong ? 'is-long' : 'is-short'), sideWord(o.isLong).toUpperCase());
       var what = el('span', 'grow'); what.appendChild(el('b', '', o.sym + ' ' + o.lev + 'x')); what.appendChild(document.createTextNode(' · ' + fmtUsd(o.margin) + ' at '));
-      what.appendChild(el('b', '', fmtPrice(o.limitPx, (state.bySym[o.sym] || {}).szDecimals || 4)));
-      var now = state.mids[o.coin]; if (now > 0) what.appendChild(document.createTextNode(' · now ' + fmtPrice(now, (state.bySym[o.sym] || {}).szDecimals || 4)));
+      what.appendChild(el('b', '', fmtPrice(o.limitPx, limDec(o))));
+      var now = state.mids[o.coin];
+      what.appendChild(el('span', 'lim-now', now > 0 ? ' · now ' + fmtPrice(now, limDec(o)) : ''));
+      what.appendChild(el('span', 'xs faint lim-why', limStatus(o) ? ' · ' + limStatus(o) : ''));
       var when = el('span', 'xs faint', 'expires ' + fmtWhen(Math.floor(o.expires / 1000)));
       var cancel = el('button', 'btn btn-sm', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', function () { cancelLimit(o.id); });
       line.appendChild(side); line.appendChild(what); line.appendChild(when); line.appendChild(cancel);
       host.insertBefore(line, empty.nextSibling);
     });
   }
+  /* The rows' live bits (the now price, why a row waits) on every price tick: text only, so a Cancel under the
+     cursor survives. */
+  function limTick() {
+    lim.orders.forEach(function (o) {
+      var line = document.querySelector('#limLines .lim-line[data-id="' + o.id + '"]'); if (!line) return;
+      var now = state.mids[o.coin], n = line.querySelector('.lim-now'), w = line.querySelector('.lim-why');
+      if (n && now > 0) n.textContent = ' · now ' + fmtPrice(now, limDec(o));
+      if (w) w.textContent = limStatus(o) ? ' · ' + limStatus(o) : '';
+    });
+  }
   function initLimits() {
     var box = $('dkOrderType'); if (!box) return;
     document.documentElement.setAttribute('data-limits', '1');
     Array.prototype.forEach.call(box.querySelectorAll('[data-otype]'), function (b) { b.addEventListener('click', function () { setOrderType(b.getAttribute('data-otype')); }); });
-    var inp = $('dkLimitPx'); if (inp) inp.addEventListener('input', function () { lim.px = Number(inp.value); renderAction(); });
+    var inp = $('dkLimitPx');
+    if (inp) {
+      inp.addEventListener('input', function () { lim.px = Number(inp.value); renderForm(); renderAction(); });
+      inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });   // a trade needs the button, as in the amount box
+    }
     var _renderAction = renderAction;
     renderAction = function () { _renderAction(); limitLabel(); };
+    /* a second tab of the same wallet kept its own copy of the list and fired (or brought back) orders the first
+       tab had fired or cancelled; storage is the one list, so another tab's write reloads it here */
+    window.addEventListener('storage', function (ev) { if (ev.key === limKey()) limLoad(); });
+    onDeskChange(function () { if (!isDesk() && lim.type === 'limit') setOrderType('market'); renderLimits(); });   // the picker is gone below 901 px: so is Limit mode
     limLoad();
   }
 

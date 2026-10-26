@@ -3618,3 +3618,17 @@ main > .notice { margin-bottom: var(--gap); }
   body.trade .ticket.is-keypad .ph-rc-d { min-height: 0; }
   body.trade .ticket.is-keypad #actionHint:empty { min-height: 0; }
 }
+
+/* The demo bar under the header (trade.html?demo=1), the 'Try the demo' line under Connect wallet, and the
+   one-tap HYPE to USDC block inside Add USDC (2026-10-25: the funnel converts before eyes are bought). */
+.demo-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 14px; padding: 8px var(--gutter, 16px); border-bottom: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); font-size: var(--text-sm); text-align: center; }
+.demo-bar[hidden] { display: none; }
+.demo-bar b { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.demo-bar a { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.ticket-demo { display: block; text-align: center; font-size: var(--text-sm); line-height: 1.45; color: var(--ink-muted); text-decoration: underline; text-underline-offset: 2px; }
+.ticket-demo:hover { color: var(--ink); }
+.ticket-demo[hidden] { display: none; }
+.dep-swap { display: flex; flex-direction: column; gap: 8px; }
+.dep-swap[hidden] { display: none; }
+.empty-demo { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.empty-demo[hidden] { display: none; }
