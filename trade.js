@@ -9603,7 +9603,7 @@
      as the same close request the Close button sends, through the session key when one-click is on. It works
      while this page is open; the ticket, the rows and the phone sheet say so. A rule typed before the open is
      parked under the request id and adopted when PositionOpened names the position. */
-  var tpsl = { rules: {}, pending: {}, firing: null, forKey: null, unsaved: false, editing: {} };
+  var tpsl = { rules: {}, pending: {}, firing: null, forKey: null, unsaved: false, editing: {}, confirm: {} };
   var TPSL_CLAIM_MS = 60000;       // a claimed rule is closing from some tab for this long
   var TPSL_HOLD_MS = 5 * 60000;    // a refused close waits this long before it tries again
   function tpslKey() { return wallet.account && !DEMO ? 'confetti.trade.tpsl.' + wallet.account.toLowerCase() : 'confetti.trade.tpsl.demo'; }
@@ -9635,7 +9635,53 @@
     if (tp == null && sl == null) return 'Type a take profit or a stop loss price.';
     if (tp != null && px > 0 && (isLong ? tp <= px : tp >= px)) return 'A take profit for a ' + side + ' goes ' + (isLong ? 'above' : 'below') + ' the price, now ' + fmtPrice(px, sz) + '.';
     if (sl != null && px > 0 && (isLong ? sl >= px : sl <= px)) return 'A stop loss for a ' + side + ' goes ' + (isLong ? 'below' : 'above') + ' the price, now ' + fmtPrice(px, sz) + '.';
+    if (sl != null && px > 0 && (isLong ? sl * (1 + LIM_TOL) >= px : sl * (1 - LIM_TOL) <= px)) return 'That stop is within 0.1% of the price: it would close right now. Use Close, or set it further away.';
     if (sl != null && bust > 0 && (isLong ? sl <= bust : sl >= bust)) return 'That stop is past the liquidation price, ' + fmtPrice(bust, sz) + ': the position would be liquidated first. Set it ' + (isLong ? 'higher' : 'lower') + '.';
+    return '';
+  }
+  /* The price a few typed digits mean on this market: the number moved by a power of ten until it sits within
+     half of the current price, so "772" on a 0.0772 market reads 0.0772 and "7.7" reads 0.077. null when the
+     number already reads as typed (or is not a number yet). */
+  function tpslComplete(raw, now, sz) {
+    var n = tpslNum(raw); if (n == null || !(n > 0) || !(now > 0)) return null;
+    var best = null;
+    for (var k = -8; k <= 8; k++) {
+      var c = n * Math.pow(10, k), ratio = c / now;
+      if (ratio >= 0.5 && ratio <= 2 && (best == null || Math.abs(ratio - 1) < Math.abs(best.ratio - 1))) best = { k: k, px: c, ratio: ratio };
+    }
+    if (!best || best.k === 0) return null;
+    var px = Number(fmtPrice(best.px, sz)); return px > 0 ? px : null;
+  }
+  /* "Stop loss 0.077000 · 0.29% below now · about -$0.60 (-6.00% of your $10.00)": the position's close maths
+     (fees, impact curve, borrow) at that price. */
+  function tpslLine(p, kind, px, now) {
+    var inst = state.byInstId[p.instrumentId], queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
+    var est = estimateClose(p, inst, px, queueEmpty), sz = tpslDec(p);
+    var away = now > 0 ? px / now - 1 : NaN, pct = p.margin > 0 ? est.pnl / p.margin : 0;
+    return (kind === 'tp' ? 'Take profit ' : 'Stop loss ') + fmtPrice(px, sz)
+      + (isFinite(away) ? ' · ' + Math.abs(away * 100).toFixed(2) + '% ' + (away >= 0 ? 'above' : 'below') + ' now' : '')
+      + ' · about ' + fmtUsd(est.pnl, true) + ' (' + fmtPct(pct, true) + ' of your ' + fmtUsd(p.margin) + ')';
+  }
+  /* The ticket's would-be position at the current price, for the readout before an open. */
+  function tpslPseudo(m, isLong, lev, now) {
+    return { instrumentId: m.instrumentId, entry: now, entryPx18: null, isLong: isLong, margin: form.margin, leverage: lev, openedAt: 0, winFeeBps: -1, lossFeeBps: -1, deadbandBps: 0, maxProfit: -1 };
+  }
+  /* Under a price box, as it is typed: the completion to take ("→ 0.077200?", Enter takes it), else the refusal
+     in red, else the readout. Returns 'fin' while a completion is offered, the refusal, or ''. */
+  function tpslFieldRead(readEl, input, kind, p, now, onChange) {
+    readEl.textContent = ''; input.classList.remove('is-bad');
+    var raw = input.value, n = tpslNum(raw);
+    if (n == null) return '';
+    var sz = tpslDec(p), done = tpslComplete(raw, now, sz);
+    if (done != null) {
+      var b = el('button', 'tpsl-fin', '→ ' + fmtPrice(done, sz) + '?'); b.type = 'button';
+      b.addEventListener('click', function () { input.value = String(done); onChange(); });
+      readEl.appendChild(b); readEl.appendChild(document.createTextNode(' Enter takes it'));
+      return 'fin';
+    }
+    var why = tpslProblem(p.isLong, p.leverage, p.entry, now, kind === 'tp' ? n : null, kind === 'sl' ? n : null, sz);
+    if (why) { input.classList.add('is-bad'); readEl.appendChild(el('span', 'is-bad', why)); return why; }
+    readEl.textContent = tpslLine(p, kind, n, now);
     return '';
   }
   /* The ticket's two boxes (desktop): what they ask for the next open, and why it is refused. */
@@ -9645,14 +9691,29 @@
     var tp = tpslNum(ti.value), sl = tpslNum(si.value);
     if (tp == null && sl == null) return { tp: null, sl: null, why: '' };
     var px = marketPrice(m);
+    /* a number the completion would move is not finished: say what it probably means */
+    var ft = tpslComplete(ti.value, px, m.szDecimals), fs = tpslComplete(si.value, px, m.szDecimals);
+    if (ft != null) return { tp: tp, sl: sl, why: 'Finish the take profit price: did you mean ' + fmtPrice(ft, m.szDecimals) + '?' };
+    if (fs != null) return { tp: tp, sl: sl, why: 'Finish the stop loss price: did you mean ' + fmtPrice(fs, m.szDecimals) + '?' };
     return { tp: tp, sl: sl, why: tpslProblem(isLong, lev, px, px, tp, sl, m.szDecimals) };
   }
+  /* The ticket's hint, as the boxes are typed: a completion to take, a refusal, or the readout for each level. */
   function tpslTicketCheck() {
-    var m = state.market, ti = $('dkTpPx'), si = $('dkSlPx'), h = $('dkTpSlHint'); if (!m || !ti || !si) return;
-    var w = tpslTicketWant(m, form.side === 'long', form.lev);
-    ti.classList.toggle('is-bad', !!w.why && tpslNum(ti.value) != null && /take profit/i.test(w.why));
-    si.classList.toggle('is-bad', !!w.why && tpslNum(si.value) != null && /stop/i.test(w.why));
-    if (h) h.textContent = w.why || ((w.tp != null || w.sl != null) ? 'Set for the next open. Closes from this page while it is open.' : 'Optional. Closes the position for you from this page while it is open.');
+    var m = state.market, ti = $('dkTpPx'), si = $('dkSlPx'), h = $('dkTpSlHint'); if (!m || !ti || !si || !h) return;
+    var isLong = form.side === 'long', now = marketPrice(m), p = tpslPseudo(m, isLong, form.lev, now);
+    h.textContent = ''; var any = false, bad = false, fin = false;
+    [[ti, 'tp'], [si, 'sl']].forEach(function (x) {
+      var i = x[0], kind = x[1];
+      if (tpslNum(i.value) == null) { i.classList.remove('is-bad'); return; }
+      any = true;
+      var line = el('div', 'tpsl-read');
+      var r = tpslFieldRead(line, i, kind, p, now, tpslTicketCheck);
+      if (r === 'fin') fin = true; else if (r) bad = true;
+      h.appendChild(line);
+    });
+    if (!any) h.textContent = 'Optional. Closes the position for you from this page while it is open.';
+    else if (fin) h.appendChild(el('div', '', 'Finish the price first: Enter takes the one offered.'));
+    else if (!bad) h.appendChild(el('div', '', 'Set for the next open. Closes from this page while it is open.'));
   }
   function tpslPark(reqId, want, m, isLong, lev) {
     tpsl.pending[reqId] = { tp: want.tp, sl: want.sl, sym: m.symbol, isLong: isLong, lev: lev, at: Date.now() }; tpslSave();
@@ -9758,28 +9819,72 @@
       sub.appendChild(s);
     }
   }
+  /* The editor: two price boxes with a readout under each (the completion while the number is unfinished, the
+     refusal in red, else the consequence), Save and Cancel level with the boxes. Save asks "Are you sure?" with the
+     lines recomputed from the live price; Yes checks once more at the click, then stores. */
   function tpslEditor(pid, p) {
-    var r = tpsl.rules[pid] || {}, box = el('div', 'tpsl-edit');
-    function field(label, val) {
-      var l = el('label', '', label + ' '), i = el('input', 'input');
-      i.type = 'number'; i.min = '0'; i.step = 'any'; i.inputMode = 'decimal'; i.placeholder = '—';
-      if (val != null) i.value = String(val);
-      l.appendChild(i); box.appendChild(l); return i;
+    var r = tpsl.rules[pid] || {}, box = el('div', 'tpsl-edit'), c = tpsl.confirm[pid];
+    var now = closePriceFor(p); if (!(now > 0)) now = marketPrice(positionMarket(p));
+    if (c) {
+      var why0 = tpslProblem(p.isLong, p.leverage, p.entry, now, c.tp, c.sl, tpslDec(p));
+      box.classList.add('is-sure');
+      box.appendChild(el('b', 'tpsl-sure-k', why0 ? 'Not set.' : 'Are you sure?'));
+      if (why0) box.appendChild(el('span', 'is-bad', why0));
+      else {
+        if (c.tp != null) box.appendChild(el('span', 'tpsl-sure-l', tpslLine(p, 'tp', c.tp, now)));
+        if (c.sl != null) box.appendChild(el('span', 'tpsl-sure-l', tpslLine(p, 'sl', c.sl, now)));
+        box.appendChild(el('span', 'tpsl-why', 'It closes from this page while it is open' + (sessionLive() ? '.' : '; your wallet asks to confirm the close.')));
+      }
+      var row = el('div', 'tpsl-btns');
+      var yes = el('button', 'btn btn-sm', why0 ? 'Back' : 'Yes, set it'); yes.type = 'button';
+      var no = el('button', 'btn btn-sm', why0 ? 'Cancel' : 'Back'); no.type = 'button';
+      yes.addEventListener('click', function () {
+        if (why0) { delete tpsl.confirm[pid]; tpslRefresh(pid); return; }
+        var w = tpslSet(pid, c.tp, c.sl);                                   // the check once more, at the click
+        delete tpsl.confirm[pid];
+        if (w) { tpslRefresh(pid); toast(w, 'err'); return; }
+        delete tpsl.editing[pid]; tpslRefresh(pid); toast('Set on your ' + posLabel(p) + '. It closes from this page while it is open.', 'ok');
+      });
+      no.addEventListener('click', function () { delete tpsl.confirm[pid]; if (why0) delete tpsl.editing[pid]; tpslRefresh(pid); });
+      row.appendChild(yes); row.appendChild(no); box.appendChild(row);
+      setTimeout(function () { yes.focus(); }, 0);
+      return box;
     }
-    var ti = field('Take profit', r.tp), si = field('Stop loss', r.sl);
     var save = el('button', 'btn btn-sm', 'Save'); save.type = 'button';
     var back = el('button', 'btn btn-sm', 'Cancel'); back.type = 'button';
-    var why = el('span', 'tpsl-why', 'Closes from this page while it is open.' + (sessionLive() ? '' : ' Your wallet asks to confirm the close.'));
+    var fields = [];
+    function field(label, val, kind) {
+      var wrap = el('div', 'tpsl-f'), l = el('label', 'tpsl-k', label), i = el('input', 'input'), rd = el('div', 'tpsl-read');
+      i.type = 'number'; i.min = '0'; i.step = 'any'; i.inputMode = 'decimal'; i.placeholder = '—';
+      if (val != null) i.value = String(val);
+      wrap.appendChild(l); wrap.appendChild(i);
+      var f = { input: i, read: rd, kind: kind };
+      function read() { tpslFieldRead(rd, i, kind, p, now, read); }
+      i.addEventListener('input', read);
+      i.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') return; ev.preventDefault();
+        var fin = rd.querySelector('.tpsl-fin'); if (fin) { fin.click(); return; }
+        save.click();
+      });
+      f.readNow = read;
+      fields.push(f); box.appendChild(wrap); return f;
+    }
+    var ft = field('Take profit', r.tp, 'tp'), fs = field('Stop loss', r.sl, 'sl');
+    box.appendChild(save); box.appendChild(back);
+    box.appendChild(ft.read); box.appendChild(fs.read);
+    var why = el('span', 'tpsl-why', 'Closes from this page while it is open.');
+    box.appendChild(why);
     save.addEventListener('click', function () {
-      var w = tpslSet(pid, tpslNum(ti.value), tpslNum(si.value));
-      ti.classList.toggle('is-bad', !!w && /take profit/i.test(w)); si.classList.toggle('is-bad', !!w && /stop/i.test(w));
-      if (w) { why.textContent = w; return; }
-      delete tpsl.editing[pid]; tpslRefresh(pid); toast('Set on your ' + posLabel(p) + '. It closes from this page while it is open.', 'ok');
+      var fin = box.querySelector('.tpsl-fin'); if (fin) { fin.click(); return; }   // an unfinished number is taken first
+      var tp = tpslNum(ft.input.value), sl = tpslNum(fs.input.value);
+      var w = tpslProblem(p.isLong, p.leverage, p.entry, now, tp, sl, tpslDec(p));
+      ft.input.classList.toggle('is-bad', !!w && /take profit/i.test(w)); fs.input.classList.toggle('is-bad', !!w && /stop/i.test(w));
+      if (w) { why.textContent = w; why.classList.add('is-bad'); return; }
+      tpsl.confirm[pid] = { tp: tp, sl: sl }; tpslRefresh(pid);
     });
     back.addEventListener('click', function () { delete tpsl.editing[pid]; tpslRefresh(pid); });
-    [ti, si].forEach(function (i) { i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } }); });
-    box.appendChild(save); box.appendChild(back); box.appendChild(why);
-    setTimeout(function () { ti.focus(); }, 0);
+    fields.forEach(function (f) { if (tpslNum(f.input.value) != null) f.readNow(); });
+    setTimeout(function () { ft.input.focus(); }, 0);
     return box;
   }
   function tpslRefresh(pid) { var sub = tpslSubFor(pid), p = posById(pid); if (sub && p) tpslFill(sub, p); }
@@ -9800,26 +9905,62 @@
   function tpslPhSheet(d, pid, p) {
     var r = tpsl.rules[pid] || {}, ti = phq(d, '.js-ps-tp'), si = phq(d, '.js-ps-sl'), note = phq(d, '.js-ps-tpnote');
     if (d._tpslPid !== pid) {
-      d._tpslPid = pid;
+      d._tpslPid = pid; d._tpslWant = null;
       if (ti) { ti.value = r.tp != null ? String(r.tp) : ''; ti.classList.remove('is-bad'); }
       if (si) { si.value = r.sl != null ? String(r.sl) : ''; si.classList.remove('is-bad'); }
+      phShow(d, '.js-ps-tpsure', false); phShow(d, '.js-ps-tpsave', true);
+      tpslPhRead(d);
     }
     if (note && !note._said) note.textContent = (r.tp != null || r.sl != null)
       ? 'Set. ' + (tpslStatus(pid) ? 'Status: ' + tpslStatus(pid) + '.' : 'Closes while this page is open on your phone.')
       : 'Optional. Closes it for you while this page is open on your phone.';
   }
+  function tpslPhSay(d, t, ms) {
+    var note = phq(d, '.js-ps-tpnote'); if (!note) return;
+    note._said = true; note.textContent = t;
+    setTimeout(function () { note._said = false; try { renderPhSheet(); } catch (e) { /* ignore */ } }, ms);
+  }
+  function tpslPhNow(p) { var now = closePriceFor(p); return now > 0 ? now : marketPrice(positionMarket(p)); }
+  /* The readouts under the phone's two boxes, as they are typed. */
+  function tpslPhRead(d) {
+    var s = ui.phSheet, p = s && s.mode !== 'all' ? posById(s.pid) : null; if (!p) return;
+    var now = tpslPhNow(p);
+    [['.js-ps-tp', '.js-ps-tpread-tp', 'tp'], ['.js-ps-sl', '.js-ps-tpread-sl', 'sl']].forEach(function (x) {
+      var i = phq(d, x[0]), rd = phq(d, x[1]); if (!i || !rd) return;
+      if (tpslNum(i.value) == null) { rd.textContent = ''; i.classList.remove('is-bad'); return; }
+      tpslFieldRead(rd, i, x[2], p, now, function () { tpslPhRead(d); });
+    });
+  }
+  /* Save on the phone: an unfinished number is taken first, then the checks, then "Are you sure?" with the lines. */
   function onPhTpSave() {
     var d = $('phPosSheet'), s = ui.phSheet; if (!d || !s || s.mode === 'all') return;
     var pid = s.pid, p = posById(pid); if (!p) return;
-    var ti = phq(d, '.js-ps-tp'), si = phq(d, '.js-ps-sl'), note = phq(d, '.js-ps-tpnote');
+    var fin = d.querySelector('.js-ps-tpsl .tpsl-fin'); if (fin) { fin.click(); return; }
+    var ti = phq(d, '.js-ps-tp'), si = phq(d, '.js-ps-sl');
     var tp = tpslNum(ti ? ti.value : ''), sl = tpslNum(si ? si.value : '');
-    function say(t, ms) { if (!note) return; note._said = true; note.textContent = t; setTimeout(function () { note._said = false; try { renderPhSheet(); } catch (e) { /* ignore */ } }, ms); }
-    if (tp == null && sl == null) { tpslClear(pid); say('Removed.', 1500); return; }
-    var w = tpslSet(pid, tp, sl);
+    if (tp == null && sl == null) { tpslClear(pid); tpslPhSay(d, 'Removed.', 1500); return; }
+    var now = tpslPhNow(p);
+    var w = tpslProblem(p.isLong, p.leverage, p.entry, now, tp, sl, tpslDec(p));
     if (ti) ti.classList.toggle('is-bad', !!w && /take profit/i.test(w));
     if (si) si.classList.toggle('is-bad', !!w && /stop/i.test(w));
-    say(w || 'Saved. Closes while this page is open on your phone.', w ? 5000 : 1500);
+    if (w) { tpslPhSay(d, w, 5000); return; }
+    var sum = phq(d, '.js-ps-tpsum');
+    if (sum) {
+      sum.textContent = '';
+      if (tp != null) sum.appendChild(el('div', '', tpslLine(p, 'tp', tp, now)));
+      if (sl != null) sum.appendChild(el('div', '', tpslLine(p, 'sl', sl, now)));
+    }
+    d._tpslWant = { tp: tp, sl: sl };
+    phShow(d, '.js-ps-tpsave', false); phShow(d, '.js-ps-tpsure', true);
   }
+  function onPhTpYes() {
+    var d = $('phPosSheet'), s = ui.phSheet; if (!d || !s || s.mode === 'all') return;
+    var want = d._tpslWant || {}; d._tpslWant = null;
+    var w = tpslSet(s.pid, want.tp, want.sl);                                    // the check once more, at the tap
+    phShow(d, '.js-ps-tpsure', false); phShow(d, '.js-ps-tpsave', true);
+    tpslPhSay(d, w || 'Saved. Closes while this page is open on your phone.', w ? 5000 : 1500);
+  }
+  function onPhTpBack() { var d = $('phPosSheet'); if (!d) return; d._tpslWant = null; phShow(d, '.js-ps-tpsure', false); phShow(d, '.js-ps-tpsave', true); }
   function initTpSl() {
     var box = $('dkTpSlBox'), ti = $('dkTpPx'), si = $('dkSlPx');
     if (box) { document.documentElement.setAttribute('data-tpsl', '1'); box.hidden = false; }
@@ -9827,9 +9968,18 @@
       if (!i) return;
       i.disabled = false;
       i.addEventListener('input', tpslTicketCheck);
-      i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); i.blur(); } });   // a trade needs the button
+      i.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') return; ev.preventDefault();
+        var fin = $('dkTpSlHint') && $('dkTpSlHint').querySelector('.tpsl-fin');
+        if (fin) fin.click(); else i.blur();                                   // Enter takes the completion; a trade needs the button
+      });
     });
-    var d = $('phPosSheet'), sb = d ? d.querySelector('.js-ps-tpsave') : null; if (sb) sb.addEventListener('click', onPhTpSave);
+    var d = $('phPosSheet');
+    if (d) {
+      var on = function (c, fn) { var n = d.querySelector(c); if (n) n.addEventListener('click', fn); };
+      on('.js-ps-tpsave', onPhTpSave); on('.js-ps-tpyes', onPhTpYes); on('.js-ps-tpback', onPhTpBack);
+      ['.js-ps-tp', '.js-ps-sl'].forEach(function (c) { var n = d.querySelector(c); if (n) n.addEventListener('input', function () { tpslPhRead(d); }); });
+    }
     var _renderAction = renderAction;
     renderAction = function () { _renderAction(); try { tpslTicketCheck(); } catch (e) { /* ignore */ } };
     window.addEventListener('storage', function (ev) { if (ev.key === tpslKey()) tpslLoad(); });
