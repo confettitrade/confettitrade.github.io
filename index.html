@@ -144,7 +144,31 @@
       html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
       html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
     }
-    @media (max-width: 900px) { body.trade #dkOrderType, body.trade #dkLimitBox { display: none; } }
+    @media (max-width: 900px) { body.trade #dkOrderType, body.trade #dkLimitBox, body.trade #dkTpSlBox { display: none; } }
+    /* take profit / stop loss (the owner, 2026-10-26): the ticket's two price rows on desktops, the line under each
+       position, its inline editor, and the block in the phone's Position sheet (trade.js tpsl) */
+    @media (min-width: 901px) {
+      html[data-tpsl="1"] body.trade #dkTpSlBox { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
+      html[data-tpsl="1"] body.trade #dkTpSlBox .hint { font-size: 12px; color: var(--ink-faint); }
+      html[data-tpsl="1"] body.trade #dkTpSlBox .input.is-bad { border-color: var(--neg); }
+    }
+    .tpsl-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px 8px; margin: -6px 0 10px; font-size: 12px; color: var(--ink-muted); border-bottom: 1px solid var(--rule); }
+    @media (max-width: 640px) { .tpsl-sub { display: none; } }   /* phones set it in the Position sheet */
+    #posLines.dk-table > .tpsl-sub { margin: 0; padding: 4px 12px 6px; }
+    .tpsl-sub b { font-family: var(--font-mono); font-weight: 500; color: var(--ink); }
+    .tpsl-sub .tpsl-why { color: var(--ink-faint); }
+    .tpsl-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; }
+    .tpsl-edit label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .tpsl-edit .input { width: 120px; min-height: 32px; font-family: var(--font-mono); font-size: 13px; text-align: right; }
+    .tpsl-edit .input.is-bad { border-color: var(--neg); }
+    .ph-ps-tpsl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+    .ph-ps-tpsl[hidden] { display: none; }
+    .ph-ps-tpsl .ph-ps-tpsl-k { grid-column: 1 / -1; font-size: 12px; color: var(--ink-faint); }
+    .ph-ps-tpsl label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-muted); }
+    .ph-ps-tpsl .input { min-height: 40px; font-family: var(--font-mono); font-size: 15px; text-align: right; }
+    .ph-ps-tpsl .input.is-bad { border-color: var(--neg); }
+    .ph-ps-tpsl .ph-ps-tpsave { grid-column: 1 / -1; min-height: 40px; }
+    .ph-ps-tpsl .ph-ps-tpsl-note { grid-column: 1 / -1; font-size: 12px; color: var(--ink-faint); }
     .lim-line { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--rule); font-size: 13px; }
     .lim-line .grow { flex: 1 1 auto; min-width: 0; }
     .lim-line .lim-side { font-weight: 600; }
@@ -752,6 +776,7 @@
                 <label class="unit unit-pre dk-tool-k" for="dkSlPx">Stop loss</label>
                 <input class="input" id="dkSlPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—" disabled>
               </div>
+              <div class="hint" id="dkTpSlHint">Optional. Closes the position for you from this page while it is open.</div>
             </div>
 
             <!-- phones (piece 14): the keypad drawn inside the sheet, for the amount ($…) and a custom leverage
@@ -1226,6 +1251,13 @@
         <div class="ph-ps-cell"><span>Put in</span><b class="js-ps-margin">—</b></div>
         <div class="ph-ps-cell"><span>Size</span><b class="js-ps-size">—</b></div>
       </div>
+      <div class="ph-ps-tpsl js-ps-tpsl" hidden>
+        <div class="ph-ps-tpsl-k">Close it for me at</div>
+        <label><span>Take profit</span><input class="input js-ps-tp" type="number" min="0" step="any" inputmode="decimal" placeholder="—"></label>
+        <label><span>Stop loss</span><input class="input js-ps-sl" type="number" min="0" step="any" inputmode="decimal" placeholder="—"></label>
+        <button class="ph-btn ph-ps-tpsave js-ps-tpsave" type="button">Save</button>
+        <div class="ph-ps-tpsl-note js-ps-tpnote">Optional. Closes it for you while this page is open on your phone.</div>
+      </div>
       <div class="ph-ps-list js-ps-list" hidden></div>
       <div class="ph-ps-back js-ps-back"><span class="js-ps-backk">You get back about</span> <b class="js-ps-est">—</b></div>
       <div class="ph-ps-note js-ps-note"></div>
@@ -1257,7 +1289,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=onramp1" defer></script>
+  <script src="trade.js?v=tpsl1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

@@ -861,6 +861,7 @@
       onPrices();
       try { limTick(); } catch (e) { /* never stops the prices */ }
       try { checkLimits(); } catch (e) { /* never stops the prices */ }
+      try { tpslTick(); checkTpSl(); } catch (e) { /* never stops the prices */ }
     }).catch(function () {
       state.midsFailures += 1;
       if (state.midsFailures >= 2) setLive(false);
@@ -3973,7 +3974,9 @@
     /* Keep open and Close, or the status slot in their place */
     phShow(d, '.js-ps-pair', !st);
     phShow(d, '.js-ps-status', !!st);
+    phShow(d, '.js-ps-tpsl', !st && !!posById(pid));
     if (!st) {
+      try { tpslPhSheet(d, pid, p); } catch (e) { /* never blocks the sheet */ }
       phText(d, '.js-ps-keep', 'Keep open');
       var cb = phq(d, '.js-ps-close');
       if (cb) {
@@ -5481,7 +5484,7 @@
       if (it.kind === 'recent') frag.appendChild(recentCard(it.r));
       else if (it.kind === 'open') frag.appendChild(pendingOpenCard(it.r));
       else if (it.kind === 'checking') frag.appendChild(checkingCard(it.pid, it.p));
-      else frag.appendChild(positionCard(it.p));
+      else { frag.appendChild(positionCard(it.p)); try { frag.appendChild(tpslSub(it.p)); } catch (e) { /* the rule line never blocks the card */ } }
     });
     host.appendChild(frag);
     renderPhRows();
@@ -5871,6 +5874,7 @@
   function renderWallet() {
     if (typeof swOnWallet === 'function') swOnWallet();
     if (typeof limLoad === 'function') try { limLoad(); } catch (e) { /* ignore */ }
+    if (typeof tpslLoad === 'function') try { tpslLoad(); } catch (e) { /* ignore */ }
     var btn = $('connectBtn');
     if (!btn) return;
     if (wallet.account) {
@@ -6366,6 +6370,9 @@
     var lev = form.lev;
     var desc = sideWord(isLong) + ' ' + m.symbol + ' ' + lev + 'x';
     var maxed = form.maxed;
+    /* the ticket's take profit / stop loss, checked before anything is sent; parked under the request id once it is */
+    var want = tpslTicketWant(m, isLong, lev);
+    if (want.why) { toast(want.why, 'err'); tpslTicketCheck(); return; }
     var released = false;
     function release() { if (!released) { released = true; setBusy(false); } }
     /* a limit order asks whether its request reached the chain (true once the receipt is read; a sent request
@@ -6385,6 +6392,7 @@
           requestedAt: null, block: Number(rc.blockNumber), localAt: Date.now()
         });
         tkSet('req', { reqId: id });
+        if (want.tp != null || want.sl != null) { try { tpslPark(id, want, m, isLong, lev); } catch (e) { /* ignore */ } }
         /* the next visit starts from this amount; a Max amount (the whole balance) is not kept,
            so a later all-in trade still goes through Max and its check */
         if (!maxed) lsSet(LS.amount, String(margin));
@@ -6794,10 +6802,12 @@
       var entry = px18ToNum(opened.args.entryPx18);
       if (mine) tkSet('opened', { entry: entry, posId: String(opened.args.positionId) });
       freshPosition(String(opened.args.positionId));
+      try { tpslAdopt(r.id, String(opened.args.positionId)); } catch (e) { /* the rule never blocks the result */ }
       resultToast(shows, 'Opened ' + sideWord(r.isLong) + ' ' + sym + ' ' + r.leverage + 'x at ' + fmtPrice(entry, sz) + '.', 'ok', link);
       tourEvent('opened');
     } else if (refunded) {
       var why = refundWhy(refunded.args.reason, sym, r.isLong);
+      try { tpslDropPending(r.id); } catch (e) { /* ignore */ }
       if (mine) tkSet('refunded', { msg: "Didn't open: " + why + '. Your ' + fmtUsdShort(r.margin) + ' is back in your balance.' });
       resultToast(shows, "Didn't open: " + why + '. ' + fmtUsd(r.margin) + ' is back in your balance.', 'err', link);
     } else {
@@ -9531,11 +9541,251 @@
     limLoad();
   }
 
+  /* ---- Take profit / Stop loss (the owner, 2026-10-26: "set it up the best way") -------------------------------
+     v4's Exchange takes a close only from the trader's wallet or the SessionRouter fixed at deploy, so a TP/SL is
+     not an on-chain order. It is a rule this browser keeps per position (storage, as the limit orders) and fires
+     as the same close request the Close button sends, through the session key when one-click is on. It works
+     while this page is open; the ticket, the rows and the phone sheet say so. A rule typed before the open is
+     parked under the request id and adopted when PositionOpened names the position. */
+  var tpsl = { rules: {}, pending: {}, firing: null, forKey: null, unsaved: false, editing: {} };
+  var TPSL_CLAIM_MS = 60000;       // a claimed rule is closing from some tab for this long
+  var TPSL_HOLD_MS = 5 * 60000;    // a refused close waits this long before it tries again
+  function tpslKey() { return wallet.account && !DEMO ? 'confetti.trade.tpsl.' + wallet.account.toLowerCase() : 'confetti.trade.tpsl.demo'; }
+  function tpslLoad() {
+    var k = tpslKey(), raw = lsGet(k);
+    if (raw == null && tpsl.unsaved && tpsl.forKey === k) { tpslRedraw(); return; }   // storage blocked: this tab's rules stay
+    tpsl.forKey = k;
+    var d = null; try { d = JSON.parse(raw || 'null'); } catch (e) { d = null; }
+    tpsl.rules = (d && d.rules) || {}; tpsl.pending = (d && d.pending) || {};
+    tpslRedraw();
+  }
+  function tpslSave() {
+    var s = JSON.stringify({ rules: tpsl.rules, pending: tpsl.pending }); lsSet(tpslKey(), s);
+    if ((Object.keys(tpsl.rules).length || Object.keys(tpsl.pending).length) && lsGet(tpslKey()) !== s && !tpsl.unsaved) {
+      tpsl.unsaved = true; tpsl.forKey = tpslKey();
+      toast('This browser is not saving site data: the take profit / stop loss lives only until this tab closes.', 'err');
+    }
+    tpslRedraw();
+  }
+  function tpslNum(v) { v = String(v == null ? '' : v).trim(); if (v === '') return null; var n = Number(v); return isFinite(n) ? n : NaN; }
+  function tpslDec(pos) { var m = positionMarket(pos); return m && m.szDecimals != null ? m.szDecimals : 4; }
+  /* The checks: a take profit on the winning side of the price, a stop on the losing side and short of the
+     liquidation price (a stop past it could never fire: the position is liquidated first). entry is the
+     position's price (the price itself for the ticket). Returns the sentence that refuses, or ''. */
+  function tpslProblem(isLong, lev, entry, px, tp, sl, sz) {
+    var side = sideWord(isLong).toLowerCase(), bust = bustPriceNum(entry, isLong, lev);
+    if (tp != null && !(tp > 0)) return 'Type a take profit price, or leave it empty.';
+    if (sl != null && !(sl > 0)) return 'Type a stop loss price, or leave it empty.';
+    if (tp == null && sl == null) return 'Type a take profit or a stop loss price.';
+    if (tp != null && px > 0 && (isLong ? tp <= px : tp >= px)) return 'A take profit for a ' + side + ' goes ' + (isLong ? 'above' : 'below') + ' the price, now ' + fmtPrice(px, sz) + '.';
+    if (sl != null && px > 0 && (isLong ? sl >= px : sl <= px)) return 'A stop loss for a ' + side + ' goes ' + (isLong ? 'below' : 'above') + ' the price, now ' + fmtPrice(px, sz) + '.';
+    if (sl != null && bust > 0 && (isLong ? sl <= bust : sl >= bust)) return 'That stop is past the liquidation price, ' + fmtPrice(bust, sz) + ': the position would be liquidated first. Set it ' + (isLong ? 'higher' : 'lower') + '.';
+    return '';
+  }
+  /* The ticket's two boxes (desktop): what they ask for the next open, and why it is refused. */
+  function tpslTicketWant(m, isLong, lev) {
+    var ti = $('dkTpPx'), si = $('dkSlPx');
+    if (!ti || !si || !isDesk() || !m) return { tp: null, sl: null, why: '' };
+    var tp = tpslNum(ti.value), sl = tpslNum(si.value);
+    if (tp == null && sl == null) return { tp: null, sl: null, why: '' };
+    var px = marketPrice(m);
+    return { tp: tp, sl: sl, why: tpslProblem(isLong, lev, px, px, tp, sl, m.szDecimals) };
+  }
+  function tpslTicketCheck() {
+    var m = state.market, ti = $('dkTpPx'), si = $('dkSlPx'), h = $('dkTpSlHint'); if (!m || !ti || !si) return;
+    var w = tpslTicketWant(m, form.side === 'long', form.lev);
+    ti.classList.toggle('is-bad', !!w.why && tpslNum(ti.value) != null && /take profit/i.test(w.why));
+    si.classList.toggle('is-bad', !!w.why && tpslNum(si.value) != null && /stop/i.test(w.why));
+    if (h) h.textContent = w.why || ((w.tp != null || w.sl != null) ? 'Set for the next open. Closes from this page while it is open.' : 'Optional. Closes the position for you from this page while it is open.');
+  }
+  function tpslPark(reqId, want, m, isLong, lev) {
+    tpsl.pending[reqId] = { tp: want.tp, sl: want.sl, sym: m.symbol, isLong: isLong, lev: lev, at: Date.now() }; tpslSave();
+    var ti = $('dkTpPx'), si = $('dkSlPx'); if (ti) ti.value = ''; if (si) si.value = ''; tpslTicketCheck();
+  }
+  function tpslAdopt(reqId, pid) {
+    var w = tpsl.pending[reqId]; if (!w) return;
+    delete tpsl.pending[reqId];
+    tpsl.rules[pid] = { tp: w.tp, sl: w.sl, at: Date.now() }; tpslSave();
+    toast('Take profit / stop loss set on your ' + sideWord(w.isLong) + ' ' + w.sym + '. It closes from this page while it is open.');
+  }
+  function tpslDropPending(reqId) { if (tpsl.pending[reqId]) { delete tpsl.pending[reqId]; tpslSave(); } }
+  function tpslSet(pid, tp, sl) {
+    var p = posById(pid); if (!p) return 'That position is gone.';
+    var px = closePriceFor(p); if (!(px > 0)) px = marketPrice(positionMarket(p));
+    var why = tpslProblem(p.isLong, p.leverage, p.entry, px, tp, sl, tpslDec(p)); if (why) return why;
+    tpsl.rules[pid] = { tp: tp, sl: sl, at: Date.now() }; tpslSave();
+    return '';
+  }
+  function tpslClear(pid) { if (tpsl.rules[pid]) { delete tpsl.rules[pid]; tpslSave(); } }
+  /* The trigger rule: 'tp' when the take profit fires, 'sl' for the stop loss, '' to wait. The close lands at the
+     oracle 2-3 s after it fires, so the stop fires LIM_TOL (0.1 %) before its level, as the limit orders do (the
+     owner's pick, 2026-10-25: early), so the loss stays inside the stop; the take profit waits for the touch. */
+  function tpslCrossed(rule, pos, px) {
+    if (rule.tp != null && rule.tp > 0 && (pos.isLong ? px >= rule.tp : px <= rule.tp)) return 'tp';
+    if (rule.sl != null && rule.sl > 0 && (pos.isLong ? px <= rule.sl * (1 + LIM_TOL) : px >= rule.sl * (1 - LIM_TOL))) return 'sl';
+    return '';
+  }
+  function tpslStatus(pid) {
+    var r = tpsl.rules[pid]; if (!r) return '';
+    if (r.claimed) return 'closing';
+    if (r.until > Date.now()) return 'held: ' + r.hold;
+    if (!wallet.account) return 'waiting for a wallet';
+    if (!sessionLive()) return 'your wallet asks to confirm the close';
+    return '';
+  }
+  function checkTpSl() {
+    var pids = Object.keys(tpsl.rules); if (!pids.length) return;
+    var now = Date.now();
+    /* rules of positions that are gone (closed by hand, liquidated, another tab) leave quietly */
+    if (wallet.account && acct.loaded) {
+      var changed = false;
+      pids.forEach(function (pid) { if (!posById(pid) && !acct.closeReqs[pid] && !ui.closing[pid] && !ui.checking[pid] && !ui.settling[pid]) { delete tpsl.rules[pid]; changed = true; } });
+      if (changed) { tpslSave(); pids = Object.keys(tpsl.rules); }
+    }
+    if (tpsl.firing || state.busy || tk.phase === 'wallet' || tk.phase === 'req') return;
+    for (var i = 0; i < pids.length; i++) {
+      var pid = pids[i], r = tpsl.rules[pid], p = posById(pid); if (!p) continue;
+      if (acct.closeReqs[pid] || ui.closing[pid] || ui.checking[pid] || ui.settling[pid]) continue;
+      if (r.claimed) {
+        if (now - r.claimed < TPSL_CLAIM_MS) continue;                                  // some tab is closing it
+        /* a claim this old means the tab that sent it went away mid-request: the outcome is unknown */
+        delete r.claimed; r.hold = 'another tab was closing it. Check the position, then set it again.'; r.until = now + TPSL_HOLD_MS; tpslSave();
+        continue;
+      }
+      if (r.until > now) continue;                                                      // held after a refusal
+      if (r.hold) { delete r.hold; delete r.until; tpslSave(); }
+      var px = closePriceFor(p); if (!(px > 0)) px = marketPrice(positionMarket(p));
+      var which = px > 0 ? tpslCrossed(r, p, px) : '';
+      if (which && fireTpSl(pid, p, r, which, px)) return;                              // one close at a time
+    }
+  }
+  /* A crossed rule: a fresh read of storage (another tab may have fired or removed it), the claim stamp, then the
+     same close the button sends. Returns true once a request is on its way. */
+  function fireTpSl(pid, p, r, which, px) {
+    if (!wallet.account || !hasExchange() || !acct.loaded) return false;
+    if (!sessionLive() && wallet.chainId !== CHAIN_ID) return false;
+    if (Date.now() - (r.tried || 0) < 15000) return false;                     // one attempt per 15 s per position
+    r.tried = Date.now();
+    if (!tradeReady()) return false;
+    var fresh = null; try { fresh = JSON.parse(lsGet(tpslKey()) || 'null'); } catch (e) { fresh = null; }
+    var mine = fresh && fresh.rules ? fresh.rules[pid] : null;
+    if (lsGet(tpslKey()) != null && (!mine || (mine.claimed && Date.now() - mine.claimed < TPSL_CLAIM_MS))) { tpslLoad(); return false; }
+    tpsl.firing = pid; r.claimed = Date.now(); tpslSave();
+    toast((which === 'tp' ? 'Take profit hit: ' : 'Stop loss hit: ') + 'closing your ' + posLabel(p) + ' at ' + fmtPrice(px, tpslDec(p)) + '.', 'ok');
+    submitClose(p).then(function (ok) {
+      var cur = tpsl.rules[pid];
+      if (ok) { delete tpsl.rules[pid]; tpslSave(); }
+      else if (cur) { delete cur.claimed; cur.hold = 'the close was not sent. It tries again in a few minutes; Close it by hand if you want it now.'; cur.until = Date.now() + TPSL_HOLD_MS; tpslSave(); }
+    });
+    setTimeout(function () { tpsl.firing = null; }, 3000);
+    return true;
+  }
+  /* The line under a position card or row: the levels and a status, Edit / Remove, or the one button to set them;
+     the inline editor while editing. */
+  function tpslSub(p) { var sub = el('div', 'tpsl-sub'); sub.setAttribute('data-for', String(p.id)); tpslFill(sub, p); return sub; }
+  function tpslSubFor(pid) { return document.querySelector('#posLines .tpsl-sub[data-for="' + pid + '"]'); }
+  function tpslWhy(pid) { return tpslStatus(pid) ? '· ' + tpslStatus(pid) : '· closes from this page while it is open'; }
+  function tpslFill(sub, p) {
+    var pid = String(p.id), r = tpsl.rules[pid], sz = tpslDec(p);
+    sub.textContent = '';
+    if (tpsl.editing[pid]) { sub.appendChild(tpslEditor(pid, p)); return; }
+    if (r) {
+      if (r.tp != null) { sub.appendChild(el('span', '', 'Take profit ')); sub.appendChild(el('b', '', fmtPrice(r.tp, sz))); }
+      if (r.sl != null) { sub.appendChild(el('span', '', (r.tp != null ? '· ' : '') + 'Stop loss ')); sub.appendChild(el('b', '', fmtPrice(r.sl, sz))); }
+      sub.appendChild(el('span', 'tpsl-why', tpslWhy(pid)));
+      var e = el('button', 'btn btn-sm', 'Edit'); e.type = 'button'; e.addEventListener('click', function () { tpsl.editing[pid] = true; tpslRefresh(pid); });
+      var c = el('button', 'btn btn-sm', 'Remove'); c.type = 'button'; c.addEventListener('click', function () { tpslClear(pid); toast('Take profit / stop loss removed from your ' + posLabel(p) + '.'); });
+      sub.appendChild(e); sub.appendChild(c);
+    } else {
+      var s = el('button', 'btn btn-sm', 'Take profit / stop loss'); s.type = 'button';
+      s.addEventListener('click', function () { tpsl.editing[pid] = true; tpslRefresh(pid); });
+      sub.appendChild(s);
+    }
+  }
+  function tpslEditor(pid, p) {
+    var r = tpsl.rules[pid] || {}, box = el('div', 'tpsl-edit');
+    function field(label, val) {
+      var l = el('label', '', label + ' '), i = el('input', 'input');
+      i.type = 'number'; i.min = '0'; i.step = 'any'; i.inputMode = 'decimal'; i.placeholder = '—';
+      if (val != null) i.value = String(val);
+      l.appendChild(i); box.appendChild(l); return i;
+    }
+    var ti = field('Take profit', r.tp), si = field('Stop loss', r.sl);
+    var save = el('button', 'btn btn-sm', 'Save'); save.type = 'button';
+    var back = el('button', 'btn btn-sm', 'Cancel'); back.type = 'button';
+    var why = el('span', 'tpsl-why', 'Closes from this page while it is open.' + (sessionLive() ? '' : ' Your wallet asks to confirm the close.'));
+    save.addEventListener('click', function () {
+      var w = tpslSet(pid, tpslNum(ti.value), tpslNum(si.value));
+      ti.classList.toggle('is-bad', !!w && /take profit/i.test(w)); si.classList.toggle('is-bad', !!w && /stop/i.test(w));
+      if (w) { why.textContent = w; return; }
+      delete tpsl.editing[pid]; tpslRefresh(pid); toast('Set on your ' + posLabel(p) + '. It closes from this page while it is open.', 'ok');
+    });
+    back.addEventListener('click', function () { delete tpsl.editing[pid]; tpslRefresh(pid); });
+    [ti, si].forEach(function (i) { i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } }); });
+    box.appendChild(save); box.appendChild(back); box.appendChild(why);
+    setTimeout(function () { ti.focus(); }, 0);
+    return box;
+  }
+  function tpslRefresh(pid) { var sub = tpslSubFor(pid), p = posById(pid); if (sub && p) tpslFill(sub, p); }
+  function tpslRedraw() {
+    Array.prototype.forEach.call(document.querySelectorAll('#posLines .tpsl-sub'), function (sub) {
+      var pid = sub.getAttribute('data-for'), p = posById(pid); if (p && !tpsl.editing[pid]) tpslFill(sub, p);
+    });
+    try { renderPhSheet(); } catch (e) { /* ignore */ }
+  }
+  /* The status words on every price tick: text only, so an Edit under the cursor survives. */
+  function tpslTick() {
+    Array.prototype.forEach.call(document.querySelectorAll('#posLines .tpsl-sub'), function (sub) {
+      var pid = sub.getAttribute('data-for'); if (!tpsl.rules[pid] || tpsl.editing[pid]) return;
+      var w = sub.querySelector('.tpsl-why'); if (w) w.textContent = tpslWhy(pid);
+    });
+  }
+  /* The phone's Position sheet: the two boxes and Save, under the figures. */
+  function tpslPhSheet(d, pid, p) {
+    var r = tpsl.rules[pid] || {}, ti = phq(d, '.js-ps-tp'), si = phq(d, '.js-ps-sl'), note = phq(d, '.js-ps-tpnote');
+    if (d._tpslPid !== pid) {
+      d._tpslPid = pid;
+      if (ti) { ti.value = r.tp != null ? String(r.tp) : ''; ti.classList.remove('is-bad'); }
+      if (si) { si.value = r.sl != null ? String(r.sl) : ''; si.classList.remove('is-bad'); }
+    }
+    if (note && !note._said) note.textContent = (r.tp != null || r.sl != null)
+      ? 'Set. ' + (tpslStatus(pid) ? 'Status: ' + tpslStatus(pid) + '.' : 'Closes while this page is open on your phone.')
+      : 'Optional. Closes it for you while this page is open on your phone.';
+  }
+  function onPhTpSave() {
+    var d = $('phPosSheet'), s = ui.phSheet; if (!d || !s || s.mode === 'all') return;
+    var pid = s.pid, p = posById(pid); if (!p) return;
+    var ti = phq(d, '.js-ps-tp'), si = phq(d, '.js-ps-sl'), note = phq(d, '.js-ps-tpnote');
+    var tp = tpslNum(ti ? ti.value : ''), sl = tpslNum(si ? si.value : '');
+    function say(t, ms) { if (!note) return; note._said = true; note.textContent = t; setTimeout(function () { note._said = false; try { renderPhSheet(); } catch (e) { /* ignore */ } }, ms); }
+    if (tp == null && sl == null) { tpslClear(pid); say('Removed.', 1500); return; }
+    var w = tpslSet(pid, tp, sl);
+    if (ti) ti.classList.toggle('is-bad', !!w && /take profit/i.test(w));
+    if (si) si.classList.toggle('is-bad', !!w && /stop/i.test(w));
+    say(w || 'Saved. Closes while this page is open on your phone.', w ? 5000 : 1500);
+  }
+  function initTpSl() {
+    var box = $('dkTpSlBox'), ti = $('dkTpPx'), si = $('dkSlPx');
+    if (box) { document.documentElement.setAttribute('data-tpsl', '1'); box.hidden = false; }
+    [ti, si].forEach(function (i) {
+      if (!i) return;
+      i.disabled = false;
+      i.addEventListener('input', tpslTicketCheck);
+      i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); i.blur(); } });   // a trade needs the button
+    });
+    var d = $('phPosSheet'), sb = d ? d.querySelector('.js-ps-tpsave') : null; if (sb) sb.addEventListener('click', onPhTpSave);
+    var _renderAction = renderAction;
+    renderAction = function () { _renderAction(); try { tpslTicketCheck(); } catch (e) { /* ignore */ } };
+    window.addEventListener('storage', function (ev) { if (ev.key === tpslKey()) tpslLoad(); });
+    tpslLoad();
+  }
+
   function init() {
     try { initSwap(); } catch (e) { /* the swap card never blocks the page */ }
     try { initOnramp(); } catch (e) { /* the on-ramp never blocks the page */ }
     try { initPosView(); } catch (e) { /* the view switch never blocks the page */ }
     try { initLimits(); } catch (e) { /* limit orders never block the page */ }
+    try { initTpSl(); } catch (e) { /* take profit / stop loss never blocks the page */ }
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};
