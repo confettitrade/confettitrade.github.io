@@ -2334,6 +2334,7 @@
         note = acct.walletUsdc >= 1 ? 'You have ' + fmtUsd(acct.walletUsdc) + ' USDC in your wallet. Add it to start.'
           : acct.available > 0 ? 'Your balance is ' + fmtUsd(acct.available) + '. Trades start at ' + fmtUsd(minMargin()) + '.'
           : depSwapSmall() ? 'Trades are in USDC. The HYPE in this wallet buys about ' + fmtUsd(swHypeWorth(ui.hypeWei)) + ', under the ' + fmtUsdShort(minMargin()) + ' minimum: add USDC, or a little more HYPE.'
+          : onrampOn() ? 'Trades are in USDC on HyperEVM. Nothing in this wallet yet: Add USDC pays with Apple Pay.'
           : 'Trades are in USDC on HyperEVM. Add at least ' + fmtUsdShort(minMargin()) + ' to start.';
       }
     } else if (!(form.margin > 0)) {
@@ -2553,8 +2554,17 @@
     if (scrim) scrim.addEventListener('click', closeSheet);
     var chip = $('posChip');
     if (chip) chip.addEventListener('click', showPositions);
+    var dpg = $('dkPosGo');
+    if (dpg) dpg.addEventListener('click', function () {
+      /* the newest position that has a card (one mid-close shows as a result card, not a position card) */
+      var top = acct.positions.slice().sort(function (a, b) { return a.id < b.id ? 1 : -1; }).filter(function (p) { return !!posCardEl(String(p.id)); })[0];
+      if (top) showNewPosition(String(top.id)); else showPositions();
+    });
     var bs = $('barStatus');
-    if (bs) bs.addEventListener('click', function () { if (tk.phase) openSheet(); else showPositions(); });
+    if (bs) bs.addEventListener('click', function () {
+      if (tk.phase === 'opened') { var id = tk.posId; tkReset(); showNewPosition(id); }
+      else if (tk.phase) openSheet(); else showPositions();
+    });
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && ui.sheet && !tour.on) closeSheet(); });
     /* every "If a fill is slow, ask my wallet to finish it" box is the same setting */
     document.addEventListener('change', function (ev) {
@@ -2763,8 +2773,21 @@
      just opened) instead of the top of the panel. */
   function showPositions(sel) {
     closeSheet();
-    var p = (typeof sel === 'string' && document.querySelector(sel)) || $('posPanel');
+    var p = (typeof sel === 'string' && document.querySelector(sel)) || (isPhone() && $('phPosHead')) || $('posPanel');
     if (p && p.scrollIntoView) p.scrollIntoView({ block: typeof sel === 'string' ? 'center' : 'start', behavior: 'smooth' });
+  }
+  /* A 600 ms ring on a row or card (never under reduced motion). */
+  function flashFresh(n) {
+    if (!n || reducedMotion()) return;
+    n.classList.remove('is-fresh'); void n.offsetWidth; n.classList.add('is-fresh');
+  }
+  /* Land on a position: the phone's rows head (the newest row sits right under it), else its card or row,
+     then ring it. View position used to scroll to a card that is display:none on phones. */
+  function showNewPosition(pid) {
+    closeSheet();
+    var t = isPhone() ? $('phPosHead') : (pid && posCardEl(pid)) || $('posPanel');
+    if (t && t.scrollIntoView) t.scrollIntoView({ block: isPhone() ? 'start' : 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+    flashFresh(isPhone() ? (pid && phRowFor(pid)) : (pid && posCardEl(pid)));
   }
 
   /* ---- phones (<= 640 px): builds 6, 8 and 10 of the phone spec ---------------------------------
@@ -3584,6 +3607,12 @@
     var away = el('span', 'ph-away'); away.setAttribute('data-role', 'away');
     liq.appendChild(away);
     b.appendChild(liq);
+    /* the row is the only way to Close on a phone and it read as a P&L line: it says so (the sheet it opens
+       still asks, so the word never closes anything on its own) */
+    var go = el('span', 'ph-row-go'); go.setAttribute('data-role', 'go');
+    go.appendChild(document.createTextNode('Close'));
+    var ch = el('i', 'ph-row-chev', '›'); ch.setAttribute('aria-hidden', 'true'); go.appendChild(ch);
+    b.appendChild(go);
     var note = el('span', 'ph-row-note'); note.setAttribute('data-role', 'note'); note.hidden = true;
     b.appendChild(note);
     /* the 3 px line under the status sentence that fills over fillSecs while a close is in flight */
@@ -3603,6 +3632,7 @@
     var pc = setRole(row, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
     if (pc) pc.className = 'ph-pct' + (known ? cls : '');
     var busy = phBusy(it.pid);
+    var goEl = row.querySelector('[data-role="go"]'); if (goEl) goEl.hidden = busy;
     var liqRow = row.querySelector('[data-role="liqrow"]'), note = row.querySelector('[data-role="note"]'), prog = row.querySelector('[data-role="prog"]');
     var st = busy ? closeStatus(it.pid, p) || { text: 'Closing…', tone: '', share: 0 } : null;
     if (st) {
@@ -3643,7 +3673,7 @@
       (known ? 'P&L ' + fmtUsd(est.pnl, true) + ', ' + fmtPct1(est.pnl / p.margin) + '. ' : '') +
       'Entry ' + fmtPrice(p.entry, sz) + ', now ' + (isFinite(it.px) ? fmtPrice(it.px, sz) : 'unknown') +
       ', liquidation ' + fmtPrice(it.room.liq, sz) + (isFinite(it.room.away) ? ', ' + fmtAway(it.room.away) + ' away' : '') +
-      '. Put in ' + fmtUsd(p.margin) + ', size ' + fmtUsd(p.margin * p.leverage) + '.' + (st ? ' ' + st.text : '');
+      '. Put in ' + fmtUsd(p.margin) + ', size ' + fmtUsd(p.margin * p.leverage) + '.' + (st ? ' ' + st.text : ' Tap to see it or close it.');
     if (row.getAttribute('aria-label') !== label) row.setAttribute('aria-label', label);
   }
 
@@ -3681,7 +3711,10 @@
     if (host.getAttribute('data-sig') !== sig) {
       host.setAttribute('data-sig', sig);
       host.textContent = '';
-      shown.forEach(function (it) { host.appendChild(phRowEl(it)); });
+      shown.forEach(function (it) {
+        var row = phRowEl(it); host.appendChild(row);
+        if (isPhone() && fx.fresh[it.pid]) { delete fx.fresh[it.pid]; if (!reducedMotion()) row.classList.add('is-fresh'); }
+      });
       if (rest > 0) {
         var more = el('button', 'ph-row is-more');
         more.type = 'button';
@@ -3770,6 +3803,7 @@
   }
 
   function onPhPnlTap() {
+    if (tk.phase === 'opened') { var id = tk.posId; tkReset(); showNewPosition(id); return; }
     if (tk.phase && !ui.phClosed) { openSheet(); return; }
     var h = $('phPosHead');
     if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
@@ -4633,6 +4667,8 @@
     }
     setText('dkBal', balText);
     setText('dkMargin', inText);
+    var nOpen = acct.positions.length + pendingOpenList().length, dko = $('dkOpenN');
+    if (dko) { dko.hidden = !nOpen; dko.textContent = nOpen + ' open'; }
     var dkm = $('dkMargin');
     if (dkm) dkm.title = inTitle;
     var dkp = $('dkPnl');
@@ -5095,7 +5131,7 @@
     var sz = m ? m.szDecimals : null;
     var row = el('div', 'pos-card dk-row ' + (p.isLong ? 'is-long' : 'is-short'));
     row.setAttribute('data-id', String(p.id));
-    if (fx.fresh[String(p.id)]) delete fx.fresh[String(p.id)];
+    if (fx.fresh[String(p.id)]) { delete fx.fresh[String(p.id)]; if (!isPhone() && !reducedMotion()) row.classList.add('is-fresh'); }
     /* the size and the amount put in ride in the title too: a narrow window drops their columns */
     row.title = 'Position #' + p.id + ' · size ' + fmtUsd(p.margin * p.leverage) + ' · put in ' + fmtUsd(p.margin);
     row.appendChild(dkWho(p.isLong, m ? m.symbol : 'Market ' + p.instrumentId, p.leverage));
@@ -5169,7 +5205,7 @@
     var sz = m ? m.szDecimals : null;
     var card = el('div', 'pos-card ' + (p.isLong ? 'is-long' : 'is-short'));
     card.setAttribute('data-id', String(p.id));
-    if (fx.fresh[String(p.id)]) { delete fx.fresh[String(p.id)]; if (phoneFx()) card.classList.add('is-fresh'); }
+    if (fx.fresh[String(p.id)]) { delete fx.fresh[String(p.id)]; if (!isPhone() && !reducedMotion()) card.classList.add('is-fresh'); }
     card.title = 'Position #' + p.id;
     var head = el('div', 'pc-head');
     var who = el('div', 'pc-who');
@@ -5514,8 +5550,9 @@
   /* Ten seconds of "Open at": then the form again; on a phone the sheet closes onto the new card. */
   function tkDoneOpened() {
     if (tk.phase !== 'opened') return;
+    var id = tk.posId;
     tkReset();
-    if (ui.sheet && !tour.on) showPositions();
+    if (ui.sheet && !tour.on) showNewPosition(id);
   }
 
   function ticketView() {
@@ -5534,10 +5571,15 @@
       return v;
     }
     if (tk.phase === 'opened') {
+      /* the owner, 2026-10-25: a first-timer did not know where the position went or how to close it */
+      var where = isPhone() ? 'It is the top row of the page. Tap the row to close it.'
+        : isSheetMode() ? 'It is the first card at the top of the page. CLOSE POSITION is on the card.'
+        : posTable() ? 'It is the top row of Your positions, under the chart. Close is on the row.'
+        : 'It is the top card in Your positions, under the chart. CLOSE POSITION is on the card.';
       return {
         cls: 'is-done', title: 'Opened ' + sideWord(tk.isLong) + ' ' + tk.sym + ' ' + tk.lev + 'x · ' + fmtUsdShort(tk.margin),
         steps: [['Sent', 'is-done'], ['Filled', 'is-done'], ['Open at ' + fmtPrice(tk.entry, szOf(tk.sym)), 'is-done']],
-        btn: 'View position', btnFree: true, btn2: 'New trade'
+        note: where, btn: 'View position', btnFree: true, btn2: 'New trade'
       };
     }
     if (tk.phase === 'refunded') return { cls: 'is-bad', title: title, steps: [['Sent', 'is-done'], [tk.msg, 'is-on is-bad'], ['Open', 'is-skip']], btn: 'OK', btnFree: true };
@@ -5578,7 +5620,7 @@
 
   function ticketBtn() {
     if (tk.phase === 'req') { var r = pend.opens[tk.reqId]; if (r) openReqAction(r); return; }
-    if (tk.phase === 'opened') { var id = tk.posId; tkReset(); showPositions(id ? '.pos-card[data-id="' + id + '"]' : null); return; }
+    if (tk.phase === 'opened') { var id = tk.posId; tkReset(); showNewPosition(id); return; }
     tkReset();
   }
 
@@ -5590,7 +5632,7 @@
     var on = (v.steps || []).filter(function (x) { return /is-on/.test(x[1]); })[0];
     var text = v.cls === 'is-done' ? v.steps[2][0] : (on ? on[0] : v.title);
     s.hidden = false;
-    s.textContent = tk.sym + ' ' + sideWord(tk.isLong) + ': ' + text;
+    s.textContent = v.cls === 'is-done' ? 'Opened ' + sideWord(tk.isLong) + ' ' + tk.sym + ' · tap to see it' : tk.sym + ' ' + sideWord(tk.isLong) + ': ' + text;
     s.className = 'mbar-status' + (v.cls ? ' ' + v.cls : '');
     renderPhPnl();
   }
@@ -6874,11 +6916,9 @@
 
   /* A pending open became a position: buzz, and its card flashes once (600 ms) when it shows. */
   function freshPosition(pid) {
-    if (!phoneFx()) return;
-    buzz([20, 40, 20]);
-    var card = posCardEl(pid);
-    if (card) { card.classList.remove('is-fresh'); void card.offsetWidth; card.classList.add('is-fresh'); }
-    else fx.fresh[pid] = true;
+    buzz([20, 40, 20]);                                            // phone-gated in buzz itself
+    var t = isPhone() ? phRowFor(pid) : posCardEl(pid);
+    if (t) flashFresh(t); else fx.fresh[pid] = true;              // not drawn yet: the next render rings it
   }
 
   /* A small confetti burst (900 ms) from a card, for a closed win. host: where the burst lives
@@ -7166,7 +7206,9 @@
     if (!hasExchange()) { toast('Trading is off on this copy of the site.', 'err'); return; }
     var hint = $('depositHint');
     if (hint) hint.classList.remove('is-err');
-    setDepWhere(acct.walletUsdc >= 1 || !read.factory || depSwapShow() ? 'wallet' : 'hl');   // a HYPE holder lands on the one-tap swap, not the HyperCore tab
+    var empty = acct.walletUsdc < 1 && !depSwapShow() && !depSwapSmall() && (ui.hypeWei == null || ui.hypeWei < DEP_SWAP_RESERVE_WEI);
+    setDepWhere(empty && onrampOn() ? 'card' : acct.walletUsdc >= 1 || !read.factory || depSwapShow() ? 'wallet' : 'hl');   // nothing in the wallet: Apple Pay; HYPE: the one-tap swap; else HyperCore
+    renderOnramp();
     renderDepositModal();
     openDialog('depositModal');
     refreshWalletUsdc();
@@ -7178,9 +7220,58 @@
   function setDepWhere(where) {
     var seg = $('depWhere');
     if (seg) Array.prototype.forEach.call(seg.querySelectorAll('[data-where]'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-where') === where ? 'true' : 'false'); });
-    var w = $('depFromWallet'), h = $('depFromHl');
+    var w = $('depFromWallet'), h = $('depFromHl'), c = $('depFromCard');
     if (w) w.hidden = where !== 'wallet';
     if (h) h.hidden = where !== 'hl';
+    if (c) c.hidden = where !== 'card';
+    if (where === 'card') renderOnramp();
+  }
+
+  /* ---- Pay with Apple Pay (the owner, 2026-10-25: "can we start accepting apple pay"; "moonpay and stripe") ----
+     The site never takes the money: MoonPay's hosted widget does, in a new tab (Apple Pay refuses an iframe), and
+     sends the coin to the trader's own wallet on HyperEVM. It buys HYPE, not USDC: a wallet with USDC and no HYPE
+     cannot pay the gas to deposit, while HYPE becomes USDC with the one-tap swap in this sheet, which keeps 0.03
+     for gas. One purchase, no bridge. Shown only when config.json carries the MoonPay publishable key; a live key
+     needs the signed URL (ops/onramp/sign.py on the droplet, cfg.onramp.signUrl), a test key does not. Stripe's
+     on-ramp does not deliver to HyperEVM (checked 2026-10-25), so it is not here. */
+  function onrampCfg() { return (cfg && cfg.onramp) || {}; }
+  function onrampOn() { var o = onrampCfg(); return !!(!DEMO && o.moonpayKey && /^pk_(live|test)_/.test(o.moonpayKey)); }   // never in the demo (a pretend wallet)
+  var onramp = { amount: 50, busy: false };
+  function onrampUrl(amount) {
+    var o = onrampCfg();
+    var q = [['apiKey', o.moonpayKey], ['currencyCode', o.asset || 'hype_hyperevm'], ['baseCurrencyCode', 'usd'], ['baseCurrencyAmount', String(amount)],
+      ['walletAddress', wallet.account], ['paymentMethod', 'apple_pay'], ['theme', 'dark'], ['redirectURL', location.origin + '/trade.html'],
+      ['externalCustomerId', wallet.account.toLowerCase()]];
+    return (o.widgetUrl || 'https://buy.moonpay.com') + '/?' + q.map(function (kv) { return encodeURIComponent(kv[0]) + '=' + encodeURIComponent(kv[1]); }).join('&');
+  }
+  function renderOnramp() {
+    var box = $('depFromCard'); if (!box) return;
+    var seg = $('depWhereCard'); if (seg) seg.hidden = !onrampOn();
+    setText('orWallet', wallet.account ? shortAddr(wallet.account) : '—');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-or-amt]'), function (b) { b.setAttribute('aria-pressed', Number(b.getAttribute('data-or-amt')) === onramp.amount ? 'true' : 'false'); });
+    var go = $('orGo'); if (go) { go.textContent = onramp.busy ? 'Opening MoonPay…' : 'Pay ' + fmtUsdShort(onramp.amount) + ' with Apple Pay'; go.disabled = !!(onramp.busy || !wallet.account); }
+  }
+  function onrampGo() {
+    if (!onrampOn() || !wallet.account || onramp.busy) return;
+    var o = onrampCfg(), url = onrampUrl(onramp.amount);
+    /* the tab opens on the tap (a popup blocker needs the gesture); the signed URL lands in it a moment later */
+    var win = window.open('about:blank', '_blank');
+    onramp.busy = true; renderOnramp();
+    var p = /^pk_live_/.test(o.moonpayKey) && o.signUrl
+      ? fetch(o.signUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url }) }).then(function (r) { return r.json(); }).then(function (j) { if (!j || !j.signature) throw new Error('no signature'); return url + '&signature=' + encodeURIComponent(j.signature); })
+      : Promise.resolve(url);
+    p.then(function (u) {
+      if (win) win.location.href = u; else location.href = u;
+      setText('orHint', 'MoonPay opened in a new tab. When it says the HYPE is sent, come back here: this sheet turns it into USDC in one tap.');
+    }).catch(function () {
+      if (win) win.close();
+      setText('orHint', 'MoonPay could not be opened right now. Try again in a moment.');
+    }).then(function () { onramp.busy = false; renderOnramp(); });
+  }
+  function initOnramp() {
+    var box = $('depFromCard'); if (!box) return;
+    Array.prototype.forEach.call(box.querySelectorAll('[data-or-amt]'), function (b) { b.addEventListener('click', function () { onramp.amount = Number(b.getAttribute('data-or-amt')); renderOnramp(); }); });
+    var go = $('orGo'); if (go) go.addEventListener('click', onrampGo);
   }
 
   function openWithdraw() {
@@ -8138,6 +8229,12 @@
     });
     $('depositBtn').addEventListener('click', openDeposit);
     var tkDep = $('tkDeposit'); if (tkDep) tkDep.addEventListener('click', openDeposit);
+    /* phones: the Points panel (the rules, the leaderboard) opens on a tap of its head; a first-timer scrolling past
+       the chart met a wall of rules */
+    document.addEventListener('click', function (ev) {
+      var pp = $('pointsPanel'); if (!pp || !isPhone() || !pp.firstElementChild) return;
+      if (ev.target === pp.firstElementChild || pp.firstElementChild.contains(ev.target)) { if (ev.target.closest && ev.target.closest('a, button')) return; pp.classList.toggle('is-open'); }
+    });
     var ub = $('usdcBannerGo'); if (ub) ub.addEventListener('click', openDeposit);
     $('withdrawBtn').addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
     var ad = $('acctDeposit');
@@ -8593,7 +8690,7 @@
     /* ?demo=idle: both positions open and nothing in flight (the Position sheet, Close all) */
     if (DEMO !== 'idle') {
       acct.closeReqs[wpid] = { requestedAt: chainNow() - 1, px0: pw, block: demo.block, busy: false };
-      demo.hold['c' + wpid] = true;
+      if (demoOpt('hold') === '1') demo.hold['c' + wpid] = true;    // held for the 'Finish now' screenshots only; the public demo's close lands
     }
     hist = freshHistory();
     var now = Math.floor(Date.now() / 1000);
@@ -9436,6 +9533,7 @@
 
   function init() {
     try { initSwap(); } catch (e) { /* the swap card never blocks the page */ }
+    try { initOnramp(); } catch (e) { /* the on-ramp never blocks the page */ }
     try { initPosView(); } catch (e) { /* the view switch never blocks the page */ }
     try { initLimits(); } catch (e) { /* limit orders never block the page */ }
     loadConfig().then(function (c) {

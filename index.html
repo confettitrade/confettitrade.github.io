@@ -13,7 +13,7 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=funnel1">
+  <link rel="stylesheet" href="paper.css?v=mobile1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
@@ -426,8 +426,18 @@
       .ph-pct { font-family: var(--font-mono); font-size: 13px; }
       .ph-pnl-n.pos, .ph-pct.pos { color: var(--pos); }
       .ph-pnl-n.neg, .ph-pct.neg { color: var(--neg); }
-      .ph-row-liq { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-width: 0; height: 14px; line-height: 14px; }
+      .ph-row-liq { grid-column: 1; display: flex; align-items: center; gap: 10px; min-width: 0; height: 14px; line-height: 14px; }
       .ph-row-liq[hidden], .ph-row-note[hidden] { display: none; }
+      /* the row's own word for what a tap does (the position panel, 2026-10-25) */
+      .ph-row-go { grid-column: 2; align-self: center; justify-self: end; display: inline-flex; align-items: baseline; gap: 2px; font-size: 13px; font-weight: 600; line-height: 14px; color: var(--close); white-space: nowrap; }
+      .ph-row-go[hidden] { display: none; }
+      .ph-row-chev { font-style: normal; font-size: 16px; line-height: 1; }
+      .ph-row.is-near .ph-row-go { color: var(--neg); }
+      .ph-row.is-fresh { animation: fx-fresh 600ms var(--ease-out, ease-out); }
+      /* the Points panel folds to its head on phones; a tap opens it */
+      body.trade #pointsPanel:not(.is-open) > :not(:first-child) { display: none; }
+      body.trade #pointsPanel > :first-child { cursor: pointer; }
+      body.trade #pointsPanel:not(.is-open) > :first-child::after { content: "tap for the rules and the leaderboard"; display: block; margin-top: 4px; font-size: 12px; color: var(--ink-faint); }
       .ph-bar { position: relative; flex: 1 1 auto; height: 6px; overflow: hidden; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--rule); }
       .ph-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ink); }
       .ph-bar.is-amber i { background: var(--warn); }
@@ -476,6 +486,7 @@
     @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
       html body.trade .trade-side, html body.trade.sheet-open .trade-side { transition: none; }
       .ph-row.is-flash { animation: none; }
+      .ph-row.is-fresh { animation: none; }
       .ph-pnl.is-closing::before { animation: none; width: 100%; opacity: 0.6; }
     }
   </style>
@@ -537,8 +548,8 @@
       <!-- desktop: the trader's own money on the strip's right (renderAccount writes it with the ticket's strip) -->
       <span class="dk-only dk-acct" id="dkAcct" hidden>
         <span class="dk-acct-k">Balance</span><b class="dk-acct-v" id="dkBal">—</b>
-        <span class="dk-acct-k">In trades</span><b class="dk-acct-v" id="dkMargin">—</b>
-        <span class="dk-acct-k">P&amp;L</span><b class="dk-acct-v" id="dkPnl">—</b>
+        <button class="dk-acct-go" id="dkPosGo" type="button" title="Your positions are under the chart. Click to go there." aria-label="Your positions are under the chart. Click to go there."><b class="dk-acct-v dk-acct-open" id="dkOpenN" hidden>—</b><span class="dk-acct-k">In trades</span><b class="dk-acct-v" id="dkMargin">—</b>
+        <span class="dk-acct-k">P&amp;L</span><b class="dk-acct-v" id="dkPnl">—</b></button>
       </span>
       <button class="btn btn-sm tour-btn" id="tourBtn" type="button" title="How to trade: a short tour of every button" aria-label="How to trade">?<span class="tour-word">&nbsp;How to trade</span><span class="tour-short">&nbsp;Help</span></button>
     </div>
@@ -1054,6 +1065,7 @@
         <div class="seg" id="depWhere" role="group" aria-label="Where is your USDC?">
           <button class="seg-item" type="button" data-where="wallet" aria-pressed="true">In this wallet</button>
           <button class="seg-item" type="button" data-where="hl" aria-pressed="false">On Hyperliquid</button>
+          <button class="seg-item" type="button" data-where="card" aria-pressed="false" id="depWhereCard" hidden>Apple Pay</button>
         </div>
       </div>
       <div class="panel-body stack" id="depFromWallet">
@@ -1089,6 +1101,20 @@
           <button class="btn" type="button" data-close>Close</button>
           <button class="btn btn-primary" type="button" id="hlSweep" disabled>Add to my balance</button>
         </div>
+      </div>
+      <!-- Pay with Apple Pay: MoonPay's widget in a new tab, HYPE to this wallet, then the one-tap swap (shown with a MoonPay key in config) -->
+      <div class="panel-body stack" id="depFromCard" hidden>
+        <div class="hint">No crypto yet? Pay with Apple Pay or a card. MoonPay sends HYPE to this wallet (<b id="orWallet">—</b>) in a few minutes; then this sheet turns it into USDC in one tap and keeps a little for fees.</div>
+        <div class="label">How much</div>
+        <div class="chip-row" role="group" aria-label="Amount">
+          <button class="btn btn-sm" type="button" data-or-amt="20">$20</button>
+          <button class="btn btn-sm" type="button" data-or-amt="50" aria-pressed="true">$50</button>
+          <button class="btn btn-sm" type="button" data-or-amt="100">$100</button>
+          <button class="btn btn-sm" type="button" data-or-amt="250">$250</button>
+        </div>
+        <button class="btn btn-primary btn-block" type="button" id="orGo">Pay $50 with Apple Pay</button>
+        <div class="hint" id="orHint" aria-live="polite">MoonPay charges about 4.5% (at least $4.50) plus a small network fee. First time: an email, your name and address. Not available in New York or Canada.</div>
+        <div class="modal-actions"><button class="btn" type="button" data-close>Close</button></div>
       </div>
     </form>
   </dialog>
@@ -1231,7 +1257,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=usdc2" defer></script>
+  <script src="trade.js?v=onramp1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

@@ -30,6 +30,11 @@
     "v3Staking": "0x167549bb697f96ee19e0ffbfa5ab5f6487f10051",
     "v3Referrals": "0xdf0c59514877f38a7b59bd7db1422217ab25714b"
   },
+  "onramp": {
+    "moonpayKey": "",
+    "signUrl": "",
+    "asset": "hype_hyperevm"
+  },
   "swap": {
     "router": "0xb4a9c4e6ea8e2191d2fa5b380452a634fb21240a",
     "pair": "0x9cD9b6514f28325c8F18F1c5aBe311D5c737D930",

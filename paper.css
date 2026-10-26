@@ -2212,8 +2212,8 @@ main > .notice { margin-bottom: var(--gap); }
    classes only on phones and never under reduced motion; the rules below are
    gated the same way.
    -------------------------------------------------------------------------- */
+.pos-card.is-fresh { animation: fx-fresh 600ms var(--ease-out, ease-out); }
 @media (max-width: 640px) {
-  .pos-card.is-fresh { animation: fx-fresh 600ms var(--ease-out, ease-out); }
   .fx-burst { position: fixed; z-index: 95; width: 0; height: 0; pointer-events: none; }
   .fx-burst i { position: absolute; left: -3px; top: -5px; width: 6px; height: 10px; opacity: 0; animation: fx-burst 900ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
 }
@@ -3632,3 +3632,10 @@ main > .notice { margin-bottom: var(--gap); }
 .dep-swap[hidden] { display: none; }
 .empty-demo { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .empty-demo[hidden] { display: none; }
+
+/* desktop: the money strip's 'n open' is a button that jumps to the newest position (the position panel, 2026-10-25) */
+body.trade .dk-acct-go { appearance: none; -webkit-appearance: none; display: inline-flex; align-items: baseline; gap: 6px; margin: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+body.trade .dk-acct-go:hover .dk-acct-v, body.trade .dk-acct-go:focus-visible .dk-acct-v { text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+body.trade .dk-acct-go:focus-visible { outline: none; box-shadow: var(--focus); }
+body.trade .dk-acct-open { color: var(--close); }
+body.trade .dk-acct-open[hidden] { display: none; }
