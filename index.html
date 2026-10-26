@@ -152,6 +152,16 @@
       html[data-tpsl="1"] body.trade #dkTpSlBox .hint { font-size: 12px; color: var(--ink-faint); }
       html[data-tpsl="1"] body.trade #dkTpSlBox .input.is-bad { border-color: var(--neg); }
     }
+    /* hover P&L (the owner, 2026-10-26): click a position to pick it, then the box follows the crosshair with what
+       that position makes or loses at the price under the cursor (trade.js renderHoverPnl) */
+    .chart-hover-pnl { position: absolute; z-index: 4; pointer-events: none; padding: 6px 9px; border: 1px solid var(--rule-strong); background: var(--raised); font-family: var(--font-mono); font-size: 12px; line-height: 1.45; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); font-variant-numeric: tabular-nums; }
+    .chart-hover-pnl[hidden] { display: none; }
+    .chart-hover-pnl .k { display: block; font-family: var(--font-ui); font-size: 11px; color: var(--ink-faint); }
+    .chart-hover-pnl b { font-weight: 500; }
+    .chart-hover-pnl b.pos { color: var(--pos); }
+    .chart-hover-pnl b.neg { color: var(--neg); }
+    .pos-card.is-picked { outline: 2px solid var(--accent); outline-offset: -1px; cursor: default; }
+    @media (min-width: 641px) { #posLines .pos-card:not(.is-pending) { cursor: pointer; } }
     .tpsl-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px 8px; margin: -6px 0 10px; font-size: 12px; color: var(--ink-muted); border-bottom: 1px solid var(--rule); }
     @media (max-width: 640px) { .tpsl-sub { display: none; } }   /* phones set it in the Position sheet */
     #posLines.dk-table > .tpsl-sub { margin: 0; padding: 4px 12px 6px; }
@@ -614,6 +624,7 @@
         <div class="chart-box" id="chartBox">
           <div class="chart-canvas" id="chart"></div>
           <div class="chart-legend" id="chartLegend" aria-hidden="true"></div>
+          <div class="chart-hover-pnl" id="chartHoverPnl" aria-hidden="true" hidden></div>
           <span class="chart-note" id="chartNote" hidden>candles unavailable · retrying</span>
           <button class="chart-reset" id="chartReset" type="button" title="Reset chart" hidden><i aria-hidden="true"></i>reset chart</button>
         </div>
@@ -1289,7 +1300,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=tpsl1" defer></script>
+  <script src="trade.js?v=hover1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

@@ -925,7 +925,8 @@
      connected wallet's entry / bust price lines; lines: the drawn { price, line }; arm: the next click draws. */
   var chart = {
     api: null, series: null, coin: null, tf: '1m', candles: [], byTime: {}, loading: false, seq: 0, precision: 4,
-    on: {}, ind: {}, vals: {}, hover: false, pos: [], posSig: '', lines: [], linesCoin: null, arm: false
+    on: {}, ind: {}, vals: {}, hover: false, pos: [], posSig: '', lines: [], linesCoin: null, arm: false,
+    pick: null   /* the picked position's id: the hover box reads its P&L at the price under the cursor */
   };
 
   function chartTheme() {
@@ -1297,6 +1298,56 @@
     var i = param && param.point && param.time != null ? chart.byTime[param.time] : undefined;
     chart.hover = i != null;
     renderLegend(chart.hover ? i : -1);
+    try { renderHoverPnl(param); } catch (e) { /* the box never stops the chart */ }
+  }
+
+  /* ---- hover P&L (the owner, 2026-10-26: "you click on your position and it highlights then you can do the
+     hover"): the picked position, or the only one on this market, read at the price under the cursor ---- */
+  function hoverTarget() {
+    var m = state.market;
+    if (!m || m.instrumentId == null || !wallet.account) return null;
+    var mine = acct.positions.filter(function (p) { return p.instrumentId === m.instrumentId; });
+    if (chart.pick) { var picked = mine.filter(function (p) { return String(p.id) === chart.pick; })[0]; if (picked) return picked; }
+    return mine.length === 1 ? mine[0] : null;
+  }
+  function pickPosition(pid) {
+    pid = pid == null ? null : String(pid);
+    chart.pick = chart.pick === pid ? null : pid;
+    Array.prototype.forEach.call(document.querySelectorAll('#posLines .pos-card'), function (c) { c.classList.toggle('is-picked', !!chart.pick && c.getAttribute('data-id') === chart.pick); });
+    chart.posSig = ''; syncPositionLines();
+    renderHoverPnl(null);
+  }
+  function renderHoverPnl(param) {
+    var box = $('chartHoverPnl'), host = $('chartBox');
+    if (!box || !host) return;
+    var p = param && param.point && chart.series ? hoverTarget() : null;
+    if (!p) { if (!box.hidden) box.hidden = true; return; }
+    var px = chart.series.coordinateToPrice(param.point.y);
+    if (px == null || !(px > 0)) { box.hidden = true; return; }
+    px = Number(px);
+    var inst = state.byInstId[p.instrumentId];
+    var queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
+    var est = estimateClose(p, inst, px, queueEmpty);
+    var bust = px18ToNum(posBust18(p));
+    var busted = bust > 0 && (p.isLong ? px <= bust : px >= bust);
+    var pnl = busted ? -p.margin : est.pnl, pct = p.margin > 0 ? pnl / p.margin : 0;
+    box.textContent = '';
+    box.appendChild(el('span', 'k', posLabel(p) + ' at ' + fmtPrice(px, tpslDec(p))));
+    box.appendChild(el('b', pnl >= 0 ? 'pos' : 'neg', fmtUsd(pnl, true) + ' (' + fmtPct(pct, true) + ')'));
+    box.appendChild(el('span', 'k', busted ? 'liquidated here: the ' + fmtUsd(p.margin) + ' put in is gone' : 'you would get back ' + fmtUsd(Math.max(0, est.payout))));
+    box.hidden = false;
+    var w = box.offsetWidth, h = box.offsetHeight, W = host.clientWidth, H = host.clientHeight;
+    var x = param.point.x + 16, y = param.point.y - h - 10;
+    if (x + w > W - 8) x = param.point.x - w - 16;
+    if (x < 8) x = 8;
+    if (y < 6) y = param.point.y + 16;
+    if (y + h > H - 6) y = H - h - 6;
+    box.style.left = Math.round(x) + 'px'; box.style.top = Math.round(y) + 'px';
+  }
+  function initHoverPnl() {
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && chart.pick) pickPosition(null); });
+    var box = $('chartBox');
+    if (box) box.addEventListener('mouseleave', function () { var b = $('chartHoverPnl'); if (b) b.hidden = true; });
   }
 
   /* i: candle index, -1 for the last one. */
@@ -1339,7 +1390,7 @@
     var m = state.market;
     var mine = m && wallet.account && m.instrumentId != null
       ? acct.positions.filter(function (p) { return p.instrumentId === m.instrumentId; }) : [];
-    var sig = mine.map(function (p) { return String(p.id) + ':' + String(p.entryPx18) + ':' + p.leverage + ':' + p.isLong; }).join(',');
+    var sig = mine.map(function (p) { return String(p.id) + ':' + String(p.entryPx18) + ':' + p.leverage + ':' + p.isLong; }).join(',') + '|' + (chart.pick || '');
     if (sig === chart.posSig) return;
     chart.posSig = sig;
     chart.pos.forEach(function (l) { chart.series.removePriceLine(l); });
@@ -1347,7 +1398,8 @@
     var t = chartTheme();
     mine.forEach(function (p) {
       var tag = mine.length > 1 ? ' ' + sideWord(p.isLong).toLowerCase() + ' ' + p.leverage + 'x' : '';
-      chart.pos.push(chart.series.createPriceLine({ price: p.entry, color: t.ink, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'entry' + tag }));
+      var picked = chart.pick && String(p.id) === chart.pick;   // the picked position's entry line is solid and heavier
+      chart.pos.push(chart.series.createPriceLine({ price: p.entry, color: picked ? t.accent : t.ink, lineWidth: picked ? 2 : 1, lineStyle: picked ? 0 : 2, axisLabelVisible: true, title: 'entry' + tag }));
       var bust = px18ToNum(posBust18(p));
       if (bust > 0) chart.pos.push(chart.series.createPriceLine({ price: bust, color: t.accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'liq.' + tag }));
     });
@@ -5137,6 +5189,8 @@
     if (fx.fresh[String(p.id)]) { delete fx.fresh[String(p.id)]; if (!isPhone() && !reducedMotion()) row.classList.add('is-fresh'); }
     /* the size and the amount put in ride in the title too: a narrow window drops their columns */
     row.title = 'Position #' + p.id + ' · size ' + fmtUsd(p.margin * p.leverage) + ' · put in ' + fmtUsd(p.margin);
+    if (chart.pick === String(p.id)) row.classList.add('is-picked');
+    row.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('button, input, a, label')) return; pickPosition(p.id); });
     row.appendChild(dkWho(p.isLong, m ? m.symbol : 'Market ' + p.instrumentId, p.leverage));
     row.appendChild(dkCell('dk-num', fmtUsd(p.margin * p.leverage), 'size'));
     row.appendChild(dkCell('dk-num', fmtUsd(p.margin), 'margin'));
@@ -5210,6 +5264,8 @@
     card.setAttribute('data-id', String(p.id));
     if (fx.fresh[String(p.id)]) { delete fx.fresh[String(p.id)]; if (!isPhone() && !reducedMotion()) card.classList.add('is-fresh'); }
     card.title = 'Position #' + p.id;
+    if (chart.pick === String(p.id)) card.classList.add('is-picked');
+    card.addEventListener('click', function (ev) { if (isPhone() || (ev.target.closest && ev.target.closest('button, input, a, label'))) return; pickPosition(p.id); });
     var head = el('div', 'pc-head');
     var who = el('div', 'pc-who');
     who.appendChild(el('span', 'pc-side', p.isLong ? 'LONG' : 'SHORT'));
@@ -9786,6 +9842,7 @@
     try { initPosView(); } catch (e) { /* the view switch never blocks the page */ }
     try { initLimits(); } catch (e) { /* limit orders never block the page */ }
     try { initTpSl(); } catch (e) { /* take profit / stop loss never blocks the page */ }
+    try { initHoverPnl(); } catch (e) { /* the hover box never blocks the page */ }
     loadConfig().then(function (c) {
       cfg = c || {};
       cfg.contracts = cfg.contracts || {};
