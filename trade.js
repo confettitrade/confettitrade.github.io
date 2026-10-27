@@ -2324,6 +2324,63 @@
     return pick;
   }
 
+  /* The owner, 2026-10-26: a trade too big for the room on its side at this leverage drops to one
+     under the most leverage that fits (the room is read with the chain poll and can shrink before
+     the fill), and the box over OPEN says what changed and why, with Still place trade? YES. An
+     amount too big even at 1x keeps the "Too big right now" line: lowering leverage cannot fix it.
+     A firing limit order keeps the leverage it was placed with. */
+  function fitLeverage() {
+    var m = state.market;
+    if (lim.firing || !m || !m.inst || !(form.margin > 0)) return;
+    var mp = house.maxPos[m.inst.id];
+    var room = mp ? (form.side === 'long' ? mp.long : mp.short) : null;
+    if (room == null || form.margin * form.lev <= room + 1e-6) return;
+    var most = Math.min(maxLev(m), Math.floor((room + 1e-6) / form.margin));
+    if (most < 1) return;
+    var to = Math.max(1, most - 1);
+    ui.levFit = { from: form.lev, to: to, most: most, room: room, sym: m.symbol, side: form.side, margin: form.margin };
+    form.lev = to;
+    form.levCustom = LEV_CHIPS.indexOf(to) < 0;
+    lsSet(LS.lev + m.symbol, String(to));
+    var li = $('levInput'); if (li) li.value = String(to);
+    renderLeverage(); renderForm();
+  }
+
+  /* The box over OPEN after fitLeverage: the new leverage, the room that set it, and YES to place the
+     trade as it now stands. It goes once the trade it describes changes (coin, side, amount, leverage)
+     or is placed, and stays hidden while OPEN is off for another reason. */
+  function renderLevFit(enabled) {
+    var box = $('levFitBox');
+    if (!box) return;
+    var f = ui.levFit, m = state.market;
+    if (f && (!m || f.sym !== m.symbol || f.side !== form.side || f.margin !== form.margin || f.to !== form.lev)) f = ui.levFit = null;
+    var on = !!f && enabled && !tk.phase;
+    var key = on ? [f.sym, f.side, f.margin, f.from, f.to, Math.floor(f.room)].join('|') : '';
+    box.hidden = !on;
+    if (box.getAttribute('data-key') === key) return;
+    box.setAttribute('data-key', key);
+    box.textContent = '';
+    if (!on) return;
+    var sides = f.side === 'long' ? 'longs' : 'shorts';
+    var x = el('button', 'lev-fit-x', '×');
+    x.type = 'button'; x.setAttribute('aria-label', 'Hide this note');
+    x.addEventListener('click', function () { ui.levFit = null; renderAction(); });
+    box.appendChild(x);
+    box.appendChild(el('b', 'lev-fit-h', 'Leverage lowered to ' + f.to + 'x'));
+    box.appendChild(el('p', null,
+      fmtUsdShort(f.margin) + ' at ' + f.from + 'x is a ' + fmtUsdShort(f.margin * f.from) + ' position, and ' + f.sym + ' ' + sides +
+      ' have room for ' + fmtUsdShort(f.room) + ' right now, so ' + f.most + 'x is the most this trade can take.' +
+      (f.to < f.most ? ' You are one under, in case the room shrinks before it fills.' : '')));
+    box.appendChild(el('p', 'lev-fit-liq', 'At ' + f.to + 'x a ' + fmtMove(bustMovePct(f.to)) + '% move against you liquidates it.'));
+    var row = el('div', 'lev-fit-ask');
+    row.appendChild(el('span', null, 'Still place trade?'));
+    var yes = el('button', 'btn btn-go ' + (f.side === 'long' ? 'go-long' : 'go-short') + ' lev-fit-yes', 'YES');
+    yes.type = 'button';
+    yes.addEventListener('click', function () { onAction(true); });
+    row.appendChild(yes);
+    box.appendChild(row);
+  }
+
   /* Problems with the trade itself, in plain words, or null when it can go. */
   function orderProblem() {
     var m = state.market;
@@ -2394,6 +2451,7 @@
       label = 'Enter an amount'; disabled = true;
     } else {
       setup = false;
+      fitLeverage();
       cls += form.side === 'long' ? ' go-long' : ' go-short';
       problem = orderProblem();
       if (problem) { disabled = true; note = problem; err = true; }
@@ -2425,6 +2483,7 @@
     btn.disabled = disabled;
     if (hint) { hint.textContent = tk.phase ? '' : note; hint.classList.toggle('is-err', err && !tk.phase); }
     renderTicketNotice(notice, alt);
+    renderLevFit(!setup && !disabled && !problem);
     if (ph) { ui.phTk = { problem: problem, notice: notice, alt: alt, setup: setup }; renderPhRowD(); }
     renderUsdcBanner();
     renderTicketProgress(false);
@@ -2675,7 +2734,9 @@
     Array.prototype.forEach.call(document.querySelectorAll('input[data-autofill]'), function (c) { c.checked = on; });
   }
 
-  function onAction() {
+  /* yes: the YES in the lowered-leverage box (renderLevFit), which already asked, so the big-trade
+     check and the phone's second tap are skipped */
+  function onAction(yes) {
     if (state.busy || tk.phase) return;
     if (marketBlock()) { renderAction(); return; }
     if (!window.ethers) return;
@@ -2684,6 +2745,8 @@
     if (!hasExchange() || !acct.loaded) return;
     if (acct.available < minMargin()) { openDeposit(); return; }
     if (!(form.margin > 0) || orderProblem()) { renderAction(); return; }
+    ui.levFit = null;
+    if (yes === true) { if (lim.type === 'limit' && lim.firing === null && isDesk()) placeLimit(); else submitOpen(); return; }
     if (lim.type === 'limit' && lim.firing === null && isDesk()) {
       /* the big-trade check happens here, at placement: nobody is watching when a limit fires */
       if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') { confirmOpen().then(function (yes) { if (yes && !state.busy && !tk.phase && !orderProblem()) placeLimit(); }); return; }

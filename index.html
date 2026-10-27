@@ -23,6 +23,17 @@
     /* Page-specific rules only. Tokens and components come from paper.css?v=intuitive2. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
+    /* The lowered-leverage box over OPEN (fitLeverage / renderLevFit): what changed, why, and YES */
+    .lev-fit { position: relative; padding: 10px 34px 10px 12px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); font-size: var(--text-sm); line-height: 1.45; }
+    .lev-fit[hidden] { display: none; }
+    .lev-fit-h { display: block; margin-bottom: 2px; font-size: var(--text-md); }
+    .lev-fit p { margin: 0 0 4px; }
+    .lev-fit-liq { color: var(--ink-muted); }
+    .lev-fit-ask { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-weight: 600; }
+    .lev-fit-yes { min-width: 88px; min-height: 38px; padding: 6px 18px; font-weight: 800; letter-spacing: 0.04em; }
+    .lev-fit-x { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border: 0; background: none; color: var(--ink-muted); font-size: 18px; line-height: 1; cursor: pointer; }
+    .lev-fit-x:hover, .lev-fit-x:focus-visible { color: var(--ink); }
+
     /* Market bar: coin button (DOGE ▾ up to 1000x), live price, two stats, How to trade */
     .market-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 0 0 var(--gap); }
     .market-select { position: relative; flex: none; }
@@ -858,6 +869,7 @@
             </div>
 
             <div class="ticket-go" id="ticketGo">
+              <div class="lev-fit" id="levFitBox" role="status" aria-live="polite" hidden></div>
               <div class="ticket-notice" id="ticketNotice" hidden></div>
               <button class="btn btn-lg btn-block btn-go go-setup" id="actionBtn" type="submit">Connect wallet</button>
               <div class="ticket-progress" id="ticketProgress" hidden aria-live="polite"></div>
@@ -1327,7 +1339,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=tpsl2" defer></script>
+  <script src="trade.js?v=levfit2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
