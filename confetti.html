@@ -19,6 +19,20 @@
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
+  <style>
+    /* The FETTI contract address, big, at the top of the page: copy it in one tap. */
+    .cf-ca-wrap { padding-top: var(--gap); }
+    .cf-ca { margin: 0; padding: 18px 20px 16px; background: var(--panel); border: 1px solid var(--rule-strong); border-left: 6px solid var(--accent); }
+    .cf-ca-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .cf-ca-head b { color: var(--ink); font-weight: 600; }
+    .cf-ca-addr { display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none; color: var(--ink); cursor: copy; text-align: left; font-family: var(--font-mono); font-weight: 500; font-size: clamp(22px, 3.4vw, 46px); line-height: 1.15; letter-spacing: -0.01em; overflow-wrap: anywhere; word-break: break-all; }
+    .cf-ca-addr:hover { color: var(--accent); }
+    .cf-ca-addr:focus-visible { outline: none; box-shadow: var(--focus); }
+    .cf-ca-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 14px; }
+    .cf-ca-row a { font-size: var(--text-md); color: var(--ink-muted); }
+    .cf-ca-copy.is-done { background: var(--pos); border-color: var(--pos); color: var(--page); }
+    @media (max-width: 640px) { .cf-ca { padding: 14px 14px 12px; } }
+  </style>
 </head>
 <body class="tabs-page" data-page="confetti">
 
@@ -38,6 +52,17 @@
     <button class="ph-only ph-acct is-out" id="phAcct" type="button" aria-haspopup="dialog" aria-controls="phAcctSheet"><span class="ph-acct-txt" id="phAcctTxt">Connect</span><span class="ph-acct-caret" aria-hidden="true"></span></button>
     <button class="ph-only ph-menu" id="phMenu" type="button" aria-label="Menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="phMenuSheet"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></button>
   </header>
+
+  <div class="container cf-ca-wrap">
+    <section class="cf-ca" aria-label="FETTI contract address">
+      <div class="cf-ca-head"><b>$FETTI contract address</b><span>HyperEVM (chain 999)</span></div>
+      <button class="cf-ca-addr" id="cfCa" type="button" title="Copy the address">0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2</button>
+      <div class="cf-ca-row">
+        <button class="btn btn-sm btn-accent cf-ca-copy" id="cfCaCopy" type="button">Copy address</button>
+        <a href="https://hyperevmscan.io/token/0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2" target="_blank" rel="noopener">View on hyperevmscan ↗</a>
+      </div>
+    </section>
+  </div>
 
   <main class="container tab-main">
     <div class="tab-title"><h1>$FETTI</h1><span class="sub">stake FETTI, earn a share of the fees</span></div>
@@ -212,5 +237,26 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="tabs.js?v=pool2" defer></script>
   <script src="points.js?v=phone2" defer></script>
+  <script>
+    /* Copy the FETTI address from the big banner (the address itself or the button). */
+    (function () {
+      var ca = '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2';
+      var btn = document.getElementById('cfCaCopy');
+      function copy() {
+        var done = function () {
+          btn.textContent = 'Copied';
+          btn.classList.add('is-done');
+          setTimeout(function () { btn.textContent = 'Copy address'; btn.classList.remove('is-done'); }, 1600);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ca).then(done, function () { window.prompt('Copy the FETTI address', ca); });
+        } else {
+          window.prompt('Copy the FETTI address', ca);
+        }
+      }
+      btn.addEventListener('click', copy);
+      document.getElementById('cfCa').addEventListener('click', copy);
+    })();
+  </script>
 </body>
 </html>
