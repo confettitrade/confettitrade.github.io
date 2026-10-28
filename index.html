@@ -251,6 +251,10 @@
     .refer-form .input { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
     .refer-form[hidden] { display: none; }
     .refer .hint { text-align: left; margin-top: 6px; }
+    .refer-more { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rule); }
+    .refer-more[hidden] { display: none; }
+    .refer-vault .kv-key a { font-family: var(--font-mono); color: inherit; text-decoration-color: var(--rule); }
+    .refer-vault .kv-val { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 8px; }
 
     /* Contracts & status: closed under the page, opened from the footer link */
     .status-box { margin-top: var(--gap); }
@@ -998,6 +1002,16 @@
                 <button class="btn btn-primary" type="submit" id="referSubmit">Register</button>
               </form>
               <div class="hint" id="referHint" aria-live="polite">Connect a wallet to get a code.</div>
+              <div class="refer-more" id="rfMore" hidden>
+                <div class="kv"><span class="kv-key">More codes</span><span class="kv-val" id="rfMoreTotal">—</span></div>
+                <div id="rfVaults"></div>
+                <form class="refer-form" id="vaultForm" autocomplete="off" novalidate>
+                  <input class="input" id="vaultCode" type="text" maxlength="16" placeholder="another_code" spellcheck="false" aria-label="New referral code">
+                  <button class="btn" type="submit" id="vaultSubmit">Create code</button>
+                </form>
+                <div class="quick"><button class="btn btn-primary" type="button" id="vaultClaim" hidden>Claim</button></div>
+                <div class="hint" id="vaultHint" aria-live="polite">Each extra code is a small contract of its own that pays only you. Its earnings wait there until you claim them to this wallet.</div>
+              </div>
             </div>
           </div>
         </div>

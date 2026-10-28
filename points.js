@@ -49,9 +49,11 @@
   }
 
   /* house: an array of lowercase addresses or an {address: 1} map; rejected: the snapshot's list (or none) */
-  function Engine(rules, wallets, house, rejected) {
+  function Engine(rules, wallets, house, rejected, vaults) {
     this.r = rules;
     this.W = wallets || {};
+    /* code vault -> owner (CodeVaultFactory): a vault is the referrer on chain, its owner gets the points */
+    this.vo = vaults || {};
     this.house = {};
     var self = this;
     if (Array.isArray(house)) house.forEach(function (a) { self.house[String(a).toLowerCase()] = 1; });
@@ -67,6 +69,11 @@
   };
 
   /* the holder multiplier at time t (house bots: 1); with t0, the age part averaged over [t0, t] */
+  /* the wallet a referral address stands for: a code vault's owner, else the address itself */
+  Engine.prototype.owner = function (a) {
+    return Object.prototype.hasOwnProperty.call(this.vo, a) ? this.vo[a] : a;
+  };
+
   Engine.prototype.mult = function (a, t, t0) {
     var w = this.w(a), s = w.stk[0];
     if (!(s > 0) || this.house[a] || !this.r.holder) return 1;
@@ -242,23 +249,30 @@
       this.award(a, 'liquidation', Math.min(lc.flat + ev.m * lc.perUsdc, lc.max), t, out);
       if (ev.r !== a) this.award(ev.r, 'liquidator', lc.liquidatorFlat, t, out);
     } else if (k === 'code') {
+      var vault = Object.prototype.hasOwnProperty.call(this.vo, a);
+      a = this.owner(a);   /* a vault's code is one more code of its owner's: the code points come once */
       w = this.w(a);
       if (!w.code) {
         w.code = ev.c;
         this.award(a, 'code', r.code.flat, t, out);
-      } else {
+      } else if (!vault) {   /* an extra code never replaces the link the owner already shows */
         w.code = ev.c;
       }
     } else if (k === 'refset') {
       w = this.w(a);
-      if (!w.by && ev.r !== ZERO && ev.r !== a) {
-        w.by = ev.r;
-        this.w(ev.r).kids.push(a);
+      var by = this.owner(ev.r);   /* through a vault of one's own it is a self-referral: no referrer */
+      if (!w.by && ev.r !== ZERO && by !== a) {
+        w.by = by;
+        this.w(by).kids.push(a);
         if (w.fn) this.fundedReferral(a, t, out);
       }
     } else if (k === 'paid') {
+      a = this.owner(a);
+      if (a === this.owner(ev.tr) || a === ev.tr) return out;   /* a vault paying its owner's own fees back */
       this.w(a).rf += ev.v;
       this.award(a, 'refFees', ev.v * r.referral.feePerUsdc, t, out, false);
+    } else if (k === 'vault') {
+      this.vo[ev.v] = a;
     } else if (k === 'stake') {
       this.accrue(a, t, out);
       var ws = this.w(a), st = ws.stk;
@@ -299,7 +313,9 @@
     '0x5f7165288eef601591cf549e15ff19ef9060b7f71b9c115be946fa1fe7ebf68a': 'refset',
     '0x9e71bc8eea02a63969f509818f2dafb9254532904319f9dbda79b67bd34a5f3d': 'stake',
     '0x0f5bb82176feb1b5e747e28471aa92156a04d9f3ab9f45f28e2d704232b93f75': 'unstake',
-    '0x7854bf0fa996684a07445d1f0eef8519c916412e98160206439c9c82fa566a69': 'xfer'
+    '0x7854bf0fa996684a07445d1f0eef8519c916412e98160206439c9c82fa566a69': 'xfer',
+    /* CodeVaultFactory.VaultCreated(address indexed owner, address indexed vault, string code) */
+    '0x3585389649c4946deb9f3d591291e9a7058addcb51d91b4cad87e5810fd8909b': 'vault'
   };
   var TOPIC_LIST = Object.keys(TOPICS);
   /* position ids per generation, as ops/points/indexer.py keeps them: v4 "4:<id>", v3 the plain number */
@@ -394,7 +410,8 @@
       for (var j = 0; j < hex.length; j += 2) s += String.fromCharCode(parseInt(hex.slice(j, j + 2), 16));
       ev.c = s;
     }
-    else if (k === 'paid') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
+    else if (k === 'paid') { ev.a = taddr(lg.topics[1]); ev.tr = taddr(lg.topics[2]); ev.v = usd(word(d, 0)); }
+    else if (k === 'vault') { ev.a = taddr(lg.topics[1]); ev.v = taddr(lg.topics[2]); }
     else if (k === 'refset') { ev.a = taddr(lg.topics[1]); ev.r = taddr(lg.topics[2]); }
     else if (k === 'stake' || k === 'unstake') { ev.a = taddr(lg.topics[1]); ev.v = Number(word(d, 0)) / 1e18; }
     else if (k === 'xfer') {
@@ -415,7 +432,7 @@
   function fetchLogs(from, to) {
     var c = S.cfg.contracts;
     /* a v4 config also names the v3 contracts (v3Exchange / v3Referrals / v3Staking): they are followed too */
-    var addrs = [c.exchange, c.referrals, c.staking, c.v3Exchange, c.v3Referrals, c.v3Staking]
+    var addrs = [c.exchange, c.referrals, c.staking, c.v3Exchange, c.v3Referrals, c.v3Staking, c.codeVaultFactory]
       .filter(function (x) { return ADDR_RE.test(String(x || '')) && !/^0x0{40}$/.test(x); })
       .map(function (x) { return x.toLowerCase(); });
     if (S.relay) addrs.push(S.relay);
@@ -444,7 +461,7 @@
     return getJson('points.json?t=' + Math.floor(Date.now() / 30000)).then(function (snap) {
       if (!first && S.snap && snap.generatedTs <= S.snap.generatedTs) return;
       S.snap = snap;
-      S.eng = new Engine(S.rules, snap.wallets, S.house, snap.rejected);
+      S.eng = new Engine(S.rules, snap.wallets, S.house, snap.rejected, snap.vaults);
       S.snapBlock = snap.block;
       S.cursor = snap.block;
       S.headTs = snap.blockTime; S.headSeenAt = Date.now();
@@ -474,6 +491,7 @@
         return Promise.all(blocks.map(blockTs)).then(function () { return evs; });
       }).then(function (evs) {
         var announce = S.live;
+        evs.forEach(function (e) { if (e.k === 'vault') S.eng.vo[e.v] = e.a; });
         evs.forEach(function (e) {
           e.t = S.ts[e.b];
           var awards = S.eng.apply(e);

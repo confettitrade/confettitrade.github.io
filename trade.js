@@ -154,7 +154,8 @@
     v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
     v3Exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
     v3Staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
-    v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b'
+    v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b',
+    codeVaultFactory: '0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d'
   };
   /* ---- END PINNED CONTRACTS ---- */
   var USDC = CONTRACTS.usdc;
@@ -598,6 +599,25 @@
     'error ShareOutOfBounds(uint16 shareBps)'
   ];
 
+  /* CodeVaultFactory.sol: extra referral codes, one small CodeVault contract per code that pays
+     its owner. cfg.contracts.codeVaultFactory; without it the "More codes" block stays hidden. */
+  var VAULT_FACTORY_ABI = [
+    'function create(string code) returns (address)',
+    'function claimAll(address[] vaults) returns (uint256)',
+    'function vaultsOf(address owner) view returns (address[])',
+    'function exchange() view returns (address)',
+    'function referrals() view returns (address)',
+    'event VaultCreated(address indexed owner, address indexed vault, string code)',
+    'error ZeroAddress()',
+    'error NotAVault(address vault)',
+    'error CodeTaken(string code)'
+  ];
+  var CODE_VAULT_ABI = [
+    'function code() view returns (string)',
+    'function earned() view returns (uint256)',
+    'function claimable() view returns (uint256)'
+  ];
+
   var ERC20_ABI = [
     'function approve(address spender, uint256 value) returns (bool)',
     'function allowance(address owner, address spender) view returns (uint256)',
@@ -668,6 +688,7 @@
 
   var exIface = null; /* ethers.Interface for EXCHANGE_ABI */
   var refIface = null; /* ethers.Interface for REFERRALS_ABI */
+  var vaultIface = null; /* ethers.Interface for VAULT_FACTORY_ABI */
   var routerIface = null; /* ROUTER_ABI */
   var proxyIface = null; /* PROXY_ABI */
 
@@ -802,7 +823,7 @@
 
   /* Referral state for the connected account: the stored ?ref code, its resolved address, the
      account's own code / earnings and whether its referrer is already locked on chain. */
-  var ref = { code: lsGet('confetti.ref') || '', addr: null, locked: null, referrer: null, myCode: '', earned: null, loaded: false };
+  var ref = { code: lsGet('confetti.ref') || '', addr: null, locked: null, referrer: null, myCode: '', earned: null, loaded: false, vaults: [], vaultsLoaded: false };
 
   var read = { provider: null, logProvider: null, exchange: null, referrals: null, router: null, factory: null, v2: null, v3: null };
 
@@ -4241,6 +4262,7 @@
     var E = window.ethers;
     exIface = new E.Interface(EXCHANGE_ABI);
     refIface = new E.Interface(REFERRALS_ABI);
+    vaultIface = new E.Interface(VAULT_FACTORY_ABI);
     routerIface = new E.Interface(ROUTER_ABI);
     proxyIface = new E.Interface(PROXY_ABI);
     read.provider = makeProvider(cfg.rpcUrl);
@@ -4383,8 +4405,26 @@
         read.router = new E.Contract(cfg.contracts.sessionRouter, ROUTER_ABI, read.provider);
       }
       renderStatus();
-      return loadFactory();
+      return Promise.all([loadFactory(), loadVaultFactory()]);
     });
+  }
+
+  /* The code vault factory (pinned), kept only if it makes codes on this exchange's registry;
+     until then, or without one, the "More codes" block stays hidden. */
+  function loadVaultFactory() {
+    if (DEMO) return Promise.resolve();
+    var a = cfg.contracts.codeVaultFactory;
+    if (!isAddr(a) || !read.exchange || read.vaultFactory) return Promise.resolve();
+    var f = new window.ethers.Contract(a, VAULT_FACTORY_ABI, read.provider);
+    var reg = (house.addrs && house.addrs.referrals) || cfg.contracts.referrals;
+    return Promise.all([f.exchange(), f.referrals()]).then(function (r) {
+      if (String(r[0]).toLowerCase() === cfg.contracts.exchange.toLowerCase() && isAddr(reg) && String(r[1]).toLowerCase() === reg.toLowerCase()) {
+        read.vaultFactory = f;
+        if (wallet.account) return loadVaults(wallet.account);
+      } else {
+        console.error('contracts.codeVaultFactory ' + a + ' makes codes for ' + r[0] + ', not this exchange; extra codes are off.');
+      }
+    }).catch(function () { /* unreadable: the block stays hidden */ });
   }
 
   /* The deposit factory from config, kept only if it deposits into this exchange in native USDC. */
@@ -5003,7 +5043,7 @@
 
   /* A custom error from any contract the page talks to (exchange, referrals, router, proxy), or null. */
   function parseAnyError(data) {
-    var ifaces = [exIface, refIface, routerIface, proxyIface];
+    var ifaces = [exIface, refIface, routerIface, proxyIface, vaultIface];
     for (var i = 0; i < ifaces.length; i++) {
       if (!ifaces[i]) continue;
       try { var p = ifaces[i].parseError(data); if (p) return p; } catch (e) { /* not this one */ }
@@ -6191,7 +6231,7 @@
     var ca = $('closeAllBtn');
     if (ca) ca.disabled = state.busy;
     ['depositSubmit', 'withdrawSubmit', 'sessionSubmit'].forEach(function (id) { var b = $(id); if (b) b.disabled = state.busy; });
-    renderSession(); renderDepositModal();
+    renderSession(); renderDepositModal(); renderVaults();
   }
 
   function txLink(hash) { return DEMO ? null : { href: explorer('tx', hash), label: 'view' }; }
@@ -6235,6 +6275,7 @@
   function referrerArg() {
     if (ref.locked || !isAddr(ref.addr)) return ZERO;
     if (wallet.account && ref.addr.toLowerCase() === wallet.account.toLowerCase()) return ZERO;
+    if (wallet.account && ref.vaultsFor === wallet.account && ref.vaults.some(function (v) { return v.addr.toLowerCase() === ref.addr.toLowerCase(); })) return ZERO;
     return ref.addr;
   }
 
@@ -8157,6 +8198,7 @@
     if (!rc || !wallet.account) { renderRefer(); return Promise.resolve(); }
     var a = wallet.account;
     var none = function () { return null; };
+    var vaults = loadVaults(a);
     return Promise.all([
       rc.codeOf(a).catch(none), rc.referralEarned(a).catch(none), rc.referrerOf(a).catch(none), rc.referrerLocked(a).catch(none),
       rc.referralShareBps().catch(none),
@@ -8171,12 +8213,125 @@
       ref.addr = isAddr(r[5]) ? r[5] : null;
       ref.loaded = true;
       renderRefer(); renderStatus();
+      return vaults;
     });
+  }
+
+  /* The wallet's extra codes (CodeVaultFactory): each vault's code, what it has earned in all
+     and what a claim would send now (shares still in the payout queue arrive later). */
+  function loadVaults(a) {
+    var f = read.vaultFactory;
+    if (!f || DEMO) { ref.vaults = []; ref.vaultsLoaded = false; renderVaults(); return Promise.resolve(); }
+    var none = function () { return null; };
+    return f.vaultsOf(a).then(function (list) {
+      return Promise.all(Array.prototype.map.call(list, function (v) {
+        var c = new window.ethers.Contract(v, CODE_VAULT_ABI, read.provider);
+        return Promise.all([c.code().catch(none), c.earned().catch(none), c.claimable().catch(none)]).then(function (r) {
+          return { addr: v, code: r[0] || '', earned: r[1] == null ? null : usd6ToNum(r[1]), claimable: r[2] == null ? null : usd6ToNum(r[2]) };
+        });
+      }));
+    }).then(function (rows) {
+      if (wallet.account !== a) return;
+      ref.vaults = rows;
+      ref.vaultsFor = a;
+      ref.vaultsLoaded = true;
+      ref.vaultsErr = false;
+      renderVaults();
+    }).catch(function () {
+      /* keep the last list; a wallet with none loaded yet says so */
+      if (wallet.account === a) { ref.vaultsErr = true; renderVaults(); }
+    });
+  }
+
+  function copyLink(link) {
+    var done = function () { toast('Copied ' + link); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, function () { toast(link); });
+    else toast(link);
+  }
+
+  function vaultsToClaim() {
+    return ref.vaults.filter(function (v) { return v.claimable != null && v.claimable > 0; });
+  }
+
+  function renderVaults() {
+    var box = $('rfMore');
+    if (!box) return;
+    if (DEMO || !read.vaultFactory || !wallet.account) { box.setAttribute('hidden', ''); return; }
+    box.removeAttribute('hidden');
+    if (ref.vaultsFor !== wallet.account) { ref.vaults = []; ref.vaultsLoaded = false; }
+    var list = $('rfVaults');
+    list.textContent = '';
+    var earned = 0;
+    ref.vaults.forEach(function (v) {
+      if (v.earned != null) earned += v.earned;
+      var row = el('div', 'kv refer-vault');
+      var k = el('span', 'kv-key');
+      var a = el('a', null, v.code || shortAddr(v.addr));
+      if (v.code) { a.href = refLink(v.code); a.target = '_blank'; a.rel = 'noopener'; }
+      k.appendChild(a);
+      var val = el('span', 'kv-val');
+      var text = (v.earned != null ? fmtUsd(v.earned) : '—') + ' earned';
+      if (v.claimable != null && v.claimable > 0) text += ' · ' + fmtUsd(v.claimable) + ' to claim';
+      val.appendChild(el('span', null, text));
+      if (v.code) {
+        var b = el('button', 'btn btn-sm', 'Copy link');
+        b.type = 'button';
+        b.addEventListener('click', function () { copyLink(refLink(v.code)); });
+        val.appendChild(b);
+      }
+      row.appendChild(k); row.appendChild(val);
+      list.appendChild(row);
+    });
+    var n = ref.vaults.length;
+    setText('rfMoreTotal', !ref.vaultsLoaded ? (ref.vaultsErr ? 'not loaded yet, retrying' : '…') : n ? n + (n === 1 ? ' code · ' : ' codes · ') + fmtUsd(earned) + ' earned' : 'none yet');
+    var due = vaultsToClaim().reduce(function (s, v) { return s + v.claimable; }, 0);
+    var claim = $('vaultClaim');
+    if (claim) {
+      if (due > 0) { claim.textContent = 'Claim ' + fmtUsd(due) + ' to this wallet'; claim.removeAttribute('hidden'); }
+      else claim.setAttribute('hidden', '');
+      claim.disabled = state.busy;
+    }
+    var sub = $('vaultSubmit');
+    if (sub) sub.disabled = state.busy;
+  }
+
+  function vaultFactoryWrite() {
+    return new window.ethers.Contract(read.vaultFactory.target, VAULT_FACTORY_ABI, wallet.signer);
+  }
+
+  function submitVault(code) {
+    if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
+    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
+    if (!read.vaultFactory) { toast('Extra codes are not available yet.', 'err'); return Promise.resolve(); }
+    setBusy(true);
+    return sendTx('Create code ' + code, vaultFactoryWrite().create, [code]).then(function (r) {
+      toast('Code ' + code + ' is yours: ' + refLink(code), 'ok', txLink(r.hash));
+      var input = $('vaultCode'); if (input) input.value = '';
+      return loadReferral();
+    }).catch(function (e) {
+      toast('Create failed: ' + describeError(e), 'err');
+    }).then(function () { setBusy(false); renderVaults(); });
+  }
+
+  function submitVaultClaim() {
+    if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
+    try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
+    var due = vaultsToClaim();
+    if (!due.length) return Promise.resolve();
+    var total = due.reduce(function (s, v) { return s + v.claimable; }, 0);
+    setBusy(true);
+    return sendTx('Claim referral earnings', vaultFactoryWrite().claimAll, [due.map(function (v) { return v.addr; })]).then(function (r) {
+      toast('Sent about ' + fmtUsd(total) + ' USDC to your wallet.', 'ok', txLink(r.hash));
+      return Promise.all([loadReferral(), refreshWalletUsdc()]);
+    }).catch(function (e) {
+      toast('Claim failed: ' + describeError(e), 'err');
+    }).then(function () { setBusy(false); renderVaults(); });
   }
 
   function refLink(code) { return SITE_URL + '?ref=' + code; }
 
   function renderRefer() {
+    renderVaults();
     var formEl = $('referForm');
     var hint = $('referHint');
     var linkEl = $('rfLink');
@@ -8258,13 +8413,36 @@
     if (copy) {
       copy.addEventListener('click', function () {
         if (!ref.myCode) return;
-        var link = refLink(ref.myCode);
-        var done = function () { toast('Copied ' + link); };
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, function () { toast(link); });
-        else toast(link);
+        copyLink(refLink(ref.myCode));
       });
     }
+    var vForm = $('vaultForm');
+    var vInput = $('vaultCode');
+    var vHint = $('vaultHint');
+    if (vForm) {
+      vForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        if (state.busy || vaultChecking) return;
+        var code = String(vInput.value || '').trim().toLowerCase();
+        if (!REF_RE.test(code)) { vHint.textContent = '3 to 16 characters: a-z, 0-9, underscore.'; vHint.classList.add('is-err'); return; }
+        vHint.classList.remove('is-err');
+        vHint.textContent = VAULT_HINT;
+        var rc = referralsRead();
+        var check = rc ? rc.codeToReferrer(code).catch(function () { return ZERO; }) : Promise.resolve(ZERO);
+        vaultChecking = true;
+        check.then(function (owner) {
+          vaultChecking = false;
+          if (isAddr(owner)) { vHint.textContent = 'Code "' + code + '" is taken.'; vHint.classList.add('is-err'); return; }
+          return submitVault(code);
+        }, function () { vaultChecking = false; });
+      });
+    }
+    var vClaim = $('vaultClaim');
+    if (vClaim) vClaim.addEventListener('click', function () { if (!state.busy) submitVaultClaim(); });
   }
+
+  var vaultChecking = false;
+  var VAULT_HINT = 'Each extra code is a small contract of its own that pays only you. Its earnings wait there until you claim them to this wallet.';
 
   /* ---- tabs, toasts, theme ------------------------------------------------------------ */
 

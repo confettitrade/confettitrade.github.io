@@ -43,7 +43,8 @@
     v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
     v3Exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
     v3Staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
-    v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b'
+    v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b',
+    codeVaultFactory: '0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d'
   };
   /* ---- END PINNED CONTRACTS ---- */
   /* HyperSwap V2's FETTI / WHYPE pool for the Confetti page's buy / sell box. External contracts,
