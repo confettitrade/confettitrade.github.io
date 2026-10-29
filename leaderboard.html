@@ -1,23 +1,29 @@
 <!doctype html>
-<html lang="en" data-theme="night">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — leaderboard</title>
   <meta name="description" content="Confetti leaderboards: points and realised PnL, read from HyperEVM.">
-  <meta name="theme-color" content="#0d1229">
+  <meta name="theme-color" content="#f4ecd8">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=mono1">
+  <link rel="stylesheet" href="paper.css?v=theme1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
-    /* Night only. */
-    document.documentElement.setAttribute('data-theme', 'night');
+    /* Paper (cream) by default, night as an option (the owner, 2026-10-29: "make cream the default with night as an
+       option"); a saved night theme is applied before first paint so the page never flashes cream. */
+    try {
+      if (localStorage.getItem('confetti.theme') === 'night') {
+        document.documentElement.setAttribute('data-theme', 'night');
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d1229');
+      }
+    } catch (e) { /* storage blocked: stay on paper */ }
   </script>
 </head>
 <body class="tabs-page" data-page="leaderboard">
@@ -69,6 +75,7 @@
     <a href="contracts.html">contracts</a>
       <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
       <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+      <button class="btn btn-sm btn-ghost theme-toggle" id="themeToggle" type="button" aria-pressed="false">Night</button>
     </footer>
   </main>
 
@@ -86,6 +93,7 @@
       <a href="leaderboard.html" aria-current="page">Leaderboard</a>
       <a class="ph-menu-sub" href="docs.html">Docs</a>
       <a class="ph-menu-sub" href="contracts.html">Contracts</a>
+      <button class="ph-menu-sub ph-menu-theme" type="button" data-theme-toggle aria-pressed="false">Night</button>
     </nav>
   </dialog>
 
@@ -108,7 +116,7 @@
     </div>
   </dialog>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="tabs.js?v=desk2" defer></script>
+  <script src="tabs.js?v=theme1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

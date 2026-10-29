@@ -2331,6 +2331,15 @@ main > .notice { margin-bottom: var(--gap); }
   .ph-menu-list a:active { background: var(--sunken); }
   .ph-menu-list a:focus-visible { outline: none; box-shadow: inset var(--focus); }
   .ph-menu-list .ph-menu-sub { color: var(--ink-muted); }
+  /* the theme switch: a menu row like the links, a button (it changes the page, it goes nowhere) */
+  .ph-menu-list .ph-menu-theme {
+    display: flex; align-items: center; min-height: 52px; width: 100%; margin: 0; text-align: left;
+    padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+    border: 0; border-bottom: 1px solid var(--rule); background: none; border-radius: 0;
+    font-family: var(--font-ui); font-size: 16px; font-weight: 500; -webkit-tap-highlight-color: transparent; cursor: pointer;
+  }
+  .ph-menu-list .ph-menu-theme:active { background: var(--sunken); }
+  .ph-menu-list .ph-menu-theme:focus-visible { outline: none; box-shadow: inset var(--focus); }
   .ph-menu-list a:not(.ph-menu-sub) + .ph-menu-sub { margin-top: 8px; }
   .ph-menu-list a:last-child { border-bottom: 0; }
 
