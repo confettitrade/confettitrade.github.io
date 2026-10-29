@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!doctype html>
 <html lang="en" data-theme="night">
 <head>
@@ -260,3 +261,221 @@
   </script>
 </body>
 </html>
+=======
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — stake</title>
+  <meta name="description" content="Stake FETTI on HyperEVM and earn a share of the fees in USDC: stake, unstake, claim.">
+  <meta name="theme-color" content="#0d1229">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=desk3">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Night only. */
+    document.documentElement.setAttribute('data-theme', 'night');
+  </script>
+</head>
+<body class="tabs-page" data-page="confetti">
+
+  <header class="header container-fluid ph-head">
+    <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+    <nav class="nav nav-main" aria-label="Primary">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html" aria-current="page">$FETTI</a>
+      <a href="leaderboard.html">Leaderboard</a>
+    </nav>
+    <div class="header-actions">
+      <button class="btn btn-sm btn-accent" id="connectBtn" type="button">Connect</button>
+    </div>
+    <a class="ph-only ph-pts is-idle" id="phPts" href="trade.html#pointsPanel" aria-label="Points"><i class="ph-pts-dot" aria-hidden="true"></i><span class="ph-pts-val" id="phPtsVal">Earn<span class="ph-pts-word"> points</span></span><span class="ph-pts-delta" id="phPtsDelta" aria-hidden="true"></span></a>
+    <button class="ph-only ph-acct is-out" id="phAcct" type="button" aria-haspopup="dialog" aria-controls="phAcctSheet"><span class="ph-acct-txt" id="phAcctTxt">Connect</span><span class="ph-acct-caret" aria-hidden="true"></span></button>
+    <button class="ph-only ph-menu" id="phMenu" type="button" aria-label="Menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="phMenuSheet"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></button>
+  </header>
+
+  <main class="container tab-main">
+    <div class="tab-title"><h1>$FETTI</h1><span class="sub">stake FETTI, earn a share of the fees</span></div>
+
+    <div class="tab-grid">
+      <section class="panel cf-you" aria-label="Your stake">
+        <div class="panel-head"><span>You</span></div>
+        <div class="panel-body">
+          <div class="kv cf-fact"><span class="kv-key">FETTI</span><span class="kv-val" id="cfWallet">—</span></div>
+          <div class="kv cf-fact"><span class="kv-key">Staked</span><span class="kv-val" id="cfStaked">—</span></div>
+          <div class="kv cf-fact"><span class="kv-key">Warming</span><span class="kv-val" id="cfWarming">—</span></div>
+          <div class="kv cf-fact cf-fact-share"><span class="kv-key">Share of pool</span><span class="kv-val" id="cfShare">—</span></div>
+          <div class="kv cf-fact cf-fact-earned"><span class="kv-key">Unclaimed</span><span class="kv-val" id="cfEarned">—</span></div>
+
+          <div class="act-block" id="moveBlock" hidden>
+            <div id="moveStake" hidden>
+              <div class="kv"><span class="kv-key">Staked on v3</span><span class="kv-val" id="cfV3Staked">—</span></div>
+              <div class="act"><button class="btn btn-sm btn-block btn-primary" id="moveBtn" type="button" disabled>Move to v4 staking</button></div>
+            </div>
+            <div id="v3BalRow" hidden>
+              <div class="kv"><span class="kv-key">v3 balance</span><span class="kv-val"><span id="cfV3Bal">—</span> · <a href="v3.html">Withdraw on v3</a></span></div>
+            </div>
+          </div>
+
+          <!-- Phones (<= 640 px): the one stake card (build 9). The Stake / Unstake toggle drives the two
+               forms below it (stakeAmount + stakeBtn, unstakeAmount + unstakeBtn), which are hidden there;
+               the facts above, the hint and the Claim button are laid into the card by paper.css. -->
+          <div class="ph-only cf-card" id="cfCard">
+            <div class="cf-seg" role="group" aria-label="Stake or unstake">
+              <button class="cf-seg-item" id="cfModeStake" type="button" aria-pressed="true">Stake</button>
+              <button class="cf-seg-item" id="cfModeUnstake" type="button" aria-pressed="false">Unstake</button>
+            </div>
+            <label class="cf-amt" for="cfAmount">
+              <input class="cf-amt-in" id="cfAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false" aria-label="Amount to stake, in FETTI">
+              <span class="cf-amt-unit" aria-hidden="true">FETTI</span>
+              <span class="cf-amt-mirror" id="cfAmountMirror" aria-hidden="true"></span>
+            </label>
+            <div class="cf-bal" id="cfBal">Wallet —</div>
+            <div class="cf-chips" role="group" aria-label="Part of the balance">
+              <button class="cf-chip" type="button" data-share="25" aria-pressed="false">25%</button>
+              <button class="cf-chip" type="button" data-share="50" aria-pressed="false">50%</button>
+              <button class="cf-chip" type="button" data-share="75" aria-pressed="false">75%</button>
+              <button class="cf-chip" type="button" data-share="max" aria-pressed="false">Max</button>
+            </div>
+            <button class="cf-cta" id="cfGo" type="button" disabled>Stake FETTI</button>
+          </div>
+
+          <div class="act-block cf-act-stake">
+            <label class="label" for="stakeAmount">Stake</label>
+            <div class="act">
+              <div class="input-group">
+                <input class="input" id="stakeAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false">
+                <span class="unit">FETTI</span>
+              </div>
+              <button class="btn btn-sm" id="stakeMax" type="button" disabled>Max</button>
+              <button class="btn btn-sm btn-primary" id="stakeBtn" type="button" disabled>Stake</button>
+            </div>
+          </div>
+          <div class="act-block cf-act-unstake">
+            <label class="label" for="unstakeAmount">Unstake</label>
+            <div class="act">
+              <div class="input-group">
+                <input class="input" id="unstakeAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false">
+                <span class="unit">FETTI</span>
+              </div>
+              <button class="btn btn-sm" id="unstakeMax" type="button" disabled>Max</button>
+              <button class="btn btn-sm" id="unstakeBtn" type="button" disabled>Unstake</button>
+            </div>
+          </div>
+          <div class="act-block cf-act-claim">
+            <div class="act"><button class="btn btn-sm btn-block" id="claimBtn" type="button" disabled>Claim</button></div>
+            <div class="hint" id="cfHint" aria-live="polite">Connect a wallet to stake.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel cf-pool" aria-label="Staking pool">
+        <div class="panel-head"><span>Pool</span></div>
+        <div class="panel-body">
+          <div class="kv"><span class="kv-key">APR</span><span class="kv-val" id="cfApr">—</span></div>
+          <div class="kv"><span class="kv-key">Pushed, 30d</span><span class="kv-val" id="cfPushed">—</span></div>
+          <div class="kv"><span class="kv-key">Paid to stakers</span><span class="kv-val" id="cfRewards">—</span></div>
+          <div class="kv"><span class="kv-key">Total staked</span><span class="kv-val" id="cfTotal">—</span></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel tab-section" id="swapBox" aria-label="Trade FETTI" hidden>
+      <div class="panel-head"><span>FETTI / HYPE</span></div>
+      <div class="panel-body swap-body">
+        <div>
+          <div class="kv"><span class="kv-key">Price</span><span class="kv-val" id="swPrice">—</span></div>
+          <div class="kv"><span class="kv-key">Pool</span><span class="kv-val" id="swDepth">—</span></div>
+          <div class="kv"><span class="kv-key">Wallet</span><span class="kv-val" id="swBal">—</span></div>
+          <div class="kv"><label class="kv-key" for="swSlip">Slippage</label><span class="input-group swap-slip"><input class="input" id="swSlip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><span class="unit">%</span></span></div>
+        </div>
+        <div>
+          <div class="seg" role="group" aria-label="Buy or sell">
+            <button class="seg-item seg-long" id="swBuy" type="button" aria-pressed="true">Buy</button>
+            <button class="seg-item seg-short" id="swSell" type="button" aria-pressed="false">Sell</button>
+          </div>
+          <div class="act">
+            <div class="input-group">
+              <input class="input" id="swAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false" aria-label="Amount">
+              <span class="unit" id="swUnit">HYPE</span>
+            </div>
+            <button class="btn btn-sm btn-primary" id="swBtn" type="button" disabled>Buy</button>
+          </div>
+          <div class="kv"><span class="kv-key">You get</span><span class="kv-val" id="swOut">—</span></div>
+          <div class="kv"><span class="kv-key">Min received</span><span class="kv-val" id="swMin">—</span></div>
+          <div class="hint" id="swHint" aria-live="polite"></div>
+          <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. <span id="swFee">0.3%</span> pool fee, nothing to the house. <a id="swPoolLink" target="_blank" rel="noopener" hidden>pool</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel tab-section" id="cfPushBox" aria-label="Reward pushes">
+      <div class="panel-head"><span>Pushes</span><span class="count" id="cfPushCount"></span></div>
+      <div class="dk-only dk-head" id="cfPushHead" hidden aria-hidden="true"><span>Time</span><span>From</span><span class="dk-r">Amount</span><span></span><span class="dk-r">Tx</span></div>
+      <div class="pos-lines dk-table" id="cfPushes">
+        <div class="empty">Loading…</div>
+      </div>
+    </section>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+    </footer>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <!-- Phones: the Menu sheet (the header's Menu) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phMenuSheet" aria-labelledby="phMenuTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phMenuTitle">Menu</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <nav class="ph-menu-list" aria-label="Pages">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html" aria-current="page">$FETTI</a>
+      <a href="leaderboard.html">Leaderboard</a>
+      <a class="ph-menu-sub" href="docs.html">Docs</a>
+      <a class="ph-menu-sub" href="contracts.html">Contracts</a>
+    </nav>
+  </dialog>
+
+  <!-- Phones: the Account sheet (the header's account button) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phAcctSheet" aria-labelledby="phAcctTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phAcctTitle">Account</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="ph-acct-body">
+      <div class="ph-kv js-ph-num" hidden><span>Balance</span><b class="js-ph-bal">—</b></div>
+      <div class="ph-kv js-ph-num" hidden><span>In trades</span><b class="js-ph-margin">—</b></div>
+      <div class="ph-kv js-ph-num" hidden><span>P&amp;L</span><b class="js-ph-pnl">—</b></div>
+      <div class="ph-acct-btns">
+        <a class="ph-btn" href="trade.html">+ Deposit</a>
+        <a class="ph-btn" href="trade.html">Withdraw</a>
+      </div>
+      <div class="ph-addr"><span class="ph-addr-v js-ph-addr">—</span><button class="ph-quiet js-ph-copy" type="button">Copy</button></div>
+      <a class="ph-quiet js-ph-explorer" href="https://hyperevmscan.io" target="_blank" rel="noopener">View on explorer</a>
+      <button class="ph-quiet js-ph-send" type="button" hidden>Send points</button>
+      <button class="ph-quiet ph-disc js-ph-disc" type="button">Disconnect</button>
+    </div>
+  </dialog>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="tabs.js?v=desk2" defer></script>
+  <script src="points.js?v=phone2" defer></script>
+</body>
+</html>
+>>>>>>> cf-desk-main
