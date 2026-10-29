@@ -3306,18 +3306,17 @@
   /* ---- theme, header, start ------------------------------------------------------- */
 
   function initTheme() {
-    /* the footer's button and the phone menu's row (the footer sits under the phone's trade bar) */
-    var btns = [$('themeToggle')].concat([].slice.call(document.querySelectorAll('[data-theme-toggle]'))).filter(Boolean);
+    var btn = $('themeToggle');
     var root = document.documentElement;
     var meta = document.querySelector('meta[name="theme-color"]');
     function apply(night, persist) {
       if (night) root.setAttribute('data-theme', 'night'); else root.removeAttribute('data-theme');
-      btns.forEach(function (btn) { btn.setAttribute('aria-pressed', night ? 'true' : 'false'); btn.textContent = night ? 'Paper' : 'Night'; });
+      if (btn) { btn.setAttribute('aria-pressed', night ? 'true' : 'false'); btn.textContent = night ? 'Paper' : 'Night'; }
       if (meta) meta.setAttribute('content', cssVar('--page', '#f4ecd8'));
       if (persist) lsSet(THEME_KEY, night ? 'night' : 'paper');
     }
     apply(root.getAttribute('data-theme') === 'night', false);
-    btns.forEach(function (btn) { btn.addEventListener('click', function () { apply(root.getAttribute('data-theme') !== 'night', true); }); });
+    if (btn) btn.addEventListener('click', function () { apply(root.getAttribute('data-theme') !== 'night', true); });
   }
 
   var PAGES = { portfolio: portfolio, house: housePage, confetti: confettiPage, leaderboard: leaderboard, v2: v2Page, v3: v3Page };
