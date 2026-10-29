@@ -2155,7 +2155,7 @@ main > .notice { margin-bottom: var(--gap); }
   .prog-steps li::before { font-size: 12px; }
 
   /* hero numbers in Söhne 600 with tabular figures; words leave mono */
-  .pc-pnl { font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pc-pnl { font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums; }
   .dir-liq { font-family: var(--font-ui); }
   .dir-liq b { font-variant-numeric: tabular-nums; }
   .tab-title .sub { font-family: var(--font-ui); }
@@ -2553,11 +2553,11 @@ main > .notice { margin-bottom: var(--gap); }
   #cfAmount {
     -webkit-appearance: none; appearance: none; box-sizing: content-box;
     width: 1ch; min-width: 1ch; max-width: calc(100% - 72px); margin: 0; padding: 0 2px; border: 0; border-radius: 0; background: transparent; color: var(--ink);
-    font-family: var(--font-ui); font-size: 32px !important; font-weight: 600; line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums; caret-color: var(--accent);
+    font-family: var(--font-mono); font-size: 32px !important; font-weight: 600; line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums; caret-color: var(--accent);
   }
   #cfAmount::placeholder { color: var(--ink-faint); }
   #cfAmount:focus { outline: none; box-shadow: none; }
-  .cf-amt-mirror { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; white-space: pre; font-family: var(--font-ui); font-size: 32px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .cf-amt-mirror { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; white-space: pre; font-family: var(--font-mono); font-size: 32px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
   /* long figures step down, never under 18 px (iOS zooms under 16) */
   #cfAmount.is-long, .cf-amt-mirror.is-long { font-size: 24px !important; }
   #cfAmount.is-xlong, .cf-amt-mirror.is-xlong { font-size: 18px !important; }
@@ -2642,7 +2642,7 @@ main > .notice { margin-bottom: var(--gap); }
   /* HERO: Equity in Soehne 600 at 32 px, tabular; Open P&L and Realised P&L side by side under it */
   [data-page="portfolio"] .status-grid .pf-equity { order: 1; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 0; padding: 0 0 10px; border-bottom: 0; }
   [data-page="portfolio"] .status-grid .pf-equity .kv-key { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
-  [data-page="portfolio"] .status-grid .pf-equity .kv-val { font-family: var(--font-ui); font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; text-align: left; }
+  [data-page="portfolio"] .status-grid .pf-equity .kv-val { font-family: var(--font-mono); font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; text-align: left; }
   [data-page="portfolio"] .status-grid .pf-openpnl, [data-page="portfolio"] .status-grid .pf-realised { order: 2; grid-column: auto; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 0; padding: 0 0 12px; }
   [data-page="portfolio"] .status-grid .pf-openpnl .kv-key, [data-page="portfolio"] .status-grid .pf-realised .kv-key { font-size: 12px; }
   [data-page="portfolio"] .status-grid .pf-openpnl .kv-val, [data-page="portfolio"] .status-grid .pf-realised .kv-val { font-size: 16px; text-align: left; }
@@ -2893,7 +2893,7 @@ main > .notice { margin-bottom: var(--gap); }
   .ph-rc-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .ph-rc-cell.is-right { align-items: flex-end; text-align: right; }
   .ph-rc-k { font-size: 12px; line-height: 14px; color: var(--ink-muted); }
-  .ph-rc-risk { font-family: var(--font-ui); font-size: 24px; font-weight: 600; line-height: 28px; letter-spacing: -0.01em; color: var(--ink); }
+  .ph-rc-risk { font-family: var(--font-mono); font-size: 24px; font-weight: 600; line-height: 28px; letter-spacing: -0.01em; color: var(--ink); }
   .ph-rc-size { font-family: var(--font-mono); font-size: 15px; font-weight: 600; line-height: 28px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   /* the position line never clips (the lead's 375 px check: '$1,000 · 12,513 D…'): trade.js measures it and steps it
      down to 14 px when the line is long (is-tight), or puts the coin amount on its own line under the dollar figure
@@ -3040,12 +3040,12 @@ main > .notice { margin-bottom: var(--gap); }
   }
   body.trade .market-bar > .chips { display: contents; }
   body.trade .market-bar .market-select { grid-column: 1; }
-  body.trade .market-bar .market-btn { min-height: 36px; padding: 0 10px; gap: 8px; font-family: var(--font-ui); font-weight: 600; font-size: 18px; background: transparent; }
+  body.trade .market-bar .market-btn { min-height: 36px; padding: 0 10px; gap: 8px; font-family: var(--font-display); font-size: 18px; background: transparent; }
   body.trade .market-bar .market-btn.is-long-sym { font-size: 16px; }
   body.trade .market-bar .market-caret { font-size: 12px; }
   body.trade .market-bar .market-lev { font-size: 11px; }
   body.trade .market-bar .market-quote { grid-column: 2; gap: 10px; padding: 0 20px 0 14px; }
-  body.trade .market-bar .market-price { font-family: var(--font-ui); font-weight: 600; font-size: 20px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+  body.trade .market-bar .market-price { font-family: var(--font-mono); font-weight: 600; font-size: 20px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   body.trade .market-bar .market-change { font-size: 13px; font-variant-numeric: tabular-nums; }
   body.trade .market-bar .market-tag { font-size: 11px; padding: 2px 5px; }
   body.trade .market-bar .chip-live:not(.is-stale) { min-height: 0; padding: 0; border: 0; background: transparent; }
@@ -3179,7 +3179,7 @@ main > .notice { margin-bottom: var(--gap); }
   .dk-rc-cell { display: flex; flex-direction: column; justify-content: space-between; gap: 3px; min-width: 0; }
   .dk-rc-cell.is-right { align-items: flex-end; text-align: right; }
   .dk-rc-k { font-size: 11px; line-height: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
-  .dk-rc-risk { font-family: var(--font-ui); font-size: 20px; font-weight: 600; line-height: 22px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .dk-rc-risk { font-family: var(--font-mono); font-size: 20px; font-weight: 600; line-height: 22px; color: var(--ink); font-variant-numeric: tabular-nums; }
   .dk-rc-size { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 13px; font-weight: 600; line-height: 20px; color: var(--ink); }
   .dk-rc-b { font-size: 14px; font-weight: 500; line-height: 20px; color: var(--ink); }
   .dk-rc-b.is-loss { color: var(--neg); }
@@ -3377,7 +3377,7 @@ main > .notice { margin-bottom: var(--gap); }
   body[data-page="portfolio"] .status-grid .kv-key { font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; }
   body[data-page="portfolio"] .status-grid .kv-val { font-size: 13px; text-align: left; white-space: nowrap; }
   body[data-page="portfolio"] .status-grid .pf-equity { grid-column: 1; }
-  body[data-page="portfolio"] .status-grid .pf-equity .kv-val { font-family: var(--font-ui); font-weight: 600; font-size: 28px; line-height: 1.1; }
+  body[data-page="portfolio"] .status-grid .pf-equity .kv-val { font-family: var(--font-mono); font-weight: 600; font-size: 28px; line-height: 1.1; }
   body[data-page="portfolio"] .status-grid .pf-avail { grid-column: 2; }
   body[data-page="portfolio"] .status-grid .pf-margin { grid-column: 3; }
   body[data-page="portfolio"] .status-grid .pf-openpnl { grid-column: 4; }

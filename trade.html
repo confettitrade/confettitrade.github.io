@@ -13,14 +13,14 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=mobile1">
+  <link rel="stylesheet" href="paper.css?v=mono1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
   <style>
-    /* Page-specific rules only. Tokens and components come from paper.css?v=intuitive2. */
+    /* Page-specific rules only. Tokens and components come from paper.css?v=mono1. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
     /* The lowered-leverage box over OPEN (fitLeverage / renderLevFit): what changed, why, and YES */
@@ -405,7 +405,7 @@
       .market-btn.is-long-sym { font-size: 15px; }
       .market-caret { font-size: 12px; }
       .market-quote { gap: 2px; overflow: hidden; }
-      .market-price { font-family: var(--font-ui); font-weight: 600; font-size: clamp(18px, 5.6vw, 22px); line-height: 1.1; font-variant-numeric: tabular-nums; }
+      .market-price { font-family: var(--font-mono); font-weight: 600; font-size: clamp(18px, 5.6vw, 22px); line-height: 1.1; font-variant-numeric: tabular-nums; }
       .market-price.is-long { font-size: 18px; }
       .market-change { font-size: 12px; white-space: nowrap; }
       .market-change .chg-sign { display: none; }
@@ -462,7 +462,7 @@
       .ph-pos-head { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 0 0 12px; border-bottom: 1px solid var(--rule); font-size: 14px; color: var(--ink-muted); scroll-margin-top: calc(env(safe-area-inset-top) + 56px); }
       .ph-pos-head[hidden] { display: none; }
       .ph-pos-sum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .ph-pos-sum b { font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+      .ph-pos-sum b { font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
       .ph-pos-sum b.pos { color: var(--pos); }
       .ph-pos-sum b.neg { color: var(--neg); }
       .ph-closeall { -webkit-appearance: none; appearance: none; flex: none; min-height: 44px; margin: -4px 0; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--close); font-family: var(--font-ui); font-size: 14px; font-weight: 600; cursor: pointer; }
