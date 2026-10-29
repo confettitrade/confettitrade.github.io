@@ -2024,6 +2024,8 @@ main > .notice { margin-bottom: var(--gap); }
 .pc-sym { font-size: var(--text-lg); font-weight: 700; }
 .pc-lev { font-family: var(--font-mono); color: var(--ink-muted); }
 .pc-pnl { font-family: var(--font-mono); font-size: var(--text-lg); font-weight: 700; text-align: right; }
+/* no fresh price: the P&L slot says so quietly (not an error colour) */
+.pc-pnl.is-delayed, .dk-pnl.is-delayed { color: var(--ink-muted); font-size: var(--text-sm); font-weight: 500; }
 .pc-rows { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px 16px; }
 .pc-cell { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; padding: 4px 0; border-bottom: 1px dotted var(--rule); font-size: var(--text-sm); }
 .pc-cell.is-wide { grid-column: 1 / -1; }

@@ -701,6 +701,7 @@
     byInstId: {},
     market: null,         /* selected market */
     mids: {},             /* coin -> number */
+    midsAt: 0,            /* Date.now() of the last mids that arrived (allMids, or the 1s feed) */
     ctx: {},              /* coin -> { vol24h, prevDayPx, markPx } */
     midsFailures: 0,
     instrumentsLoaded: false,
@@ -752,6 +753,7 @@
     /* per instrument id: the on-chain HyperCore oracle price (execPrice), refreshed with the
        chain poll; this is what every fill and liquidation settles on */
     oraclePxById: {},
+    oraclePxAt: {},       /* id -> Date.now() of that read */
     /* owner settings read from the exchange (null until read; see the constants above) */
     winFeeBps: null, lossFeeBps: null, minMargin: null, borrowFreeHours: null, maxWinBps: null, free: null,
     /* per instrument id: { long, short } maxPositionUsd() in USD, read with the chain poll */
@@ -873,6 +875,7 @@
     midsInFlight = true;
     postInfo({ type: 'allMids' }, 5000).then(function (mids) {
       state.midsFailures = 0;
+      state.midsAt = Date.now();
       setLive(true);
       if (!mids || typeof mids !== 'object') return;
       state.markets.forEach(function (m) {
@@ -886,6 +889,8 @@
     }).catch(function () {
       state.midsFailures += 1;
       if (state.midsFailures >= 2) setLive(false);
+      /* no new prices: redraw anyway, so a card whose price has gone stale says "price delayed" (settlePrice) */
+      try { updatePositionPrices(); renderAccount(); } catch (e) { /* never stops the poll */ }
     }).then(function () { midsInFlight = false; });
   }
 
@@ -929,7 +934,12 @@
   /* ---- chart --------------------------------------------------------------- */
 
   /* Timeframes: Hyperliquid candleSnapshot intervals and each bucket's length. */
-  var TF_MS = { '1m': 60000, '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
+  var TF_MS = { '1s': 1000, '1m': 60000, '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
+  /* 1s (the owner, 2026-10-29: "can we get 1 second candles"): Hyperliquid serves no candles under a minute, so these
+     are built here from its live bid/ask feed (liveFeed below): the chart starts empty and fills as you watch. */
+  var LIVE_TF = { '1s': true };
+  /* A gap shorter than this many bars (the feed was quiet, the tab was away) is filled with flat bars at the last close. */
+  var LIVE_GAP_FILL = 120;
 
   /* Indicators in menu order. Line colours: the night palette's confetti colours (share.js). */
   var INDS = [
@@ -990,7 +1000,7 @@
       layout: { background: { type: 'solid', color: t.raised }, textColor: t.muted, fontFamily: t.mono, fontSize: chartFontSize() },
       grid: { vertLines: { color: t.rule, style: 1 }, horzLines: { color: t.rule, style: 1 } },
       rightPriceScale: { borderColor: t.ruleStrong, scaleMargins: priceMargins() },
-      timeScale: { borderColor: t.ruleStrong, timeVisible: true, secondsVisible: false, rightOffset: 3, barSpacing: 7 },
+      timeScale: { borderColor: t.ruleStrong, timeVisible: true, secondsVisible: !!LIVE_TF[chart.tf], rightOffset: 3, barSpacing: 7 },
       /* let a phone scroll the page over the chart; horizontal drag and pinch still pan/zoom */
       handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -1072,6 +1082,8 @@
     if (!chart.api) return;
     chart.api.applyOptions(chartOptions());
     chart.series.applyOptions(seriesOptions());
+    tradeMarks.sig = '';
+    syncTradeMarkers();
   }
 
   function chartNote(text, show) {
@@ -1108,6 +1120,8 @@
   /* force: a market or timeframe switch, which supersedes a load in flight; the 60 s refresh does not. */
   function loadCandles(force) {
     var m = state.market;
+    syncLiveFeed();
+    if (m && chart.series && LIVE_TF[chart.tf]) { startLiveCandles(m); return; }
     if (!m || !chart.series || (chart.loading && !force)) return;
     chart.loading = true;
     var seq = ++chart.seq, coin = m.coin, tf = chart.tf;
@@ -1137,6 +1151,8 @@
           });
         }
         chart.series.setData(parsed.map(toBar));
+        tradeMarks.sig = '';
+        syncTradeMarkers();
         fillInds(true);
         if (reset) chart.api.timeScale().scrollToRealTime();
         chartNote('', false);
@@ -1159,6 +1175,21 @@
       .then(function () { if (seq === chart.seq) chart.loading = false; });
   }
 
+  /* 1s: nothing to fetch. A new coin starts an empty chart at its price's precision; the feed's mids fill it. */
+  function startLiveCandles(m) {
+    chart.seq++;
+    chart.loading = false;
+    if (chart.coin === m.coin) return;
+    clearCandles();
+    chart.coin = m.coin;
+    var px = state.mids[m.coin];
+    if (isFinite(px) && px > 0) {
+      chart.precision = pricePrecision(px, m.szDecimals);
+      chart.series.applyOptions(seriesOptions());
+    }
+    chartNote('1-second candles start now and fill as you watch', true);
+  }
+
   /* Empty the chart for a new market or timeframe; the next load fills it. */
   function clearCandles() {
     chart.coin = null;
@@ -1166,22 +1197,47 @@
     chart.byTime = {};
     if (!chart.series) return;
     chart.series.setData([]);
+    syncTradeMarkers();
     fillInds(true);
     renderLegend(-1);
   }
 
   /* Fold a fresh mid into the open bucket of the shown timeframe, or open the next one. */
   function updateChartFromMid(px) {
-    if (!chart.series || !state.market || chart.coin !== state.market.coin || chart.candles.length === 0) return;
+    if (!chart.series || !state.market || chart.coin !== state.market.coin) return;
     var ms = TF_MS[chart.tf];
     var bucket = Math.floor(Date.now() / ms) * ms;
+    if (chart.candles.length === 0) {
+      if (!LIVE_TF[chart.tf] || !(px > 0)) return;
+      /* the first 1 s bar */
+      chart.candles.push({ t: bucket, o: px, h: px, l: px, c: px, v: 0 });
+      indexCandles();
+      chart.series.setData(chart.candles.map(toBar));
+      chart.api.timeScale().scrollToRealTime();
+      chartNote('', false);
+      placeChartBar();
+      fillInds(true);
+      if (!chart.hover) renderLegend(-1);
+      return;
+    }
     var last = chart.candles[chart.candles.length - 1];
+    /* 1s: a quiet second still gets its bar (flat at the last close), so the axis keeps time */
+    if (LIVE_TF[chart.tf] && bucket - last.t > ms && bucket - last.t <= LIVE_GAP_FILL * ms) {
+      for (var gt = last.t + ms; gt < bucket; gt += ms) {
+        var flat = { t: gt, o: last.c, h: last.c, l: last.c, c: last.c, v: 0 };
+        chart.candles.push(flat);
+        chart.series.update(toBar(flat));
+      }
+      while (chart.candles.length > CANDLE_COUNT) chart.candles.shift();
+      last = chart.candles[chart.candles.length - 1];
+    }
     if (bucket > last.t) {
       var bar = { t: bucket, o: last.c, h: Math.max(last.c, px), l: Math.min(last.c, px), c: px, v: 0 };
       chart.candles.push(bar);
       if (chart.candles.length > CANDLE_COUNT) chart.candles.shift();
       indexCandles();
       chart.series.update(toBar(bar));
+      syncTradeMarkers();
     } else {
       last.c = px;
       if (px > last.h) last.h = px;
@@ -1190,6 +1246,136 @@
     }
     fillInds(false);
     if (!chart.hover) renderLegend(-1);
+  }
+
+  /* ---- your trades on the chart ----
+     (the owner, 2026-10-29: "buy and sell markers on the chart for our prior buys and sells"): the connected wallet's
+     opens, closes and liquidations on the shown coin, from the history loaded at connect. A long's open and a short's
+     close are buys (green, under the bar); a short's open and a long's close are sells (red, over the bar). Each sits on
+     the bar its block's time falls in; trades older than the loaded bars, or whose block time is not read yet, wait. */
+  var tradeMarks = { sig: '' };
+
+  function syncTradeMarkers() {
+    if (!chart.series) return;
+    var m = state.market, out = [];
+    var cs = chart.candles, ms = TF_MS[chart.tf], t = chartTheme();
+    if (m && m.instrumentId != null && chart.coin === m.coin && cs.length) {
+      var first = cs[0].t, last = cs[cs.length - 1].t;
+      hist.rows.forEach(function (r) {
+        if (r.name !== 'PositionOpened' && r.name !== 'PositionClosed' && r.name !== 'PositionLiquidated') return;
+        var pid = String(r.args.positionId);
+        if (hist.openedMarket[pid] !== m.instrumentId || !(pid in hist.openedLong)) return;
+        var ts = hist.blockTs[r.block];
+        if (!ts) return;
+        var at = Math.floor(ts * 1000 / ms) * ms;
+        if (at < first || at > last) return;
+        var buy = r.name === 'PositionOpened' ? hist.openedLong[pid] : !hist.openedLong[pid];
+        out.push({
+          time: barTime(at), position: buy ? 'belowBar' : 'aboveBar', color: buy ? t.pos : t.neg,
+          shape: buy ? 'arrowUp' : 'arrowDown',
+          text: r.name === 'PositionLiquidated' ? 'Liq' : buy ? 'Buy' : 'Sell'
+        });
+      });
+      out.sort(function (a, b) { return a.time - b.time; });
+    }
+    var sig = JSON.stringify(out);
+    if (sig === tradeMarks.sig) return;
+    tradeMarks.sig = sig;
+    chart.series.setMarkers(out);
+  }
+
+  /* ---- the live bid/ask feed (1s only) ----
+     One websocket to Hyperliquid while the 1s timeframe is shown and the tab is visible, subscribed to the shown coin's
+     best bid and ask; closed otherwise. Their mid is folded into the chart every LIVE_FOLD_MS and, once a second, into
+     the page's price (the 2 s allMids poll keeps running and stays the source on every other timeframe). */
+  var LIVE_FOLD_MS = 250, LIVE_PRICE_MS = 1000, LIVE_PING_MS = 30000;
+  var liveFeed = { ws: null, coin: null, mid: NaN, fold: null, ping: null, retry: 0, again: null, priced: 0 };
+
+  function liveWsUrl() {
+    var info = (cfg && cfg.hyperliquidInfoUrl) || 'https://api.hyperliquid.xyz/info';
+    return info.replace(/^https:/, 'wss:').replace(/\/info\/?$/, '/ws');
+  }
+
+  function liveSend(msg) {
+    var ws = liveFeed.ws;
+    if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch (e) { /* closing */ } }
+  }
+
+  function liveSub(coin, on) {
+    liveSend({ method: on ? 'subscribe' : 'unsubscribe', subscription: { type: 'bbo', coin: coin } });
+  }
+
+  /* Open, move or close the feed to match what is shown. */
+  function syncLiveFeed() {
+    var want = LIVE_TF[chart.tf] && state.market && !document.hidden ? state.market.coin : null;
+    if (!want) { closeLiveFeed(); return; }
+    if (liveFeed.ws && liveFeed.coin === want) return;
+    if (liveFeed.ws && liveFeed.ws.readyState === 1) {
+      liveSub(liveFeed.coin, false);
+      liveFeed.coin = want; liveFeed.mid = NaN;
+      liveSub(want, true);
+      return;
+    }
+    if (liveFeed.ws) { liveFeed.coin = want; liveFeed.mid = NaN; return; }   /* still connecting: onopen subscribes */
+    if (!liveFeed.again) openLiveFeed(want);
+  }
+
+  function openLiveFeed(coin) {
+    if (typeof WebSocket !== 'function') return;
+    var ws;
+    try { ws = new WebSocket(liveWsUrl()); } catch (e) { return; }
+    liveFeed.ws = ws; liveFeed.coin = coin; liveFeed.mid = NaN;
+    ws.onopen = function () {
+      if (liveFeed.ws !== ws) return;
+      liveFeed.retry = 0;
+      liveSub(liveFeed.coin, true);
+      liveFeed.ping = setInterval(function () { liveSend({ method: 'ping' }); }, LIVE_PING_MS);
+      liveFeed.fold = setInterval(foldLiveMid, LIVE_FOLD_MS);
+    };
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.channel !== 'bbo' || !msg.data || msg.data.coin !== liveFeed.coin) return;
+      var q = msg.data.bbo || [], bid = q[0] && Number(q[0].px), ask = q[1] && Number(q[1].px);
+      if (bid > 0 && ask > 0) liveFeed.mid = (bid + ask) / 2;
+    };
+    ws.onclose = function () {
+      if (liveFeed.ws !== ws) return;
+      stopLiveTimers();
+      liveFeed.ws = null;
+      /* dropped while still wanted: back off 1, 2, 4 ... 30 s */
+      if (LIVE_TF[chart.tf] && !document.hidden) {
+        var wait = Math.min(30000, 1000 * Math.pow(2, liveFeed.retry++));
+        liveFeed.again = setTimeout(function () { liveFeed.again = null; syncLiveFeed(); }, wait);
+      }
+    };
+    ws.onerror = function () { /* onclose follows */ };
+  }
+
+  function stopLiveTimers() {
+    if (liveFeed.fold) { clearInterval(liveFeed.fold); liveFeed.fold = null; }
+    if (liveFeed.ping) { clearInterval(liveFeed.ping); liveFeed.ping = null; }
+  }
+
+  function closeLiveFeed() {
+    if (liveFeed.again) { clearTimeout(liveFeed.again); liveFeed.again = null; }
+    stopLiveTimers();
+    var ws = liveFeed.ws;
+    liveFeed.ws = null; liveFeed.coin = null; liveFeed.mid = NaN;
+    if (ws) { try { ws.close(); } catch (e) { /* gone */ } }
+  }
+
+  function foldLiveMid() {
+    var m = state.market, px = liveFeed.mid;
+    if (!m || m.coin !== liveFeed.coin || !(px > 0) || !LIVE_TF[chart.tf]) return;
+    updateChartFromMid(px);
+    var now = Date.now();
+    if (now - liveFeed.priced >= LIVE_PRICE_MS) {
+      liveFeed.priced = now;
+      state.mids[m.coin] = px;
+      state.midsAt = now;
+      onPrices();
+    }
   }
 
   /* ---- chart indicators ---- */
@@ -1562,6 +1748,7 @@
     chart.tf = tf;
     lsSet(LS.tf, tf);
     renderTf();
+    if (chart.api) chart.api.applyOptions({ timeScale: { secondsVisible: !!LIVE_TF[tf] } });
     clearCandles();
     loadCandles(true);
   }
@@ -1971,15 +2158,32 @@
   /* The price a fill settles on: the HyperCore oracle price (every open, close and liquidation
      uses it; the book mid on the chart is display only). The on-chain read when the page has
      one, else the same oracle from the Hyperliquid stats feed, else the mid as a rough stand-in. */
-  function oraclePriceFor(m) {
-    if (!m) return NaN;
+  function oraclePriceFor(m) { return settlePrice(m).px; }
+
+  /* FRESH PRICES ONLY (the owner, 2026-10-29: a FARTCOIN card showed +$554 at a 10-minute-old chain read while the
+     live price was already past the position's liquidation; failed chain reads had kept the last price with no age).
+     The on-chain price while it is under PX_FRESH_MS old; else the live mid while that is (a fill settles on the mid
+     held within a few bps of the oracle, so it is the honest stand-in); else nothing, with fresh: false, and the
+     cards say "price delayed" instead of a number. */
+  var PX_FRESH_MS = 15000;
+
+  function settlePrice(m) {
+    if (!m) return { px: NaN, fresh: false };
+    var now = Date.now();
     if (m.instrumentId != null) {
-      var opx = house.oraclePxById[m.instrumentId];
-      if (opx != null && isFinite(opx) && opx > 0) return opx;
+      var opx = house.oraclePxById[m.instrumentId], at = house.oraclePxAt[m.instrumentId];
+      if (opx > 0 && at && now - at < PX_FRESH_MS) return { px: opx, fresh: true };
     }
-    var c = state.ctx[m.coin];
-    if (c && isFinite(c.oraclePx) && c.oraclePx > 0) return c.oraclePx;
-    return marketPrice(m);
+    var mid = state.mids[m.coin];
+    if (mid > 0 && state.midsAt && now - state.midsAt < PX_FRESH_MS) return { px: mid, fresh: true };
+    return { px: NaN, fresh: false };
+  }
+
+  /* A position whose price is not fresh: its card shows "price delayed" in place of P&L, Now and the distance. */
+  function priceDelayed(p) {
+    var inst = state.byInstId[p.instrumentId];
+    if (inst && inst.retired) return false;
+    return !settlePrice(positionMarket(p)).fresh;
   }
 
   /* Entry a request filed now would fill at if the oracle does not move (a keeper fills at the
@@ -3762,9 +3966,9 @@
 
   function fillPhRow(row, it, nearest, many) {
     var p = it.p, m = positionMarket(p), sz = m ? m.szDecimals : null;
-    var est = it.est, known = isFinite(it.px) || !!p.preview;
+    var est = it.est, delayed = !!(est && est.delayed), known = !delayed && isFinite(it.px);
     var cls = est && est.pnl > 0 ? ' pos' : est && est.pnl < 0 ? ' neg' : '';
-    var n = setRole(row, 'pnl', known ? fmtUsd(est.pnl, true) : '—');
+    var n = setRole(row, 'pnl', delayed ? 'price delayed' : known ? fmtUsd(est.pnl, true) : '—');
     if (n) n.className = 'ph-pnl-n' + (known ? cls : '');
     var pc = setRole(row, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
     if (pc) pc.className = 'ph-pct' + (known ? cls : '');
@@ -4060,7 +4264,7 @@
     var px = fz ? fz.px : closePriceFor(p);
     var est = fz ? fz.est : positionEstimate(p);
     var room = fz ? fz.room : liqRoom(p, px);
-    var known = isFinite(px) || !!p.preview;
+    var known = !est.delayed && isFinite(px);
     var fin = !!(st && st.final);
     /* head: side tag, coin, leverage */
     phCls(d, '.js-ps-who', 'ph-ps-who js-ps-who ' + (p.isLong ? 'is-long' : 'is-short'));
@@ -4074,7 +4278,7 @@
     var have = known || fin;
     var tone = have ? (pnl > 0 ? ' pos' : pnl < 0 ? ' neg' : '') : '';
     phShow(d, '.js-ps-pnlrow', true);
-    phText(d, '.js-ps-pnl', have ? fmtUsd(pnl, true) : '—');
+    phText(d, '.js-ps-pnl', have ? fmtUsd(pnl, true) : est.delayed ? 'price delayed' : '—');
     phCls(d, '.js-ps-pnl', 'ph-ps-pnl-n js-ps-pnl' + tone);
     phText(d, '.js-ps-pct', have ? fmtPct1(pnl / p.margin) : '');
     phCls(d, '.js-ps-pct', 'ph-ps-pct js-ps-pct' + tone);
@@ -4463,7 +4667,7 @@
       inst.market = m;
       m.inst = inst;
       state.byInstId[id] = inst;
-      house.oraclePxById[id] = r[2];
+      if (r[2] != null) { house.oraclePxById[id] = r[2]; house.oraclePxAt[id] = Date.now(); }
       /* maxPositionUsd(id, isLong): the biggest open the exchange takes right now, every limit in one number */
       if (r[3] != null && r[4] != null) house.maxPos[id] = { long: usd6ToNum(r[3]), short: usd6ToNum(r[4]) };
       loadHouseBotOi();
@@ -4565,7 +4769,7 @@
         positions.forEach(function (p) { if (instIds.indexOf(p.instrumentId) < 0) instIds.push(p.instrumentId); });
         return Promise.all(instIds.map(readOraclePx)).then(function (opx) {
           if (wallet.account !== a) return;
-          instIds.forEach(function (id, i) { if (opx[i] != null) house.oraclePxById[id] = opx[i]; });
+          instIds.forEach(function (id, i) { if (opx[i] != null) { house.oraclePxById[id] = opx[i]; house.oraclePxAt[id] = Date.now(); } });
           var before = acct.loaded && acct.owner === a ? acct.positions : null;
           var have = {};
           positions.forEach(function (p) { have[String(p.id)] = true; });
@@ -4768,21 +4972,19 @@
   function positionEstimate(pos) {
     var inst = state.byInstId[pos.instrumentId];
     var queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
-    var opx = house.oraclePxById[pos.instrumentId];
     var retired = inst && inst.retired;
     if (retired) return estimateClose(pos, inst, inst.frozenPx, queueEmpty);
-    if (opx != null && isFinite(opx) && opx > 0) return estimateClose(pos, inst, opx, queueEmpty);
-    if (pos.preview) {
-      var pv = pos.preview;
-      return { pnl: pv.pnl, fee: pv.fee, payout: pv.payout, flat: pv.pnl === 0 && pv.fee === 0 };
-    }
-    return estimateClose(pos, inst, closePriceFor(pos), queueEmpty);
+    var sp = settlePrice(positionMarket(pos));
+    if (sp.fresh) return estimateClose(pos, inst, sp.px, queueEmpty);
+    /* no fresh price: no number (an old one is how a lost position read +$554) */
+    return { pnl: NaN, fee: NaN, payout: NaN, flat: false, delayed: true };
   }
 
   function openPnl() {
     var sum = 0, any = false;
     acct.positions.forEach(function (p) {
       var e = positionEstimate(p);
+      if (e && e.delayed) return;
       if (e && !e.flat) { sum += e.pnl; any = true; }
       else if (e) any = true;
     });
@@ -4932,23 +5134,24 @@
     var sz = m ? m.szDecimals : null;
     var px = closePriceFor(p);
     var est = positionEstimate(p);
-    var known = isFinite(px) || !!p.preview;
+    var delayed = !!est.delayed;
+    var known = !delayed && isFinite(px);
     /* desktop (>= 901): the table row splits the P&L into $ and % and the liquidation into price,
        bar and distance, each in its own cell; the card keeps the one string */
     var dk = card.classList.contains('dk-row');
     var sign = est.pnl > 0 ? ' pos' : est.pnl < 0 ? ' neg' : '';
     var pnl = card.querySelector('[data-role="pnl"]');
     if (pnl) {
-      var t = !known ? '—' : dk ? fmtUsd(est.pnl, true) : fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')';
+      var t = delayed ? 'price delayed' : !known ? '—' : dk ? fmtUsd(est.pnl, true) : fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')';
       if (pnl.textContent !== t) pnl.textContent = t;
-      pnl.className = (dk ? 'dk-cell dk-num dk-pnl' : 'pc-pnl') + sign;
-      pnl.title = known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') : '';
+      pnl.className = (dk ? 'dk-cell dk-num dk-pnl' : 'pc-pnl') + (delayed ? ' is-delayed' : sign);
+      pnl.title = delayed ? 'Waiting for a fresh price; the numbers come back as soon as one arrives.' : known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') : '';
     }
     if (dk) {
       var pct = setRole(card, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
       if (pct) pct.className = 'dk-cell dk-num dk-pct' + sign;
     }
-    setRole(card, 'now', isFinite(px) ? fmtPrice(px, sz) : '—');
+    setRole(card, 'now', delayed ? 'delayed' : isFinite(px) ? fmtPrice(px, sz) : '—');
     var room = liqRoom(p, px);
     var away = isFinite(room.away) ? (room.away * 100).toFixed(room.away >= 0.01 ? 1 : 2) + '%' : '';
     if (dk) {
@@ -7760,7 +7963,7 @@
   /* ---- history (Exchange events via eth_getLogs) ------------------------------------ */
 
   function freshHistory() {
-    return { rows: [], seen: {}, openedMarket: {}, openedSide: {}, openedEntry: {}, scannedFrom: null, scannedTo: null, loading: false, done: false, chunked: false, blockTs: {} };
+    return { rows: [], seen: {}, openedMarket: {}, openedSide: {}, openedLong: {}, openedEntry: {}, scannedFrom: null, scannedTo: null, loading: false, done: false, chunked: false, blockTs: {} };
   }
 
   var hist = freshHistory();
@@ -7787,6 +7990,7 @@
       if (p.name === 'PositionOpened') {
         hist.openedMarket[String(p.args.positionId)] = Number(p.args.instrumentId);
         hist.openedSide[String(p.args.positionId)] = sideLev(p.args.isLong, p.args.leverage);
+        hist.openedLong[String(p.args.positionId)] = !!p.args.isLong;
         hist.openedEntry[String(p.args.positionId)] = px18ToNum(p.args.entryPx18);
       }
       hist.rows.push({ name: p.name, args: p.args, block: Number(log.blockNumber), index: Number(log.index), tx: log.transactionHash });
@@ -8077,6 +8281,7 @@
     var foot = host.querySelector('.hist-foot');
     var frag = document.createDocumentFragment();
     hist.rows.forEach(function (r) { frag.appendChild(historyLine(r)); });
+    syncTradeMarkers();
     if (foot) host.insertBefore(frag, foot); else host.appendChild(frag);
 
     if (more) {
@@ -8100,6 +8305,7 @@
       read.provider.getBlock(b).then(function (blk) {
         if (blk) {
           hist.blockTs[b] = Number(blk.timestamp);
+          syncTradeMarkers();
           var cells = document.querySelectorAll('#histLines [data-block="' + b + '"]');
           for (var i = 0; i < cells.length; i++) { cells[i].textContent = cells[i].classList.contains('ph-hist-time') || cells[i].classList.contains('dk-time') ? fmtWhen(hist.blockTs[b]) : fmtClock(hist.blockTs[b]); cells[i].title = blockTitle(b); }
         }
@@ -8929,7 +9135,7 @@
   function demoOracle() {
     state.markets.forEach(function (m) {
       var px = state.mids[m.coin];
-      if (m.instrumentId != null && px > 0) house.oraclePxById[m.instrumentId] = px;
+      if (m.instrumentId != null && px > 0) { house.oraclePxById[m.instrumentId] = px; house.oraclePxAt[m.instrumentId] = state.midsAt || Date.now(); }
     });
   }
 
@@ -9160,6 +9366,7 @@
   }
 
   function onVisibility() {
+    syncLiveFeed();
     if (document.hidden) return;
     tickMids(true);
     tickCtx(true);

@@ -2,7 +2,7 @@
 <html lang="en" data-theme="night">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — trade</title>
   <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no funding.">
@@ -13,14 +13,14 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=mono1">
+  <link rel="stylesheet" href="paper.css?v=fresh1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
   <style>
-    /* Page-specific rules only. Tokens and components come from paper.css?v=mono1. */
+    /* Page-specific rules only. Tokens and components come from paper.css?v=fresh1. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
     /* The lowered-leverage box over OPEN (fitLeverage / renderLevFit): what changed, why, and YES */
@@ -635,6 +635,7 @@
         <div class="chart-bar" id="chartBar">
           <div class="chart-tools">
             <div class="chart-tf" id="chartTf" role="group" aria-label="Timeframe">
+              <button class="btn btn-sm chart-btn" type="button" data-tf="1s" aria-pressed="false">1s</button>
               <button class="btn btn-sm chart-btn" type="button" data-tf="1m" aria-pressed="true">1m</button>
               <button class="btn btn-sm chart-btn" type="button" data-tf="5m" aria-pressed="false">5m</button>
               <button class="btn btn-sm chart-btn" type="button" data-tf="15m" aria-pressed="false">15m</button>
@@ -643,6 +644,7 @@
               <button class="btn btn-sm chart-btn" type="button" data-tf="1d" aria-pressed="false">1D</button>
             </div>
             <select class="select chart-tf-select" id="tfSelect" aria-label="Timeframe">
+              <option value="1s">1s</option>
               <option value="1m">1m</option>
               <option value="5m">5m</option>
               <option value="15m">15m</option>
@@ -1353,7 +1355,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=levfit2" defer></script>
+  <script src="trade.js?v=fresh2" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
