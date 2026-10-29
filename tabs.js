@@ -2275,7 +2275,10 @@
         valCell('cfWallet', fmtTok(tok18(me.walletRaw)));
         valCell('cfV3Staked', fmtTok(tok18(me.v3StakedRaw)) + (me.v3EarnedRaw > 0n ? ' · ' + fmtUsd(usd6(me.v3EarnedRaw)) + ' unclaimed' : ''));
         valCell('cfStaked', fmtTok(tok18(me.stakedRaw)));
-        valCell('cfWarming', me.warmingRaw > 0n ? fmtTok(tok18(me.warmingRaw)) + (me.activatesAt > chainNow() ? ' · active ' + fmtTime(me.activatesAt) : ' · active on next touch') : 'none');
+        /* a warm-up that is over counts as active here (the owner, 2026-10-29: a week-old stake read as "warming");
+           the contract moves it on the wallet's next stake, unstake or claim, and it earns either way */
+        var warmLeft = me.warmingRaw > 0n && me.activatesAt > chainNow();
+        valCell('cfWarming', warmLeft ? fmtTok(tok18(me.warmingRaw)) + ' · active ' + fmtTime(me.activatesAt) : 'none');
         valCell('cfEarned', fmtUsd(me.earned), me.earned > 0 ? 'pos' : '');
         valCell('cfShare', p && p.stake > 0 ? fmtPct(tok18(me.stakedRaw) / p.stake) : '—');
       } else {
