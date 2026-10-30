@@ -184,6 +184,7 @@
      forwards it to the session key for gas. Below SESSION_MIN_GAS the key is treated as dry and the
      wallet signs again. A session never outlives MAX_SESSION (30 days, the router's limit). */
   var SESSION_GAS_HYPE = '0.02';
+  var SESSION_WALLET_KEEP_HYPE = '0.002';
   var SESSION_MIN_GAS = 1000000000000000n; /* 0.001 HYPE: a few requests at a few gwei */
   /* the gas one request or close takes, at the network's fee now: a key under that is dry (2026-10-29: at a
      25-60 gwei base fee a 0.01 HYPE key ran dry in a few trades and every trade quietly went to the wallet) */
@@ -6683,7 +6684,14 @@
     if (s && oneTapWhy(margin6) !== 'cap' && usd6ToNum(s.cap6) > capUsd) capUsd = Math.ceil(usd6ToNum(s.cap6));   // never lowers a cap
     state.turningOn = true; renderAction(); updateCards();
     return authorizeSession(capUsd, ONE_TAP_DAYS).then(function () {
-      return refreshSession();
+      /* a load-balanced RPC can answer from a node behind the receipt: read until it shows the new session, so the
+         trade that asked goes through the key and not to the wallet a second time */
+      var tries = 0;
+      return (function read() {
+        return refreshSession().then(function () {
+          if (oneTapWhy(margin6) && ++tries < 6) return new Promise(function (ok) { setTimeout(ok, 800); }).then(read);
+        });
+      })();
     }).then(function () {
       toast('One-tap on: trades go through with no popup from now on.', 'ok');
     }).then(function () { state.turningOn = false; renderAction(); updateCards(); },
@@ -6713,7 +6721,14 @@
     }).then(function (digest) {
       return sess.key.signMessage(E.getBytes(digest));
     }).then(function (keySig) {
-      return sendTx('One-click', router.authorize, [sess.key.address, expiry, cap6, referrer, keySig, { value: E.parseEther(SESSION_GAS_HYPE) }], true, a);
+      /* the key's gas: SESSION_GAS_HYPE or what the wallet can spare, keeping SESSION_WALLET_KEEP_HYPE for this
+         transaction (a wallet with little HYPE still turns on; the keeper's gas station tops the key up) */
+      return read.provider.getBalance(a).then(function (bal) {
+        var want = E.parseEther(SESSION_GAS_HYPE), keep = E.parseEther(SESSION_WALLET_KEEP_HYPE);
+        bal = BigInt(bal);
+        var pack = bal > keep ? (bal - keep < want ? bal - keep : want) : 0n;
+        return sendTx('One-click', router.authorize, [sess.key.address, expiry, cap6, referrer, keySig, { value: pack }], true, a);
+      });
     });
   }
 
@@ -6807,8 +6822,14 @@
     }
     if (!sessionCarries(kind, args)) {
       /* forced one-tap: the trader's own requests turn it on (or renew / top up / raise it) first, once */
-      if (ONE_TAP_FORCED && asks && !again && read.router && !house.usdcBad && !house.gate && (!opening || sessionRefOk(args[4]))) {
-        return ensureOneTap(opening ? args[2] : null).then(function () { return sendTrade(desc, kind, args, true); });
+      /* (no referrer test here: sessionRefOk says no when there is no session yet, the very case this is for, and
+         turning on signs this same referrer into the session) */
+      if (ONE_TAP_FORCED && asks && !again && read.router && !house.usdcBad && !house.gate) {
+        return ensureOneTap(opening ? args[2] : null).then(function () { return sendTrade(desc, kind, args, true); }, function (e) {
+          /* forcing one-tap never stops a trade: the trader said no, or it cannot turn on, and only then the wallet */
+          if (isUserRejection(e)) throw e;
+          return walletTrade(desc, kind, args);
+        });
       }
       return walletTrade(desc, kind, args);
     }
