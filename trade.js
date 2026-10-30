@@ -183,8 +183,18 @@
   /* One-click trading (SessionRouter). The wallet sends this much HYPE with authorize; the router
      forwards it to the session key for gas. Below SESSION_MIN_GAS the key is treated as dry and the
      wallet signs again. A session never outlives MAX_SESSION (30 days, the router's limit). */
-  var SESSION_GAS_HYPE = '0.01';
+  var SESSION_GAS_HYPE = '0.02';
   var SESSION_MIN_GAS = 1000000000000000n; /* 0.001 HYPE: a few requests at a few gwei */
+  /* the gas one request or close takes, at the network's fee now: a key under that is dry (2026-10-29: at a
+     25-60 gwei base fee a 0.01 HYPE key ran dry in a few trades and every trade quietly went to the wallet) */
+  var SESSION_TX_GAS = 400000n;
+  /* FORCED ONE-TAP (the owner, 2026-10-29: "can we make it where people are forced to use one tap"): a trade that
+     the session cannot carry (none, expired, out of gas, over its cap, another browser's key) first turns one-tap on
+     or renews it with one wallet confirmation, then goes through it. The keeper's gas station keeps the keys topped
+     up, so after that the wallet only shows for deposits, withdrawals and revoking. */
+  var ONE_TAP_FORCED = true;
+  var ONE_TAP_DAYS = 30;
+  var ONE_TAP_MIN_CAP_USD = 1000;
   var SESSION_MAX_S = 30 * 86400;
   /* Router errors that mean "this session cannot act": the call goes to the wallet instead. */
   var SESSION_ERRORS = { NoSession: true, SessionExpired: true, MarginAboveSessionCap: true };
@@ -835,7 +845,7 @@
 
   /* One-click session of the connected account. key: ethers.Wallet from localStorage (or null);
      onchain: router.sessionOf(account) { key, expiry, cap } once read; gasWei: the key's HYPE. */
-  var sess = { key: null, onchain: null, gasWei: null, loaded: false };
+  var sess = { key: null, onchain: null, gasWei: null, feeWei: null, loaded: false, demoOn: false };
 
   /* Deposit from Hyperliquid: the account's proxy and what waits on it. spotFreeWei: Core spot USDC
      (total - hold, 8 dec), perp6: Core perp withdrawable, evm6: HyperEVM USDC on the proxy; null when
@@ -2682,8 +2692,11 @@
       if (problem) { disabled = true; note = problem; err = true; }
       else {
         note = (form.side === 'long' ? 'BUY / LONG ' : 'SELL / SHORT ') + sym + ' · ' + fmtUsdShort(form.margin) + ' at ' + form.lev + 'x.';
-        if (sessionLive()) {
-          if (!sessionRefOk(referrerArg())) note += ' Your first fill sets your referrer: your wallet signs this one.';
+        var why = ONE_TAP_FORCED && (DEMO || read.router) ? oneTapWhy(numToUsd6(form.margin)) : null;
+        if (why) note += ' ' + ONE_TAP_NOTE[why];
+        else if (sessionLive()) {
+          if (DEMO) note += ' No wallet popup.';
+          else if (!sessionRefOk(referrerArg())) note += ' Your first fill sets your referrer: your wallet signs this one.';
           else if (numToUsd6(form.margin) > sess.onchain.cap6) note += ' Over your one-click cap: your wallet signs this one.';
           else note += ' No wallet popup.';
         } else note += ' Your wallet asks you to confirm.';
@@ -2691,7 +2704,7 @@
     }
     if (!notice && wallet.account && wallet.chainId === CHAIN_ID && hypeLow()) notice = HYPE_NOTE;
     if (setup) cls += ' go-setup';
-    if (state.busy && !tk.phase) { disabled = true; note = state.viaSession ? 'Sending…' : 'Confirm in your wallet…'; err = false; }
+    if (state.busy && !tk.phase) { disabled = true; note = state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession ? 'Sending…' : 'Confirm in your wallet…'; err = false; }
     if (!termsAccepted()) disabled = true;
     /* phones (piece 13): OPEN says the trade, an armed OPEN says 'Tap again', the problem goes to row D */
     var ph = isPhone() ? phActionView({ label: label, cls: cls, disabled: disabled, note: note, err: err, setup: setup }) : null;
@@ -5652,7 +5665,7 @@
     var box = act.querySelector(dk ? '.dk-status' : '.prog');
     if (!box) return;
     var put = dk ? dkSetStatus : setProg;
-    if (mode === 'wallet') put(box, { steps: [[state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Closing', ''], ['Closed', '']] });
+    if (mode === 'wallet') put(box, { steps: [[state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Closing', ''], ['Closed', '']] });
     else if (mode === 'retrying') put(box, { steps: [['Getting ready to close again…', 'is-on'], ['Closing again', ''], ['Closed', '']], note: 'Closing again. ' + (sessionLive() ? '' : 'Your wallet asks twice.') });
     else if (mode === 'checking') put(box, CHECKING_VIEW);
     else if (mode === 'settling') put(box, { cls: 'is-done', steps: [['Sent', 'is-done'], ['Closed', 'is-done'], ['Adding it to your balance…', 'is-on']] });
@@ -5924,8 +5937,9 @@
     var title = 'Opening ' + sideWord(tk.isLong) + ' ' + tk.sym + ' ' + tk.lev + 'x · ' + fmtUsdShort(tk.margin);
     if (tk.phase === 'wallet') {
       return {
-        title: title, steps: [[state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Opening', ''], ['Open', '']],
-        note: state.viaSession ? 'One-click is on: no wallet popup.' : 'Your wallet shows the trade. Nothing is sent until you confirm.'
+        title: title, steps: [[state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Opening', ''], ['Open', '']],
+        note: state.turningOn ? 'One confirmation turns on one-tap for ' + ONE_TAP_DAYS + ' days. After it, trades go through with no popup.'
+          : state.viaSession ? 'One-click is on: no wallet popup.' : 'Your wallet shows the trade. Nothing is sent until you confirm.'
       };
     }
     if (tk.phase === 'req') {
@@ -6399,6 +6413,9 @@
     var data = revertData(err);
     if (data) return decodeRevert(data);
     if (err.revert && err.revert.name) return friendly(err.revert.name, err.revert.args);
+    if (/missing revert data|could not coalesce|429|rate limit/i.test(String(err.shortMessage || err.message || ''))) {
+      return 'The network was busy and did not answer. Nothing was sent; try again.';
+    }
     var text = null;
     walkError(err, function (e) {
       if (e.reason && typeof e.reason === 'string') { text = e.reason; return true; }
@@ -6441,10 +6458,10 @@
 
   /* Dry-run with eth_call for a decoded revert reason, send, then wait for one confirmation.
      quiet: no "waiting for confirmation" toast (trades: their progress card says it). */
-  function sendTx(desc, method, args, quiet) {
+  function sendTx(desc, method, args, quiet, from) {
     if (DEMO) return Promise.reject(new Error('Demo: nothing is sent.'));
-    return method.staticCall.apply(method, args).then(function () {
-      return method.apply(null, args);
+    return simulate(method, args, from).then(function (gas) {
+      return method.apply(null, gas ? withGas(args, gas) : args);
     }).then(function (tx) {
       var pending = quiet ? null : toast(desc + ': sent, waiting for the chain…', 'pending', txLink(tx.hash), 0);
       return tx.wait().then(function (rc) {
@@ -6453,6 +6470,33 @@
         return rc;
       }, function (e) { dismissToast(pending); throw e; });
     });
+  }
+
+  /* The check before a send, as `from` on the page's own RPC (the wallet's RPC is a shared free one that turns away
+     a fast trader and answers with no reason, which read as "missing revert data"); resolves to a gas limit with
+     30 % headroom, or null when it could not estimate. Without `from` (or a read RPC) the method's own staticCall. */
+  function simulate(method, args, from) {
+    if (!from || !read.provider || typeof method.populateTransaction !== 'function') {
+      return method.staticCall.apply(method, args).then(function () { return null; });
+    }
+    return method.populateTransaction.apply(method, args).then(function (tx) {
+      var q = { to: tx.to, data: tx.data, from: from };
+      if (tx.value) q.value = tx.value;
+      return read.provider.call(q).then(function () {
+        return read.provider.estimateGas(q).then(function (g) { return BigInt(g) * 13n / 10n; }, function () { return null; });
+      });
+    });
+  }
+
+  /* args with a gasLimit added (merged into a trailing overrides object, if the call has one). */
+  function withGas(args, gas) {
+    var last = args[args.length - 1];
+    if (last && typeof last === 'object' && !Array.isArray(last) && typeof last !== 'bigint' && !(last instanceof Uint8Array)) {
+      var o = Object.assign({}, last);
+      if (o.gasLimit == null) o.gasLimit = gas;
+      return args.slice(0, -1).concat([o]);
+    }
+    return args.concat([{ gasLimit: gas }]);
   }
 
   function receiptEvents(rc, name) {
@@ -6510,10 +6554,36 @@
   /* Live: the router's session for this account is this browser's key, it has more than a minute
      left on the chain clock, and the key holds gas. */
   function sessionLive() {
+    if (DEMO) return sess.demoOn;
     var s = sess.onchain;
     return !!(read.router && sess.key && s && s.key.toLowerCase() === sess.key.address.toLowerCase() &&
-      s.expiry > chainNow() + 60 && sess.gasWei != null && sess.gasWei >= SESSION_MIN_GAS);
+      s.expiry > chainNow() + 60 && sess.gasWei != null && sess.gasWei >= sessionGasNeed());
   }
+
+  /* The gas the key must hold to send one more request at the fee now (at least SESSION_MIN_GAS). */
+  function sessionGasNeed() {
+    var need = sess.feeWei ? SESSION_TX_GAS * sess.feeWei : 0n;
+    return need > SESSION_MIN_GAS ? need : SESSION_MIN_GAS;
+  }
+
+  /* Why the session cannot carry a trade of `margin6` right now, in the words the ticket uses; '' when it can. */
+  function oneTapWhy(margin6) {
+    if (DEMO) return sess.demoOn ? '' : 'first';
+    var s = sess.onchain;
+    var mine = !!(s && sess.key && s.key.toLowerCase() === sess.key.address.toLowerCase());
+    if (!mine) return 'first';
+    if (s.expiry <= chainNow() + 60) return 'expired';
+    if (sess.gasWei == null || sess.gasWei < sessionGasNeed()) return 'gas';
+    if (margin6 != null && BigInt(margin6) > s.cap6) return 'cap';
+    return '';
+  }
+
+  var ONE_TAP_NOTE = {
+    first: 'First trade here: your wallet turns on one-tap once, then no popups.',
+    expired: 'One-tap expired: your wallet renews it once, then no popups.',
+    gas: 'One-tap needs gas: your wallet tops it up once, then no popups.',
+    cap: 'Over your one-tap limit: your wallet raises it once.'
+  };
 
   function refreshSession() {
     if (DEMO) { renderSession(); return Promise.resolve(); }
@@ -6523,9 +6593,12 @@
     var key = sess.key;
     return Promise.all([
       read.router.sessionOf(a),
-      key ? read.provider.getBalance(key.address) : Promise.resolve(null)
+      key ? read.provider.getBalance(key.address) : Promise.resolve(null),
+      read.provider.getFeeData().catch(function () { return null; })
     ]).then(function (r) {
       if (wallet.account !== a) return;
+      var fd = r[2];
+      if (fd) sess.feeWei = BigInt(fd.maxFeePerGas != null ? fd.maxFeePerGas : fd.gasPrice || 0n);
       var s = r[0];
       sess.onchain = s && s.key !== ZERO ? { key: s.key, expiry: Number(s.expiry), cap6: BigInt(s.maxMarginPerTrade), referrer: s.referrer } : null;
       sess.gasWei = r[1] == null ? null : BigInt(r[1]);
@@ -6582,10 +6655,46 @@
     if (DEMO) { toast('Demo: nothing is sent.'); return Promise.resolve(); }
     try { requireSigner(); } catch (e) { toast(e.message, 'err'); return Promise.resolve(); }
     if (!read.router) return Promise.resolve();
+    setBusy(true);
+    return authorizeSession(capUsd, days).then(function (rc) {
+      toast('One-click on: up to ' + fmtUsd(capUsd) + ' a trade, ' + days + (days === 1 ? ' day.' : ' days.'), 'ok', txLink(rc.hash));
+      closeDialog('sessionModal');
+      return refreshSession();
+    }).catch(function (e) {
+      toast('One-click failed: ' + describeError(e), 'err');
+    }).then(function () { setBusy(false); });
+  }
+
+  /* Forced one-tap: turn on, renew, top up or raise the cap in one wallet confirmation, so the trade that asked
+     (margin6, if an open) goes through the session key. Cap: the account's money now, at least
+     ONE_TAP_MIN_CAP_USD and never under this trade; 30 days. Rejected or failed: the error goes to the trade. */
+  function ensureOneTap(margin6) {
+    if (DEMO) {
+      state.turningOn = true; renderAction(); updateCards();
+      return new Promise(function (ok) { setTimeout(ok, 1400); }).then(function () {
+        sess.demoOn = true; state.turningOn = false;
+        toast('One-tap on: trades go through with no popup from now on.', 'ok');
+        renderSession(); renderAction();
+      });
+    }
+    var have = (Number(acct.available) || 0) + (Number(acct.marginInUse) || 0);
+    var capUsd = Math.max(ONE_TAP_MIN_CAP_USD, Math.ceil(have), margin6 != null ? Math.ceil(usd6ToNum(margin6)) : 0);
+    var s = sess.onchain;
+    if (s && oneTapWhy(margin6) !== 'cap' && usd6ToNum(s.cap6) > capUsd) capUsd = Math.ceil(usd6ToNum(s.cap6));   // never lowers a cap
+    state.turningOn = true; renderAction(); updateCards();
+    return authorizeSession(capUsd, ONE_TAP_DAYS).then(function () {
+      return refreshSession();
+    }).then(function () {
+      toast('One-tap on: trades go through with no popup from now on.', 'ok');
+    }).then(function () { state.turningOn = false; renderAction(); updateCards(); },
+      function (e) { state.turningOn = false; renderAction(); updateCards(); throw e; });
+  }
+
+  /* authorize(key, expiry, cap, referrer, keySig) with SESSION_GAS_HYPE for the key's gas; resolves to the receipt. */
+  function authorizeSession(capUsd, days) {
     var E = window.ethers;
     var a = wallet.account;
     var router = new E.Contract(read.router.target, ROUTER_ABI, wallet.signer);
-    setBusy(true);
     loadSessionKey();
     var reuse = sess.key ? read.router.traderOf(sess.key.address).then(function (t) { return t === ZERO || t.toLowerCase() === a.toLowerCase(); }) : Promise.resolve(false);
     var expiry, cap6, referrer;
@@ -6604,14 +6713,8 @@
     }).then(function (digest) {
       return sess.key.signMessage(E.getBytes(digest));
     }).then(function (keySig) {
-      return sendTx('One-click', router.authorize, [sess.key.address, expiry, cap6, referrer, keySig, { value: E.parseEther(SESSION_GAS_HYPE) }]);
-    }).then(function (rc) {
-      toast('One-click on: up to ' + fmtUsd(capUsd) + ' a trade, ' + days + (days === 1 ? ' day.' : ' days.'), 'ok', txLink(rc.hash));
-      closeDialog('sessionModal');
-      return refreshSession();
-    }).catch(function (e) {
-      toast('One-click failed: ' + describeError(e), 'err');
-    }).then(function () { setBusy(false); });
+      return sendTx('One-click', router.authorize, [sess.key.address, expiry, cap6, referrer, keySig, { value: E.parseEther(SESSION_GAS_HYPE) }], true, a);
+    });
   }
 
   /* revoke() from the wallet when the router holds a session, then the key's leftover HYPE back
@@ -6687,7 +6790,7 @@
   function walletTrade(desc, kind, args) {
     return Promise.resolve().then(function () {
       requireSigner();
-      return sendTx(desc, exchangeWrite()[kind], args, true);
+      return sendTx(desc, exchangeWrite()[kind], args, true, wallet.account);
     });
   }
 
@@ -6696,19 +6799,31 @@
      before anything is sent (no session, expired, over the cap) or a key out of gas falls back to
      the wallet once; an on-chain revert never does (the call already ran). Trades send quietly:
      the progress card where the user clicked says what is happening, not a toast. */
-  function sendTrade(desc, kind, args) {
-    if (DEMO) return demoTx(kind, args);
-    if (!sessionCarries(kind, args)) return walletTrade(desc, kind, args);
+  function sendTrade(desc, kind, args, again) {
+    var opening = kind === 'requestOpen', asks = opening || kind === 'requestClose';
+    if (DEMO) {
+      if (ONE_TAP_FORCED && asks && !sess.demoOn) return ensureOneTap(null).then(function () { return demoTx(kind, args); });
+      return demoTx(kind, args);
+    }
+    if (!sessionCarries(kind, args)) {
+      /* forced one-tap: the trader's own requests turn it on (or renew / top up / raise it) first, once */
+      if (ONE_TAP_FORCED && asks && !again && read.router && !house.usdcBad && !house.gate && (!opening || sessionRefOk(args[4]))) {
+        return ensureOneTap(opening ? args[2] : null).then(function () { return sendTrade(desc, kind, args, true); });
+      }
+      return walletTrade(desc, kind, args);
+    }
     var E = window.ethers;
     var target = kind === 'executeOpen' || kind === 'executeClose'
       ? new E.Contract(cfg.contracts.exchange, EXCHANGE_ABI, sess.key)
       : new E.Contract(read.router.target, ROUTER_ABI, sess.key);
     var sargs = kind === 'requestOpen' ? args.slice(0, 4) : args;
     state.viaSession = true; renderAction(); updateCards();
-    return sendTx(desc, target[kind], sargs, true).catch(function (e) {
+    return sendTx(desc, target[kind], sargs, true, sess.key.address).catch(function (e) {
       if (!SESSION_ERRORS[revertName(e)] && !isGasShortfall(e)) throw e;
       state.viaSession = false; renderAction(); updateCards();
-      return refreshSession().then(function () { return walletTrade(desc, kind, args); });
+      /* the key ran dry or the session ended between the check and the send: refresh, then the forced path
+         (one confirmation that fixes it) or, after that once, the wallet */
+      return refreshSession().then(function () { return again ? walletTrade(desc, kind, args) : sendTrade(desc, kind, args, false); });
     });
   }
 
