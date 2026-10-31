@@ -847,6 +847,11 @@
   /* One-click session of the connected account. key: ethers.Wallet from localStorage (or null);
      onchain: router.sessionOf(account) { key, expiry, cap } once read; gasWei: the key's HYPE. */
   var sess = { key: null, onchain: null, gasWei: null, feeWei: null, loaded: false, demoOn: false };
+  /* Opens filed through one-tap that have no request on chain yet (the owner, 2026-10-31: "people hate waiting for their
+     trades to go through"): list = their cards and chart lines from the tap on, queue = the session key's sends, one at a time. */
+  var quick = { list: [], next: 1, last: 0, queue: Promise.resolve() };
+  var QUICK_GAP_MS = 800;       // one tap is one trade: a second tap this soon is a double tap, not a second order
+  var QUICK_QUEUE_MS = 45000;   // a send that never answers must not hold the next one back for ever
 
   /* Deposit from Hyperliquid: the account's proxy and what waits on it. spotFreeWei: Core spot USDC
      (total - hold, 8 dec), perp6: Core perp withdrawable, evm6: HyperEVM USDC on the proxy; null when
@@ -1608,7 +1613,10 @@
     var m = state.market;
     var mine = m && wallet.account && m.instrumentId != null
       ? acct.positions.filter(function (p) { return p.instrumentId === m.instrumentId; }) : [];
-    var sig = mine.map(function (p) { return String(p.id) + ':' + String(p.entryPx18) + ':' + p.leverage + ':' + p.isLong; }).join(',') + '|' + (chart.pick || '');
+    var going = m && wallet.account && m.instrumentId != null
+      ? quick.list.concat(pendingOpenList()).filter(function (r) { return r.instrumentId === m.instrumentId && r.px0 > 0; }) : [];
+    var sig = mine.map(function (p) { return String(p.id) + ':' + String(p.entryPx18) + ':' + p.leverage + ':' + p.isLong; }).join(',') + '|' + (chart.pick || '')
+      + '|' + going.map(function (r) { return (r.id || r.key) + ':' + r.px0; }).join(',');
     if (sig === chart.posSig) return;
     chart.posSig = sig;
     chart.pos.forEach(function (l) { chart.series.removePriceLine(l); });
@@ -1620,6 +1628,9 @@
       chart.pos.push(chart.series.createPriceLine({ price: p.entry, color: picked ? t.accent : t.ink, lineWidth: picked ? 2 : 1, lineStyle: picked ? 0 : 2, axisLabelVisible: true, title: 'entry' + tag }));
       var bust = px18ToNum(posBust18(p));
       if (bust > 0) chart.pos.push(chart.series.createPriceLine({ price: bust, color: t.accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'liq.' + tag }));
+    });
+    going.forEach(function (r) {
+      chart.pos.push(chart.series.createPriceLine({ price: r.px0, color: t.muted, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'opening ' + sideWord(r.isLong).toLowerCase() + ' ' + r.leverage + 'x' }));
     });
   }
 
@@ -4037,7 +4048,7 @@
     if (!host || !head) return;
     var list = phList();
     var n = list.length;
-    head.hidden = !wallet.account || !hasExchange() || !acct.loaded || (!n && !pendingOpenList().length);
+    head.hidden = !wallet.account || !hasExchange() || !acct.loaded || (!n && !openingCount());
     var sum = $('phPosSum');
     if (sum) {
       var pnl = openPnl();
@@ -4803,6 +4814,8 @@
           acct.available = usd6ToNum(r[0]);
           acct.marginInUse = usd6ToNum(r[1]);
           acct.pending = usd6ToNum(r[3]);
+          /* an order still going in is not on chain yet: this read's balance would offer its money a second time */
+          acct.available -= quickHeld(); acct.pending += quickHeld();
           acct.positions = positions;
           acct.closeReqs = closeReqs;
           acct.loaded = true;
@@ -5041,7 +5054,7 @@
     }
     setText('dkBal', balText);
     setText('dkMargin', inText);
-    var nOpen = acct.positions.length + pendingOpenList().length, dko = $('dkOpenN');
+    var nOpen = acct.positions.length + openingCount(), dko = $('dkOpenN');
     if (dko) { dko.hidden = !nOpen; dko.textContent = nOpen + ' open'; }
     var dkm = $('dkMargin');
     if (dkm) dkm.title = inTitle;
@@ -5089,7 +5102,7 @@
     renderPhPnl();
     var chip = $('posChip');
     if (!chip) return;
-    var n = wallet.account && acct.loaded ? acct.positions.length + pendingOpenList().length : 0;
+    var n = wallet.account && acct.loaded ? acct.positions.length + openingCount() : 0;
     chip.hidden = !n || ui.posInView;
     if (!n) return;
     var pnl = openPnl();
@@ -5227,7 +5240,7 @@
     var ph = requestPhase(req.requestedAt);
     if (ph.phase === 'wait' && !ph.expiring && !ph.soon) {
       var left = req.requestedAt + fillSecs() - chainNow();
-      return { steps: [sent, [verb + '… ' + (left > 0.5 ? 'about ' + Math.ceil(left) + ' s' : 'any second now'), 'is-on'], [end, '']] };
+      return { steps: [sent, [verb + '… ' + (left > 0.5 ? 'about ' + Math.ceil(left) + ' s' : 'any second now'), 'is-on'], [end, '']], note: close ? '' : 'Your price is set when it fills.' };
     }
     if (ph.phase === 'fallback' || ph.phase === 'wait') {
       var note;
@@ -5417,6 +5430,31 @@
 
   /* A request still opening: a card with the steps; its button appears only when there is
      something to do (Finish now when late, Get $X back when expired). */
+  function quickView(r) {
+    return {
+      steps: [['Sending…', 'is-on'], ['Opening', ''], ['Open', '']],
+      note: 'About ' + fmtPrice(r.px0, szOf(reqSym(r))) + ' now. Your price is set when it fills.'
+    };
+  }
+
+  /* An order from the tap until its request is on chain: looks like the request card it turns into. */
+  function quickOpenCard(r) {
+    var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
+    card.setAttribute('data-quick', r.key);
+    if (posTable()) {
+      card.classList.add('dk-row', 'dk-wide');
+      card.appendChild(dkWho(r.isLong, reqSym(r), r.leverage, 'Opening', ' · ' + fmtUsdShort(r.margin)));
+      var st = dkStatusEl(null);
+      card.appendChild(st);
+      dkSetStatus(st, quickView(r));
+      return card;
+    }
+    var box = makeProg('Opening ' + sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x · ' + fmtUsdShort(r.margin), function () {});
+    card.appendChild(box);
+    setProg(box, quickView(r));
+    return card;
+  }
+
   function pendingOpenCard(r) {
     var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
     card.setAttribute('data-req', r.id);
@@ -5539,7 +5577,7 @@
   function renderDkPosHead() {
     var dk = posTable();
     var ready = !!(wallet.account && hasExchange() && acct.loaded);
-    var n = ready ? acct.positions.length + pendingOpenList().length : 0;
+    var n = ready ? acct.positions.length + openingCount() : 0;
     var sum = $('dkPosSum');
     var head = document.querySelector('#posPanel .pos-head');
     if (head) head.classList.toggle('is-dk', dk && ready);
@@ -5755,6 +5793,9 @@
     return card;
   }
 
+  function openingCount() { return pendingOpenList().length + quick.list.length; }
+  function quickHeld() { return quick.list.reduce(function (s, r) { return s + r.margin; }, 0); }
+
   function pendingOpenList() {
     return Object.keys(pend.opens).map(function (k) { return pend.opens[k]; }).sort(function (a, b) { return Number(a.id) - Number(b.id); });
   }
@@ -5766,6 +5807,7 @@
   function posItems() {
     var items = [], slots = [], seen = {};
     ui.recent.forEach(function (r) { if (r.pid == null) items.push({ kind: 'recent', r: r, key: 'r' + r.key }); });
+    quick.list.slice().reverse().forEach(function (r) { items.push({ kind: 'quick', r: r, key: r.key }); });
     pendingOpenList().slice().reverse().forEach(function (r) { items.push({ kind: 'open', r: r, key: 'o' + r.id }); });
     ui.recent.forEach(function (r) {
       if (r.pid == null || seen[r.pid]) return;
@@ -5828,8 +5870,7 @@
     var host = $('posLines');
     var empty = $('posEmpty');
     if (!host || !empty) { renderPhRows(); return; }
-    var opens = pendingOpenList();
-    var n = acct.positions.length + opens.length;
+    var n = acct.positions.length + openingCount();
     setText('posCount', n ? ' (' + n + ')' : '');
     host.classList.toggle('dk-table', posTable());
     var closing = Object.keys(ui.checking).length;
@@ -5858,6 +5899,7 @@
     var frag = document.createDocumentFragment();
     items.forEach(function (it) {
       if (it.kind === 'recent') frag.appendChild(recentCard(it.r));
+      else if (it.kind === 'quick') frag.appendChild(quickOpenCard(it.r));
       else if (it.kind === 'open') frag.appendChild(pendingOpenCard(it.r));
       else if (it.kind === 'checking') frag.appendChild(checkingCard(it.pid, it.p));
       else { frag.appendChild(positionCard(it.p)); try { frag.appendChild(tpslSub(it.p)); } catch (e) { /* the rule line never blocks the card */ } }
@@ -6839,13 +6881,22 @@
       : new E.Contract(read.router.target, ROUTER_ABI, sess.key);
     var sargs = kind === 'requestOpen' ? args.slice(0, 4) : args;
     state.viaSession = true; renderAction(); updateCards();
-    return sendTx(desc, target[kind], sargs, true, sess.key.address).catch(function (e) {
+    return inSessionTurn(function () { return sendTx(desc, target[kind], sargs, true, sess.key.address); }).catch(function (e) {
       if (!SESSION_ERRORS[revertName(e)] && !isGasShortfall(e)) throw e;
       state.viaSession = false; renderAction(); updateCards();
       /* the key ran dry or the session ended between the check and the send: refresh, then the forced path
          (one confirmation that fixes it) or, after that once, the wallet */
       return refreshSession().then(function () { return again ? walletTrade(desc, kind, args) : sendTrade(desc, kind, args, false); });
     });
+  }
+
+  /* The session key sends one transaction at a time: the ticket stays open while an order goes in, and two sends
+     together could read the same nonce. */
+  function inSessionTurn(send) {
+    var run = quick.queue.then(send, send);
+    var settled = run.then(function () {}, function () {});
+    quick.queue = Promise.race([settled, new Promise(function (ok) { setTimeout(ok, QUICK_QUEUE_MS); })]);
+    return run;
   }
 
   /* A trading action may start: a live session, or a wallet that can sign. */
@@ -6872,6 +6923,11 @@
     /* the ticket's take profit / stop loss, checked before anything is sent; parked under the request id once it is */
     var want = tpslTicketWant(m, isLong, lev);
     if (want.why) { toast(want.why, 'err'); tpslTicketCheck(); return; }
+    var openArgs = [m.instrumentId, isLong, margin6, lev, referrerArg()];
+    if (!tour.on && (DEMO ? (!ONE_TAP_FORCED || sess.demoOn) : sessionCarries('requestOpen', openArgs))) {
+      quickOpen(m, isLong, margin, lev, openArgs, desc, want, maxed, onFiled);
+      return;
+    }
     var released = false;
     function release() { if (!released) { released = true; setBusy(false); } }
     /* a limit order asks whether its request reached the chain (true once the receipt is read; a sent request
@@ -6908,6 +6964,54 @@
       tkSet('error', { msg: describeError(e) });
       tell(false);
     }).then(release);
+  }
+
+  /* An open no wallet has to confirm: the card and the chart line show at the tap, the balance drops at once, and the
+     ticket stays free for the next trade. The request's own card takes over when it is on chain (submitOpen's path after
+     that is the one a limit order or a reload already takes: watchPending and its toast). */
+  function quickOpen(m, isLong, margin, lev, args, desc, want, maxed, onFiled) {
+    if (Date.now() - quick.last < QUICK_GAP_MS) return;
+    quick.last = Date.now();
+    var mid = state.mids[m.coin];
+    var r = { key: 'q' + quick.next++, instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev, px0: isFinite(mid) ? Number(mid) : 0 };
+    quick.list.push(r);
+    acct.available -= margin; acct.pending += margin;
+    if (!maxed) lsSet(LS.amount, String(margin));
+    noteRecent(m.symbol);
+    if (ui.sheet) closeSheet();
+    renderAccount(); renderPositions(); renderAction();
+    function drop(giveBack) {
+      quick.list = quick.list.filter(function (q) { return q !== r; });
+      if (giveBack) { acct.available += margin; acct.pending = Math.max(0, acct.pending - margin); }
+      state.viaSession = false;
+    }
+    function tell(ok) { if (onFiled) { try { onFiled(ok); } catch (e) { /* never blocks the ticket */ } } }
+    sendTrade(desc, 'requestOpen', args).then(function (rc) {
+      var ev = receiptEvents(rc, 'OpenRequested')[0];
+      /* on chain the money has moved: the account read coming next says so. The demo's own books already did. */
+      drop(!!DEMO);
+      if (ev) {
+        var a = ev.args;
+        var id = String(a.requestId);
+        trackOpenRequest({
+          id: id, instrumentId: Number(a.instrumentId), isLong: !!a.isLong,
+          margin: usd6ToNum(a.marginUsdc), leverage: Number(a.leverage), px0: px18ToNum(a.px0),
+          requestedAt: null, block: Number(rc.blockNumber), localAt: Date.now()
+        });
+        if (want.tp != null || want.sl != null) { try { tpslPark(id, want, m, isLong, lev); } catch (e) { /* ignore */ } }
+      } else {
+        toast('Sent, but the page could not read the request. Your positions show the result.', 'err');
+      }
+      tell(true);
+      renderPositions();
+      return afterTx();
+    }).catch(function (e) {
+      drop(true);
+      toast('Your ' + m.symbol + ' order did not go through: ' + describeError(e), 'err');
+      tell(false);
+      renderAccount(); renderPositions(); renderAction();
+      return refreshAccount();
+    }).catch(function () { /* the next regular read repairs the balance */ });
   }
 
   /* The fallback fill (after the keeper window, before expiry): the session key, else the wallet. */
@@ -9383,7 +9487,7 @@
       if (kind === 'requestOpen') {
         var inst = state.byInstId[Number(args[0])];
         var margin = usd6ToNum(args[2]);
-        if (!inst || margin > acct.available + 1e-9) throw new Error('Not enough balance in the demo.');
+        if (!inst || margin > acct.available + quickHeld() + 1e-9) throw new Error('Not enough balance in the demo.');
         acct.available -= margin; acct.pending += margin;
         logs.push(demoLog('OpenRequested', [BigInt(demo.nextReq++), wallet.account, Number(args[0]), !!args[1], args[2], Number(args[3]), toPx18(oraclePriceFor(inst.market)), ZERO], hash));
       } else if (kind === 'executeOpen') {
