@@ -6290,8 +6290,18 @@
 
   /* The header: Connect, or the address (a tap opens Copy / explorer / Disconnect); Deposit and
      Withdraw only once a wallet is connected. */
+  /* (2026-11-01, the owner: a "switch wallet to HyperEVM" button on the trade panel) the banner above the layout while a
+     connected wallet sits on another chain; its button runs the same switch as the ticket button. */
+  function renderChainBanner() {
+    var b = $('chainBanner'); if (!b) return;
+    var on = !!(wallet.account && wallet.chainId != null && wallet.chainId !== CHAIN_ID);
+    b.hidden = !on;
+    if (on) setText('chainBannerName', chainName(wallet.chainId));
+  }
+
   function renderWallet() {
     if (typeof swOnWallet === 'function') swOnWallet();
+    renderChainBanner();
     if (typeof limLoad === 'function') try { limLoad(); } catch (e) { /* ignore */ }
     if (typeof tpslLoad === 'function') try { tpslLoad(); } catch (e) { /* ignore */ }
     var btn = $('connectBtn');
@@ -8989,6 +8999,13 @@
       if (ev.target === pp.firstElementChild || pp.firstElementChild.contains(ev.target)) { if (ev.target.closest && ev.target.closest('a, button')) return; pp.classList.toggle('is-open'); }
     });
     var ub = $('usdcBannerGo'); if (ub) ub.addEventListener('click', openDeposit);
+    var cb = $('chainBannerGo'); if (cb) cb.addEventListener('click', function () {
+      if (cb.disabled) return;
+      cb.disabled = true; cb.textContent = 'Confirm in your wallet…';
+      switchChain().then(function () { return onChainChanged(); }).catch(switchFailed).then(function () {
+        cb.disabled = false; cb.textContent = 'Switch wallet to HyperEVM'; renderChainBanner();
+      });
+    });
     $('withdrawBtn').addEventListener('click', function () { tourEvent('withdraw'); openWithdraw(); });
     var ad = $('acctDeposit');
     if (ad) ad.addEventListener('click', openDeposit);
