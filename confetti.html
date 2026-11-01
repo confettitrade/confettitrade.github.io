@@ -32,6 +32,13 @@
     .cf-ca-row a { font-size: var(--text-md); color: var(--ink-muted); }
     .cf-ca-copy.is-done { background: var(--pos); border-color: var(--pos); color: var(--page); }
     @media (max-width: 640px) { .cf-ca { padding: 14px 14px 12px; } }
+    /* The team's market-maker wallets, listed in full so anyone can check them. */
+    .cf-mm p { margin: 0 0 10px; max-width: 72ch; }
+    .cf-mm-group { margin: 16px 0 6px; font-size: var(--text-sm); color: var(--ink-muted); }
+    .cf-mm-group b { color: var(--ink); font-weight: 600; margin-right: 6px; }
+    .cf-mm-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 46ch), 1fr)); gap: 2px 24px; font-family: var(--font-mono); font-size: var(--text-sm); }
+    .cf-mm-list a { color: var(--ink-muted); overflow-wrap: anywhere; }
+    .cf-mm-list a:hover { color: var(--accent); }
   </style>
 </head>
 <body class="tabs-page" data-page="confetti">
@@ -176,6 +183,43 @@
           <div class="hint" id="swHint" aria-live="polite"></div>
           <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. <span id="swFee">0.3%</span> pool fee, nothing to the house. <a id="swPoolLink" target="_blank" rel="noopener" hidden>pool</a></div>
         </div>
+      </div>
+    </section>
+
+    <section class="panel tab-section" id="mmWallets" aria-label="Market maker wallets">
+      <div class="panel-head"><span>Market maker wallets</span><span class="count">20</span></div>
+      <div class="panel-body cf-mm">
+        <p>These wallets are the team's own market-making bots. They trade FETTI / HYPE on HyperSwap with the team's money.</p>
+        <p>Their trades count in the volume you see on FETTI charts, so not all of that volume is outside traders. They hold FETTI and can sell it. Settings can change; every trade is on-chain.</p>
+        <div class="cf-mm-group"><b>Buying</b> <span>These buy FETTI slowly and hold it.</span></div>
+        <ol class="cf-mm-list">
+          <li><a href="https://hyperevmscan.io/address/0x1F0d50436cfdfb75E8a2Ce4a172bEb59D5fF1add" target="_blank" rel="noopener">0x1F0d50436cfdfb75E8a2Ce4a172bEb59D5fF1add</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x81d04747A06aE6D1F47B56CF72c41c3791a48c5e" target="_blank" rel="noopener">0x81d04747A06aE6D1F47B56CF72c41c3791a48c5e</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xCe44700136beCE8E2cd3120137e65700890b100b" target="_blank" rel="noopener">0xCe44700136beCE8E2cd3120137e65700890b100b</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x626C6ECE3a82EaC1e83d379f458F69cFA371eB8E" target="_blank" rel="noopener">0x626C6ECE3a82EaC1e83d379f458F69cFA371eB8E</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xe4D36D19A3c8F5BC295EA159e99A14d49376Fe75" target="_blank" rel="noopener">0xe4D36D19A3c8F5BC295EA159e99A14d49376Fe75</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x699b6d1706D30e876dCbfd932f4A0e8FCC5baDc4" target="_blank" rel="noopener">0x699b6d1706D30e876dCbfd932f4A0e8FCC5baDc4</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xDa068926Ca331ccDDEDb9a62E7cba10bf642bE41" target="_blank" rel="noopener">0xDa068926Ca331ccDDEDb9a62E7cba10bf642bE41</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x776A3f464FFc86aee5804d3687C1a49e3d19967B" target="_blank" rel="noopener">0x776A3f464FFc86aee5804d3687C1a49e3d19967B</a></li>
+        </ol>
+        <div class="cf-mm-group"><b>Buy and sell</b> <span>These buy and sell in a steady cycle.</span></div>
+        <ol class="cf-mm-list">
+          <li><a href="https://hyperevmscan.io/address/0x592354fc8aF411831dEc23cf321F77b0fb097D47" target="_blank" rel="noopener">0x592354fc8aF411831dEc23cf321F77b0fb097D47</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x95EA5ec1eb3054C162AeEC5CF763EAb84ede5DF8" target="_blank" rel="noopener">0x95EA5ec1eb3054C162AeEC5CF763EAb84ede5DF8</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xE090C0316851729D0b9d5947c6fE2C92f7383dd9" target="_blank" rel="noopener">0xE090C0316851729D0b9d5947c6fE2C92f7383dd9</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xF19c938A5F170f728C6917F802760ebA21E6bBC7" target="_blank" rel="noopener">0xF19c938A5F170f728C6917F802760ebA21E6bBC7</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xDD0CC238BA33ee47774A31229400dbaad06257F1" target="_blank" rel="noopener">0xDD0CC238BA33ee47774A31229400dbaad06257F1</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xF9C5DD9857805A8647b96848352F0182454C71e5" target="_blank" rel="noopener">0xF9C5DD9857805A8647b96848352F0182454C71e5</a></li>
+        </ol>
+        <div class="cf-mm-group"><b>Idle</b> <span>Not funded or trading right now.</span></div>
+        <ol class="cf-mm-list">
+          <li><a href="https://hyperevmscan.io/address/0xeFA7489664414E3eEa64CC15De909cd3123B8F34" target="_blank" rel="noopener">0xeFA7489664414E3eEa64CC15De909cd3123B8F34</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x07317BeAB7b42d8DF74c50BdD48D59238d221cF9" target="_blank" rel="noopener">0x07317BeAB7b42d8DF74c50BdD48D59238d221cF9</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xED4fF5dce735DDD678b90E7c390A374b037B7c79" target="_blank" rel="noopener">0xED4fF5dce735DDD678b90E7c390A374b037B7c79</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xf206824660f64c71C0C8cDbAB3DCfE44Ec9621Dc" target="_blank" rel="noopener">0xf206824660f64c71C0C8cDbAB3DCfE44Ec9621Dc</a></li>
+          <li><a href="https://hyperevmscan.io/address/0x4538D4B8E31e1C67f6E90Be2E4CE4126794caBF0" target="_blank" rel="noopener">0x4538D4B8E31e1C67f6E90Be2E4CE4126794caBF0</a></li>
+          <li><a href="https://hyperevmscan.io/address/0xe981b6A6Cf5D84229e159e33bFbE986a6d553960" target="_blank" rel="noopener">0xe981b6A6Cf5D84229e159e33bFbE986a6d553960</a></li>
+        </ol>
       </div>
     </section>
 
