@@ -51,6 +51,7 @@
   var CTX_EVERY_MS = 30000;
   var CANDLES_EVERY_MS = 60000;
   var CHAIN_EVERY_MS = 10000;
+  var ORACLE_EVERY_MS = 2000;   /* the settlement price of markets with an open position (the P&L cards) */
   var INSTRUMENTS_EVERY_MS = 300000;
   var V2_EVERY_MS = 30000;
   var CANDLE_COUNT = 300;
@@ -4677,6 +4678,29 @@
      Resolves to null when the feed is dead. */
   function readOraclePx(id) {
     return read.exchange.execPrice(id, true, true).then(function (px) { return px18ToNum(px); }).catch(function () { return null; });
+  }
+
+  /* (2026-11-02, the owner: "the card does not update fast enough", the current profit card) The P&L cards price on
+     the settlement oracle, which the chain poll read only every CHAIN_EVERY_MS. This reads it every ORACLE_EVERY_MS for
+     the markets with an open position only, while the page is visible: one call per such market. */
+  var oracleBusy = false;
+  function tickOracle() {
+    if (DEMO || document.hidden || oracleBusy || !read.exchange || !wallet.account || !acct.loaded) return;
+    var ids = [];
+    acct.positions.forEach(function (p) { if (p.instrumentId != null && ids.indexOf(p.instrumentId) < 0) ids.push(p.instrumentId); });
+    if (!ids.length) return;
+    var account = wallet.account;
+    oracleBusy = true;
+    Promise.all(ids.map(readOraclePx)).then(function (opx) {
+      if (wallet.account !== account) return;
+      var now = Date.now(), moved = false;
+      ids.forEach(function (id, i) {
+        if (opx[i] == null) return;
+        if (house.oraclePxById[id] !== opx[i]) moved = true;
+        house.oraclePxById[id] = opx[i]; house.oraclePxAt[id] = now;
+      });
+      if (moved) { updatePositionPrices(); renderAccount(); }
+    }).catch(function () { /* the 10 s chain poll still reads it */ }).then(function () { oracleBusy = false; });
   }
 
   function refreshMarketChain() {
@@ -9696,6 +9720,7 @@
         refreshConfVol();
         setInterval(refreshConfVol, CONF_VOL_EVERY_MS);
         setInterval(tickChain, CHAIN_EVERY_MS);
+        setInterval(tickOracle, ORACLE_EVERY_MS);
         setInterval(function () { if (!document.hidden) loadInstruments(); }, INSTRUMENTS_EVERY_MS);
         setTimeout(tryAutoConnect, 50);
       });
