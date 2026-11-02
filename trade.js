@@ -2214,7 +2214,7 @@
   function openPriceFor(m) { return oraclePriceFor(m); }
 
   /* Price a close of the position would settle on now. */
-  function closePriceFor(pos) { return oraclePriceFor(positionMarket(pos)); }
+  function closePriceFor(pos) { return livePrice(positionMarket(pos)).px; }   /* display: live between oracle reads */
 
   /* Seconds on the chain's clock right now: the latest block timestamp plus the time since it
      was read. The request windows are measured on this clock. */
@@ -4703,6 +4703,88 @@
     }).catch(function () { /* the 10 s chain poll still reads it */ }).then(function () { oracleBusy = false; });
   }
 
+  /* (2026-11-02, the owner: "i want that to be as fast as possible") The settlement oracle moves every 3-5 s, so the
+     P&L cards follow Hyperliquid's live best bid and ask (the bbo stream, one per coin held) between oracle reads: a coin's shown price is its
+     last settlement price moved by the mid's change since that read. The mid sits 1-55 bps off the oracle by coin, so
+     anchoring to each read keeps that gap out of the number. Only while a position is open and the tab is visible;
+     display only (cards, P&L, the room to liquidation), never a request or a TP/SL trigger. */
+  var FAST_FRESH_MS = 3000, FAST_DRAW_MS = 250;
+  var fast = { ws: null, mids: {}, at: {}, subs: {}, anchors: {}, retry: 0, again: null, ping: null, draw: null };
+
+  /* the coins with an open position: the bbo subscriptions the feed should hold */
+  function fastCoins() {
+    var out = {};
+    acct.positions.forEach(function (p) { var m = positionMarket(p); if (m && m.coin) out[m.coin] = true; });
+    return out;
+  }
+
+  function fastResub() {
+    var ws = fast.ws;
+    if (!ws || ws.readyState !== 1) return;
+    var want = fastCoins();
+    var send = function (method, coin) { try { ws.send(JSON.stringify({ method: method, subscription: { type: 'bbo', coin: coin } })); } catch (e) { /* closing */ } };
+    Object.keys(want).forEach(function (c) { if (!fast.subs[c]) { fast.subs[c] = true; send('subscribe', c); } });
+    Object.keys(fast.subs).forEach(function (c) { if (!want[c]) { delete fast.subs[c]; delete fast.mids[c]; send('unsubscribe', c); } });
+  }
+
+  function fastWanted() { return !DEMO && !document.hidden && !!wallet.account && acct.loaded && acct.positions.length > 0; }
+
+  function syncFastFeed() {
+    if (!fastWanted()) { closeFastFeed(); return; }
+    if (fast.ws) { fastResub(); return; }
+    if (fast.again || typeof WebSocket !== 'function') return;
+    var ws;
+    try { ws = new WebSocket(liveWsUrl()); } catch (e) { return; }
+    fast.ws = ws;
+    ws.onopen = function () {
+      if (fast.ws !== ws) return;
+      fast.retry = 0;
+      fast.subs = {};
+      fastResub();
+      fast.ping = setInterval(function () { try { ws.send(JSON.stringify({ method: 'ping' })); } catch (e) { /* closing */ } }, LIVE_PING_MS);
+    };
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.channel !== 'bbo' || !msg.data || !fast.subs[msg.data.coin]) return;
+      var q = msg.data.bbo || [], bid = q[0] && Number(q[0].px), ask = q[1] && Number(q[1].px);
+      if (!(bid > 0 && ask > 0)) return;
+      fast.mids[msg.data.coin] = (bid + ask) / 2;
+      fast.at[msg.data.coin] = Date.now();
+      if (!fast.draw) fast.draw = setTimeout(function () { fast.draw = null; updatePositionPrices(); renderAccount(); }, FAST_DRAW_MS);
+    };
+    ws.onclose = function () {
+      if (fast.ws !== ws) return;
+      if (fast.ping) { clearInterval(fast.ping); fast.ping = null; }
+      fast.ws = null; fast.subs = {};
+      if (fastWanted()) {
+        var wait = Math.min(30000, 1000 * Math.pow(2, fast.retry++));
+        fast.again = setTimeout(function () { fast.again = null; syncFastFeed(); }, wait);
+      }
+    };
+    ws.onerror = function () { /* onclose follows */ };
+  }
+
+  function closeFastFeed() {
+    if (fast.again) { clearTimeout(fast.again); fast.again = null; }
+    if (fast.ping) { clearInterval(fast.ping); fast.ping = null; }
+    var ws = fast.ws;
+    fast.ws = null; fast.mids = {}; fast.at = {}; fast.subs = {}; fast.anchors = {};
+    if (ws) { try { ws.close(); } catch (e) { /* gone */ } }
+  }
+
+  /* The price a card shows for market m: the settlement price, moved by the live mid since it was read. */
+  function livePrice(m) {
+    var sp = settlePrice(m);
+    if (!sp.fresh || !m || !fast.ws || !(Date.now() - (fast.at[m.coin] || 0) <= FAST_FRESH_MS)) return sp;
+    var mid = fast.mids[m.coin];
+    if (!(mid > 0)) return sp;
+    var key = m.instrumentId != null ? m.instrumentId : m.coin, at = house.oraclePxAt[m.instrumentId];
+    var a = fast.anchors[key];
+    if (!a || a.at !== at || a.opx !== sp.px) a = fast.anchors[key] = { at: at, opx: sp.px, mid: mid };
+    return { px: a.opx * (mid / a.mid), fresh: true };
+  }
+
   function refreshMarketChain() {
     if (DEMO) return Promise.resolve();
     var m = state.market;
@@ -5025,7 +5107,7 @@
     var queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
     var retired = inst && inst.retired;
     if (retired) return estimateClose(pos, inst, inst.frozenPx, queueEmpty);
-    var sp = settlePrice(positionMarket(pos));
+    var sp = livePrice(positionMarket(pos));
     if (sp.fresh) return estimateClose(pos, inst, sp.px, queueEmpty);
     /* no fresh price: no number (an old one is how a lost position read +$554) */
     return { pnl: NaN, fee: NaN, payout: NaN, flat: false, delayed: true };
@@ -9648,6 +9730,7 @@
 
   function onVisibility() {
     syncLiveFeed();
+    syncFastFeed();
     if (document.hidden) return;
     tickMids(true);
     tickCtx(true);
@@ -9721,6 +9804,7 @@
         setInterval(refreshConfVol, CONF_VOL_EVERY_MS);
         setInterval(tickChain, CHAIN_EVERY_MS);
         setInterval(tickOracle, ORACLE_EVERY_MS);
+        setInterval(syncFastFeed, 1000);
         setInterval(function () { if (!document.hidden) loadInstruments(); }, INSTRUMENTS_EVERY_MS);
         setTimeout(tryAutoConnect, 50);
       });
