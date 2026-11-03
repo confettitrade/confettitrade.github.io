@@ -3000,8 +3000,8 @@
     if (acct.available < minMargin()) { openDeposit(); return; }
     if (!(form.margin > 0) || orderProblem()) { renderAction(); return; }
     ui.levFit = null;
-    if (yes === true) { if (lim.type === 'limit' && lim.firing === null && isDesk()) placeLimit(); else submitOpen(); return; }
-    if (lim.type === 'limit' && lim.firing === null && isDesk()) {
+    if (yes === true) { if (lim.type === 'limit' && lim.firing === null) placeLimit(); else submitOpen(); return; }
+    if (lim.type === 'limit' && lim.firing === null) {   /* (2026-11-02) on every width: the picker is on phones too */
       /* the big-trade check happens here, at placement: nobody is watching when a limit fires */
       if ((form.lev >= CONFIRM_LEV || form.maxed) && lsGet(LS.noConfirm) !== '1') { confirmOpen().then(function (yes) { if (yes && !state.busy && !tk.phase && !orderProblem()) placeLimit(); }); return; }
       placeLimit(); return;
@@ -3713,6 +3713,7 @@
     else if (phNote.text) { text = phNote.text; cls = 'is-note'; }
     else if (house.queued > 0) { text = 'The house is paying earlier winners first. A win right now may be paid later.'; cls = 'is-warn'; }
     else if (rc.capped && isFinite(rc.capUsd)) { text = 'Wins above ' + fmtUsd(rc.capUsd) + ' are capped at this amount and leverage.'; cls = 'is-warn'; }
+    else if (lim.type === 'limit' && lim.px > 0) { text = 'Opens when ' + (state.market ? state.market.symbol : 'the price') + ' reaches ' + fmtPrice(lim.px, state.market && state.market.szDecimals != null ? state.market.szDecimals : 4) + '; the fill lands a few seconds after'; cls = 'is-default'; }   /* a limit prices its own row D */
     else { text = 'Opens near ' + (rc.near || 'the market price') + ' in about ' + fillSecs() + ' s'; cls = 'is-default'; }
     var key = text + '|' + cls + '|' + (alt ? alt.symbol : '');
     if (d.getAttribute('data-key') === key) return;
@@ -9724,8 +9725,8 @@
      the fill, the position card, CLOSE and the result; then, on a desktop, a limit order placed, waiting in Orders and
      cancelled. Each part clears itself when they do it (the page's own events, or the state); a part that only shows
      something has a Got it. Reached from "Try the demo", from Practice first on the first-trade step, and from the
-     "?" button. Ends on Trade for real. Limit orders are on the desktop ticket only (the picker is dk-only), so a
-     phone's run says so and skips them. */
+     "?" button. Ends on Trade for real. The limit parts run on phones too since the picker reached the phone ticket
+     (the owner, 2026-11-02: "build limit orders into phone after"); take profit / stop loss before OPEN stays desktop. */
   var PRACTICE = !!(DEMO && demoOpt('practice') === '1');
   var PRACTICE_URL = 'trade.html?demo=1&practice=1';
   var prac = { on: false, i: -1, dims: null, ring: null, card: null, timer: null, scrolled: null, placed: 0, steps: [] };
@@ -9795,25 +9796,25 @@
     { id: 'result', title: 'Open to close', btn: 'Next', sheet: false,
       target: function () { return pracResult(); },
       text: function () { return 'The result card: what you got back, the fee, your profit or loss. That is a whole trade. With real money, Withdraw sends your balance back to your wallet.'; } },
-    { id: 'limit', title: 'Limit orders', desk: true, sheet: true,
+    { id: 'limit', title: 'Limit orders', sheet: true,
       target: function () { return $('dkOrderType'); },
       done: function () { return lim.type === 'limit'; },
       text: function () { return 'Market opens now. Limit waits for your price and opens when the market gets there. Pick Limit.'; } },
-    { id: 'limitpx', title: 'Your price', desk: true, sheet: true,
+    { id: 'limitpx', title: 'Your price', sheet: true,
       target: function () { return $('dkLimitBox'); },
       done: function () { return lim.type === 'limit' && pracLimitWaits(); },
       text: function () { return 'The box starts at the market price. For a buy, set it lower; for a sell, higher. Try about 1% away: the order waits for it.'; } },
-    { id: 'place', title: 'Place it', desk: true, sheet: true,
+    { id: 'place', title: 'Place it', sheet: true,
       target: function () { return $('actionBtn'); },
       done: function () { return lim.orders.length > prac.placed; },
       text: function () { var b = $('actionBtn'); return tapWord() + ' ' + (b ? b.textContent.trim() : 'LIMIT') + '. The order is stored in this browser and fires from this page while it is open.'; } },
-    { id: 'orders', title: 'Orders', btn: 'Leave it', desk: true, sheet: false,
+    { id: 'orders', title: 'Orders', btn: 'Leave it', sheet: false,
       target: function () { var t = $('tabOrders'); if (t && t.getAttribute('aria-selected') !== 'true') t.click(); return $('limLines'); },
       done: function () { return lim.orders.length < prac.placedNow; },
       text: function () { return 'Here it waits, with the live price beside it. When the price touches your limit it opens like a market order, and the fill lands a few seconds later. Cancel takes it back; it expires after a day.'; } },
     { id: 'done', title: 'That is every part of a trade', sheet: false,
       target: function () { return null; },
-      text: function () { return (isDesk() ? '' : 'Limit orders are on the desktop ticket for now. ') + 'Trade for real: the site first checks what your wallet needs (HyperEVM, HYPE for gas, USDC, a deposit) and shows you one step at a time.'; } }
+      text: function () { return 'Trade for real: the site first checks what your wallet needs (HyperEVM, HYPE for gas, USDC, a deposit) and shows you one step at a time.'; } }
   ];
 
   function pracSteps() { return PRAC_ALL.filter(function (s) { return !s.desk || isDesk(); }); }
@@ -10797,6 +10798,7 @@
     toast('Limit placed: ' + sideWord(isLong) + ' ' + m.symbol + ' ' + form.lev + 'x · ' + fmtUsd(form.margin) + ' at ' + fmtPrice(px, m.szDecimals) + '. It fires from this page while it is open.', 'ok');
     var b = $('actionBtn'); if (b) { b.disabled = true; setTimeout(renderAction, 600); }
     var tab = $('tabOrders'); if (tab) tab.click();
+    if (isSheetMode()) closeSheet();   /* phones: the sheet gives way to Orders, where the row now sits */
   }
   /* The price digits of an order's market (the ticket's rule); 0 is a value: DOGE, WIF, PEPE, PUMP and most
      of the book have 0 size decimals. Orders saved before szDec existed fall back to the market's. */
@@ -10890,7 +10892,6 @@
     Array.prototype.forEach.call(host.querySelectorAll('.lim-line'), function (n) { n.remove(); });
     empty.hidden = lim.orders.length > 0;
     empty.textContent = !(wallet.account || DEMO) ? 'Connect a wallet to see your limit orders.'
-      : !isDesk() ? 'Limit orders are on the desktop site for now.'
       : 'No limit orders. Pick Limit in the ticket, set a price, and place one.';
     if (tab) tab.textContent = 'Orders' + (lim.orders.length ? ' (' + lim.orders.length + ')' : '');
     lim.orders.forEach(function (o) {
@@ -10931,7 +10932,7 @@
     /* a second tab of the same wallet kept its own copy of the list and fired (or brought back) orders the first
        tab had fired or cancelled; storage is the one list, so another tab's write reloads it here */
     window.addEventListener('storage', function (ev) { if (ev.key === limKey()) limLoad(); });
-    onDeskChange(function () { if (!isDesk() && lim.type === 'limit') setOrderType('market'); renderLimits(); });   // the picker is gone below 901 px: so is Limit mode
+    onDeskChange(function () { renderLimits(); });   // (2026-11-02) the picker is on every width now
     limLoad();
   }
 

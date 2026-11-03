@@ -155,7 +155,18 @@
       html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
       html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
     }
-    @media (max-width: 900px) { body.trade #dkOrderType, body.trade #dkLimitBox, body.trade #dkTpSlBox { display: none; } }
+    /* limit orders on phones and tablets too (the owner, 2026-11-02: "build limit orders into phone"): the same Market |
+       Limit row and price box, sized for a thumb; take profit / stop loss stays in the phone's Position sheet */
+    @media (max-width: 900px) {
+      body.trade #dkTpSlBox { display: none; }
+      html[data-limits="1"] body.trade #dkOrderType { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 2px; }
+      html[data-limits="1"] body.trade #dkOrderType .pick { min-height: 40px; font-family: var(--font-ui); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+      html[data-limits="1"] body.trade #dkLimitBox { display: flex; flex-direction: column; gap: 4px; margin: 2px 0; }
+      html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
+      html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
+      html[data-limits="1"] body.trade #dkLimitBox .dk-tool-k { width: auto; padding: 0 10px; white-space: nowrap; font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+      html[data-limits="1"] body.trade #dkLimitBox .input { min-height: 44px; font-family: var(--font-mono); font-size: 16px; text-align: right; }
+    }
     /* take profit / stop loss (the owner, 2026-10-26): the ticket's two price rows on desktops, the line under each
        position, its inline editor, and the block in the phone's Position sheet (trade.js tpsl) */
     @media (min-width: 901px) {
@@ -744,7 +755,7 @@
             </div>
             <!-- desktop (piece B): room for the trading tools job. Hidden everywhere until that job sets
                  <html data-tools="1">; then, at 901 px and up only, Market | Limit sits above the side pair. -->
-            <div class="dk-only dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type">
+            <div class="dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type">
               <button class="pick" type="button" data-otype="market" aria-pressed="true">Market</button>
               <button class="pick" type="button" data-otype="limit" aria-pressed="false">Limit</button>
             </div>
@@ -786,7 +797,7 @@
               </div>
             </div>
             <!-- desktop (piece B): the trading tools job's Limit price row (hidden until data-tools) -->
-            <div class="dk-only dk-tools dk-tool-row" id="dkLimitBox" hidden>
+            <div class="dk-tools dk-tool-row" id="dkLimitBox" hidden>
               <div class="input-group">
                 <label class="unit unit-pre dk-tool-k" for="dkLimitPx">Limit price</label>
                 <input class="input" id="dkLimitPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—">
@@ -1374,7 +1385,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=steps2" defer></script>
+  <script src="trade.js?v=steps3" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
