@@ -45,6 +45,7 @@
   },
   "houseBots": [],
   "pointsRelay": "",
+  "fees": { "wallet": "0x028e6Bc799cab8c42A6F78A30B2c6D901E8A4161", "swapBips": 100, "bridgePercent": 3 },
   "deployBlock": 48983821,
   "v3DeployBlock": 48797405,
   "v2DeployBlock": 48404443,

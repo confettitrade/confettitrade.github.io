@@ -2,7 +2,7 @@
 <html lang="en" data-theme="night">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz https://dln.debridge.finance; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — trade</title>
   <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no funding.">
@@ -13,14 +13,14 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=fresh1">
+  <link rel="stylesheet" href="paper.css?v=steps1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
   <style>
-    /* Page-specific rules only. Tokens and components come from paper.css?v=fresh1. */
+    /* Page-specific rules only. Tokens and components come from paper.css?v=steps1. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
     /* The lowered-leverage box over OPEN (fitLeverage / renderLevFit): what changed, why, and YES */
@@ -143,6 +143,10 @@
     .swap-card .sw-terms { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
     .swap-card .sw-slip { gap: 4px; }
     .swap-card #swGo { margin-top: 10px; }
+    /* First steps borrows the Swap card into a host above the layout on phones for the Get HYPE step (trade.js setupSwapShow) */
+    .setup-swap-host { padding: 0 var(--gutter, 16px); }
+    .setup-swap-host[hidden] { display: none; }
+    .swap-card.is-setup { display: block !important; max-width: 440px; margin: 8px auto; }
     .pos-head .pos-view { gap: 2px; margin-left: auto; margin-right: 8px; }
     .pos-head .pos-view .pick { min-height: 24px; padding: 0 8px; font-size: 12px; }
     .pos-head .pos-view + #closeAllBtn { margin-left: 0; }
@@ -155,7 +159,18 @@
       html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
       html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
     }
-    @media (max-width: 900px) { body.trade #dkOrderType, body.trade #dkLimitBox, body.trade #dkTpSlBox { display: none; } }
+    /* limit orders on phones and tablets too (the owner, 2026-11-02: "build limit orders into phone"): the same Market |
+       Limit row and price box, sized for a thumb; take profit / stop loss stays in the phone's Position sheet */
+    @media (max-width: 900px) {
+      body.trade #dkTpSlBox { display: none; }
+      html[data-limits="1"] body.trade #dkOrderType { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 2px; }
+      html[data-limits="1"] body.trade #dkOrderType .pick { min-height: 40px; font-family: var(--font-ui); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+      html[data-limits="1"] body.trade #dkLimitBox { display: flex; flex-direction: column; gap: 4px; margin: 2px 0; }
+      html[data-limits="1"] body.trade #dkLimitBox[hidden] { display: none; }
+      html[data-limits="1"] body.trade #dkLimitBox .hint { font-size: 12px; color: var(--ink-faint); }
+      html[data-limits="1"] body.trade #dkLimitBox .dk-tool-k { width: auto; padding: 0 10px; white-space: nowrap; font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+      html[data-limits="1"] body.trade #dkLimitBox .input { min-height: 44px; font-family: var(--font-mono); font-size: 16px; text-align: right; }
+    }
     /* take profit / stop loss (the owner, 2026-10-26): the ticket's two price rows on desktops, the line under each
        position, its inline editor, and the block in the phone's Position sheet (trade.js tpsl) */
     @media (min-width: 901px) {
@@ -628,6 +643,7 @@
     <div class="notice" id="v3Banner" hidden>You have <b id="v3Amt">money</b> on v3. <a class="btn btn-sm" id="stV3" href="v3.html">Move it</a></div>
     <div class="notice" id="usdcBanner" hidden>Trades are in USDC, not HYPE. You have <b id="usdcBannerHype">—</b> HYPE: swap it in one tap. <button class="btn btn-sm" id="usdcBannerGo" type="button">Swap HYPE for USDC</button></div>
     <div class="notice" id="chainBanner" hidden>Your wallet is on <b id="chainBannerName">another network</b>. Confetti runs on HyperEVM. <button class="btn btn-sm btn-accent" id="chainBannerGo" type="button">Switch wallet to HyperEVM</button></div>
+    <div class="setup-swap-host" id="setupSwapHost" hidden></div>
 
     <div class="trade-layout" id="tradeLayout">
 
@@ -744,7 +760,7 @@
             </div>
             <!-- desktop (piece B): room for the trading tools job. Hidden everywhere until that job sets
                  <html data-tools="1">; then, at 901 px and up only, Market | Limit sits above the side pair. -->
-            <div class="dk-only dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type">
+            <div class="dk-tools dk-otype" id="dkOrderType" role="group" aria-label="Order type">
               <button class="pick" type="button" data-otype="market" aria-pressed="true">Market</button>
               <button class="pick" type="button" data-otype="limit" aria-pressed="false">Limit</button>
             </div>
@@ -786,7 +802,7 @@
               </div>
             </div>
             <!-- desktop (piece B): the trading tools job's Limit price row (hidden until data-tools) -->
-            <div class="dk-only dk-tools dk-tool-row" id="dkLimitBox" hidden>
+            <div class="dk-tools dk-tool-row" id="dkLimitBox" hidden>
               <div class="input-group">
                 <label class="unit unit-pre dk-tool-k" for="dkLimitPx">Limit price</label>
                 <input class="input" id="dkLimitPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—">
@@ -881,7 +897,7 @@
               <button class="btn btn-lg btn-block btn-go go-setup" id="actionBtn" type="submit">Connect wallet</button>
               <div class="ticket-progress" id="ticketProgress" hidden aria-live="polite"></div>
               <div class="hint" id="actionHint" aria-live="polite"></div>
-              <a class="ticket-demo" id="tryDemo" href="trade.html?demo=1" hidden>No wallet yet? Try the demo first: pretend money, nothing is sent.</a>
+              <a class="ticket-demo" id="tryDemo" href="trade.html?demo=1&amp;practice=1" hidden>No wallet yet? Try the demo first: pretend money, nothing is sent.</a>
             </div>
 
             <!-- phones (piece 13): the top of the More page, over the Details lines: the open price and timing,
@@ -962,6 +978,30 @@
           </div>
           <button class="btn btn-primary btn-lg btn-block" id="swGo" type="button">Connect wallet</button>
           <div class="hint" id="swHint" aria-live="polite"></div>
+        </section>
+
+        <!-- Bring ETH (the owner, 2026-11-02): ETH on Arbitrum, Ethereum or Base in, HYPE on HyperEVM out, through deBridge;
+             the Confetti fee is one line in the quote. trade.js initBridge; First steps lends it into #setupSwapHost. -->
+        <section class="panel swap-card dk-only" id="bridgeCard" aria-label="Bring ETH">
+          <div class="panel-head"><span>Bring ETH</span><span class="xs faint">ETH in · HYPE on HyperEVM out</span></div>
+          <div class="field">
+            <div class="field-head"><span class="label">You send</span><span class="field-bal">from <select class="input sw-token" id="brChain" aria-label="Chain your ETH is on"><option value="42161">Arbitrum</option><option value="1">Ethereum</option><option value="8453">Base</option></select></span></div>
+            <div class="input-group">
+              <input class="input" id="brPay" type="number" min="0" step="any" inputmode="decimal" placeholder="0.0" aria-label="ETH to send">
+              <span class="unit">ETH</span>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><span class="label">You get</span><span class="field-bal">on HyperEVM, in this wallet</span></div>
+            <div class="input-group">
+              <input class="input" id="brGet" type="text" readonly placeholder="0.0" aria-label="HYPE you get">
+              <span class="unit">HYPE</span>
+            </div>
+          </div>
+          <p class="dl" id="brQuote">Type an amount for a quote.</p>
+          <div class="dl sw-terms"><span id="brTerms">Confetti fee 3% · deBridge fee · about 2 minutes</span></div>
+          <button class="btn btn-primary btn-lg btn-block" id="brGo" type="button">Connect wallet</button>
+          <div class="hint" id="brHint" aria-live="polite"></div>
         </section>
       </aside>
 
@@ -1095,6 +1135,23 @@
       <button class="dir-btn dir-short is-solid" type="button" data-open-side="short"><span class="dir-label">SELL / SHORT</span><span class="dir-hint">price goes down</span></button>
     </div>
   </div>
+  <!-- First steps: Phantom's warnings and the way past each (the owner, 2026-11-02: "if using Phantom, ignore these
+       warnings ... and how to get past them"); the page moves this block into the step card -->
+  <div class="setup-ph" id="setupPhantom" hidden>
+    <details>
+      <summary>Using Phantom? Ignore these warnings</summary>
+      <p>Phantom runs every new site and transaction past a scanner, and HyperEVM is new to it. These can come up on Confetti. None of them means something is wrong, and each has a way past:</p>
+      <ol>
+        <li><b>“This site may be unsafe” when you connect.</b> A scanner flag on a new domain. Tap <i>Proceed anyway</i> (sometimes behind <i>Ignore warning</i>). Confetti's contracts are open and verified on Sourcify.</li>
+        <li><b>“Switch network” or “Unknown network”.</b> Confetti asks Phantom to switch to HyperEVM (chain 999), or to add it first. Tap <i>Approve</i>, then <i>Switch</i>.</li>
+        <li><b>“This transaction could not be simulated” or “Unverified contract”.</b> Phantom cannot preview HyperEVM transactions yet. The page tells you the exact amount and contract before each confirm. Tap <i>Confirm anyway</i>.</li>
+        <li><b>“You are allowing this site to spend your USDC”.</b> The approval is for the exact amount you deposit, never unlimited. Tap <i>Confirm</i>.</li>
+        <li><b>Phantom closes or freezes mid-swap.</b> Reopen it and come back: nothing is lost, the page picks up where you were. Still stuck? Swap on HyperSwap in a browser tab, then deposit here.</li>
+      </ol>
+      <p>Seen a different one? <a href="docs.html#phantom" target="_blank" rel="noopener">The full list</a>.</p>
+    </details>
+  </div>
+
   <div class="sheet-scrim" id="sheetScrim" hidden></div>
 
   <!-- Check before a big trade (100x and up, or Max), and Close all -->
@@ -1144,6 +1201,7 @@
     <div class="sheet-grab ph-only" aria-hidden="true"></div>
     <form method="dialog" id="depositForm" autocomplete="off" novalidate>
       <div class="panel-head"><span id="depositTitle">Add USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+      <div class="setup-strip" id="depSetup" hidden><span class="setup-count" id="depSetupN">Step 4 of 6</span><b id="depSetupTitle">Deposit USDC</b><span class="setup-strip-text" id="depSetupText"></span><a class="setup-strip-ph" href="docs.html#phantom" target="_blank" rel="noopener">Using Phantom? Ignore its warnings</a></div>
       <div class="panel-body stack">
         <div class="notice" id="depHype" hidden>You need a little HYPE on HyperEVM to pay network fees (about 0.01).</div>
         <div class="label">Where is your USDC?</div>
@@ -1356,7 +1414,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=pnl4" defer></script>
+  <script src="trade.js?v=steps5" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

@@ -6330,7 +6330,7 @@
         wallet.signer = s;
       }).catch(function () { wallet.signer = null; }).then(function () {
         renderWallet(); renderAction(); renderStatus(); renderPositions(); renderRefer();
-        if (wallet.chainId !== CHAIN_ID) toast('Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM: tap Switch to HyperEVM.', 'err');
+        if (wallet.chainId !== CHAIN_ID && !(br.busy || br.inflight)) toast('Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM: tap Switch to HyperEVM.', 'err');   /* not mid-bridge: the wallet is there on purpose */
         restorePendingOpens();
         /* read the last block seen before refreshAccount moves it on */
         scanAway(wallet.account);
@@ -8070,7 +8070,7 @@
       var minOut = r.out > 0n ? swMinOut(r.out, 1, r.impact) : null;
       if (minOut == null) { setText('depSwapHint', 'That much moves the pool too far for one tap. Use the Swap card with a smaller amount.'); depSwapRenderGo(); return; }
       swNoteHypeUsd(amountIn, r.out);
-      var buys = Number(window.ethers.formatUnits(r.out, 6));
+      var buys = Number(window.ethers.formatUnits(swNet(r.out), 6));
       if (buys + acct.walletUsdc < minMargin()) {
         /* the gate uses the same price, so this is rare: a stack that just dipped under the minimum */
         depSwap.quote = null;
@@ -8078,7 +8078,7 @@
         depSwapRenderGo(); renderAction(); return;
       }
       depSwap.quote = { route: route, amountIn: amountIn, out: r.out, minOut: minOut, impact: r.impact, at: Date.now(), slip: 1 };
-      setText('depSwapHint', swFmt(amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
+      setText('depSwapHint', swFmt(amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap' + (swFeeBips() ? ', Confetti fee ' + (swFeeBips() / 100) + '% included' : '') + '; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
       depSwapRenderGo();
     }).catch(function () {
       if (seq !== depSwap.seq) return;
@@ -8088,7 +8088,7 @@
   function depSwapRenderGo() {
     var b = $('depSwapGo'); if (!b) return;
     var q = depSwap.quote;
-    b.textContent = depSwap.busy ? 'Swapping…' : q ? 'Swap ' + swFmt(q.amountIn, 18) + ' HYPE for ' + fmtUsd(Number(window.ethers.formatUnits(q.out, 6))) : 'Swap HYPE for USDC';
+    b.textContent = depSwap.busy ? 'Swapping…' : q ? 'Swap ' + swFmt(q.amountIn, 18) + ' HYPE for ' + fmtUsd(Number(window.ethers.formatUnits(swNet(q.out), 6))) : 'Swap HYPE for USDC';
     b.disabled = !!(depSwap.busy || !q || state.busy);
   }
   function depSwapGo() {
@@ -8102,8 +8102,8 @@
       if (fq.fresh) {
         /* the fresh quote goes on the button first; a worse one waits for a second tap on the new number */
         depSwap.quote = fq; swNoteHypeUsd(fq.amountIn, fq.out);
-        var buys = Number(window.ethers.formatUnits(fq.out, 6));
-        setText('depSwapHint', swFmt(fq.amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
+        var buys = Number(window.ethers.formatUnits(swNet(fq.out), 6));
+        setText('depSwapHint', swFmt(fq.amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap' + (swFeeBips() ? ', Confetti fee ' + (swFeeBips() / 100) + '% included' : '') + '; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
         if (fq.worse) { depSwap.busy = false; depSwapRenderGo(); setText('depSwapHint', 'The price moved: the button shows the new amount. Tap it again to swap at that.'); throw SW_STOP; }
       }
       q = fq; desc = 'Swap ' + swFmt(q.amountIn, 18) + ' HYPE for USDC';
@@ -9459,7 +9459,7 @@
      tour no longer starts by itself; it replays from its button. */
   var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null };
   var SETUP_ORDER = ['connect', 'chain', 'hype', 'swap', 'deposit', 'trade'];
-  var SETUP_TITLES = { connect: 'Connect your wallet', chain: 'Switch to HyperEVM', hype: 'Get HYPE on HyperEVM', swap: 'Swap HYPE for USDC', deposit: 'Deposit USDC', trade: 'Open your first trade' };
+  var SETUP_TITLES = { connect: 'Connect your wallet', chain: 'Switch to HyperEVM', hype: 'Get HYPE on HyperEVM', swap: 'Swap HYPE for USDC', deposit: 'Deposit USDC', trade: 'Open your first trade', bridge: 'Your ETH is on its way' };
   var SETUP_WAIT_MS = 8000;   /* a slow history scan does not hold a new wallet back for ever */
 
   function setupKey() { return LS.setup + (wallet.account ? wallet.account.toLowerCase() : 'visitor'); }
@@ -9479,11 +9479,16 @@
      HyperEVM but no gas swaps a little of it for HYPE right there, pay USDC / get HYPE filled in. The card is desktop-only
      and sits below the fold of the sticky column, so the step borrows it into a host above the layout and hands it back after. */
   function setupSwapCase() { return !!(wallet.account && acct.walletUsdc >= 0.5 && $('swapCard')); }
+  function setupLendFor() { return setupSwapCase() ? 'swapCard' : brOn() ? 'bridgeCard' : ''; }
   function setupSwapShow() {
-    var card = $('swapCard'); if (!card || setup.swapHome) return;
-    setup.swapHome = { parent: card.parentNode, next: card.nextSibling };
+    var id = setupLendFor(), card = id ? $(id) : null;
+    if (!card) { setupSwapHide(); return; }
+    if (setup.swapHome && setup.swapHome.id !== id) setupSwapHide();
+    if (setup.swapHome) return;
+    setup.swapHome = { id: id, parent: card.parentNode, next: card.nextSibling };
     var host = $('setupSwapHost'); if (host) { host.hidden = false; host.appendChild(card); }   /* every width: the desktop column keeps it below the fold */
     card.classList.add('is-setup');
+    if (id !== 'swapCard') return;
     try {
       var payT = $('swPayToken'), getT = $('swGetToken'), pay = $('swPay');
       if (payT && getT && (payT.value !== 'USDC' || getT.value !== 'HYPE')) { payT.value = 'USDC'; getT.value = 'HYPE'; payT.dispatchEvent(new Event('change')); }
@@ -9491,7 +9496,7 @@
     } catch (e) { /* the card still works by hand */ }
   }
   function setupSwapHide() {
-    var card = $('swapCard'), home = setup.swapHome; if (!card || !home) return;
+    var home = setup.swapHome, card = home ? $(home.id) : null; if (!card || !home) return;
     card.classList.remove('is-setup');
     if (home.parent && card.parentNode !== home.parent) home.parent.insertBefore(card, home.next && home.next.parentNode === home.parent ? home.next : null);
     var host = $('setupSwapHost'); if (host) host.hidden = true;
@@ -9504,6 +9509,7 @@
     if (DEMO || tour.on || !window.ethers || !hasExchange()) return null;
     if (!wallet.account) return setup.away || !tour.autoTried ? null : 'connect';   /* the silent reconnect answers first */
     if (lsGet(setupKey()) === '1') return null;
+    if (br.inflight || br.busy) return 'bridge';   /* the wallet is on the ETH side on purpose: hold here until the HYPE lands */
     if (wallet.chainId !== CHAIN_ID) return 'chain';
     if (!acct.loaded) return 'wait';
     if (setupTraded()) { lsSet(setupKey(), '1'); return null; }
@@ -9567,7 +9573,7 @@
   function setupShow(step) {
     setup.step = step; setup.scrolled = null;
     if (step !== 'wait') setup.waitSince = 0;
-    var n = SETUP_ORDER.indexOf(step);
+    var n = SETUP_ORDER.indexOf(step === 'bridge' ? 'hype' : step);
     setRole(setup.card, 'count', n < 0 ? 'Checking' : 'Step ' + (n + 1) + ' of ' + SETUP_ORDER.length);
     setRole(setup.card, 'title', step === 'wait' ? 'Checking what you have' : SETUP_TITLES[step]);
     setupButtons(step);
@@ -9581,7 +9587,7 @@
       li.classList.toggle('is-now', k === n);
     });
     setupAutoOpen();
-    if (step === 'hype' && setupSwapCase()) setupSwapShow(); else setupSwapHide();
+    if (step === 'hype') setupSwapShow(); else setupSwapHide();
     setupPlace();
   }
 
@@ -9604,7 +9610,14 @@
     if (s === 'hype') {
       if (setupSwapCase()) return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet but no HYPE for gas. Every send on HyperEVM needs a little (about 0.01 HYPE). Swap a little of it for HYPE right here on Confetti\'s swap: 1 USDC covers many sends. Then deposit the rest.';
       if (depSwapSmall()) return 'Trades are in USDC. The HYPE here buys about <b>' + fmtUsd(swHypeWorth(ui.hypeWei)) + '</b>, under the ' + fmtUsdShort(minMargin()) + ' minimum for a trade: add a little more HYPE, or USDC.';
+      if (brOn()) return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Bring ETH from Arbitrum, Ethereum or Base: it lands here as HYPE in a minute or two' + (onrampOn() ? '; or pay with Apple Pay' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
       return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Send HYPE or USDC to this wallet on HyperEVM' + (onrampOn() ? ', or pay with Apple Pay and HYPE arrives in a few minutes' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
+    }
+    if (s === 'bridge') {
+      var f = br.inflight || {}, where = BR_CHAINS[f.chain] ? BR_CHAINS[f.chain].name : 'the other chain';
+      if (br.busy) return 'Confirm the transaction in your wallet on ' + where + '. Nothing moves until you do.';
+      if (f.state === 'slow') return 'Taking longer than usual. deBridge still has the order; it fills or the ETH comes back to the wallet it left. Keep this page open, or check the order at app.debridge.finance with your wallet address.';
+      return 'Sent on ' + where + '. deBridge is filling the order: about <b>' + (f.out ? brFmtHype(f.out) : '—') + ' HYPE</b> lands in this wallet on HyperEVM in a minute or two. Switch back to HyperEVM whenever you like; the page keeps watching.';
     }
     if (s === 'swap') return 'Trades are in USDC, not HYPE. ' + have + ' Add USDC swaps your HYPE for USDC in one tap on HyperSwap and keeps 0.03 HYPE for gas.';
     if (s === 'deposit') return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet' + (acct.available > 0 ? ' and <b>' + fmtUsd(acct.available) + '</b> on Confetti' : '') + '. Deposit at least ' + fmtUsdShort(minMargin()) + ' onto the exchange. The first time is two confirms: approve USDC, then deposit.';
@@ -9633,6 +9646,8 @@
       add('Just looking', 'btn-ghost btn-sm', function () { setup.away = true; setupRender(); });
     } else if (step === 'chain') {
       add('Switch to HyperEVM', 'btn-primary', function () { switchChain().then(function () { return onChainChanged(); }).catch(switchFailed); });
+    } else if (step === 'bridge') {
+      if (wallet.chainId !== CHAIN_ID) add('Switch to HyperEVM', '', function () { switchChain().then(function () { return onChainChanged(); }).catch(switchFailed); });
     } else if (step === 'hype') {
       var ramp = onrampOn();
       if (ramp) add('Pay with Apple Pay', 'btn-primary', function () { setup.opened = 'hype'; openDeposit(); setDepWhere('card'); });
@@ -9652,7 +9667,7 @@
     function vis(id) { var n = $(id); return n && !n.hidden && n.getClientRects().length ? n : null; }
     if (s === 'connect') return vis('phAcct') || vis('connectBtn');
     if (s === 'chain') return vis('chainBanner') || vis('phAcct') || vis('connectBtn');
-    if (s === 'hype') return setup.swapHome ? vis('swapCard') : null;   /* the site's own Swap card, pay USDC / get HYPE */
+    if (s === 'hype') return setup.swapHome ? vis(setup.swapHome.id) : null;   /* the site's own Swap card, or the Bring ETH box */
     if (s === 'trade') return isSheetMode() && !ui.sheet ? (vis('mbarPair') || vis('mobileBar') || vis('ticket')) : vis('ticket');   /* phones: the BUY / SELL bar opens the sheet */
     return null;
   }
@@ -9673,7 +9688,7 @@
   function setupPlace() {
     if (!setup.on || !setup.card) return;
     setupAutoOpen();
-    if (setup.step === 'hype') { if (setupSwapCase()) setupSwapShow(); else setupSwapHide(); }   /* the wallet's USDC may land after the step shows */
+    if (setup.step === 'hype') setupSwapShow();   /* the wallet's USDC may land after the step shows: the lent card follows */
     var dlg = document.querySelector('dialog[open]');
     var inDep = !!(dlg && dlg.id === 'depositModal' && (setup.step === 'swap' || setup.step === 'deposit' || setup.step === 'hype'));
     renderDepSetup(inDep);
@@ -9975,6 +9990,158 @@
     put(d[1], 0, b, vw, vh - b);
     put(d[2], 0, t, l, b - t);
     put(d[3], r, t, vw - r, b - t);
+  }
+
+  /* ---- Bring ETH (the owner, 2026-11-02: "3% fees on eth to hype transfers", "dont make it look bad that im charging
+     fees"): ETH on Arbitrum, Ethereum or Base in, native HYPE on HyperEVM out, through deBridge's DLN. The 3% is
+     deBridge's affiliate fee to the fee wallet, paid in ETH on the chain the ETH leaves, inside the same order: one
+     confirm there, the HYPE lands in a minute or two, and the page follows the order until it does. The fee is one
+     quiet line in the quote, like every fee on the site. Nothing here is sent without the wallet's confirm. */
+  var BR_API = 'https://dln.debridge.finance/v1.0';
+  var BR_CHAINS = { 42161: { name: 'Arbitrum', hex: '0xa4b1' }, 1: { name: 'Ethereum', hex: '0x1' }, 8453: { name: 'Base', hex: '0x2105' } };
+  var BR_DST = 100000022;          // HyperEVM inside deBridge
+  var BR_QUOTE_FRESH_MS = 20000;
+  var br = { chain: 42161, quote: null, busy: false, seq: 0, timer: null, inflight: null, poll: null, status: '' };
+
+  function feeCfg() {
+    var f = (cfg && cfg.fees) || {};
+    return { wallet: isAddr(f.wallet) ? f.wallet : '', swapBips: Math.min(100, Math.max(0, Math.round(Number(f.swapBips) || 0))), bridgePercent: Math.max(0, Number(f.bridgePercent) || 0) };
+  }
+  function brFeePct() { var f = feeCfg(); return f.wallet ? f.bridgePercent : 0; }
+  function brOn() { return !!$('bridgeCard'); }   /* the demo quotes too; brGo needs a real wallet */
+  function brFmtEth(wei) { var n = Number(window.ethers.formatUnits(wei, 18)); return String(Number(n.toPrecision(n >= 1 ? 6 : 4))); }
+  function brFmtHype(wei) { var n = Number(window.ethers.formatUnits(wei, 18)); return n >= 100 ? n.toFixed(2) : String(Number(n.toPrecision(5))); }
+
+  function brUrl(amountWei, who) {
+    var f = feeCfg();
+    var q = [['srcChainId', br.chain], ['srcChainTokenIn', ZERO], ['srcChainTokenInAmount', String(amountWei)], ['dstChainId', BR_DST], ['dstChainTokenOut', ZERO], ['dstChainTokenOutAmount', 'auto'], ['prependOperatingExpenses', 'true']];
+    if (who) q.push(['dstChainTokenOutRecipient', who], ['senderAddress', who], ['srcChainOrderAuthorityAddress', who], ['dstChainOrderAuthorityAddress', who]);
+    if (brFeePct()) q.push(['affiliateFeePercent', String(brFeePct())], ['affiliateFeeRecipient', f.wallet]);
+    return BR_API + '/dln/order/create-tx?' + q.map(function (kv) { return kv[0] + '=' + encodeURIComponent(kv[1]); }).join('&');
+  }
+  function brFetch(url) {
+    return fetch(url, { headers: { accept: 'application/json' } }).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok) throw new Error((j && j.errorMessage) || ('deBridge answered ' + r.status)); return j; });
+    });
+  }
+  /* The quote: what leaves the wallet (the amount plus deBridge's fixed fee), what lands, the fee line. */
+  function brQuote(amountWei, who) {
+    return brFetch(brUrl(amountWei, who)).then(function (j) {
+      var est = j.estimation || {}, tx = j.tx || {};
+      var out = BigInt((est.dstChainTokenOut && est.dstChainTokenOut.amount) || 0);
+      var inAmt = BigInt((est.srcChainTokenIn && est.srcChainTokenIn.amount) || amountWei);
+      var value = tx.value != null ? BigInt(tx.value) : inAmt + BigInt(j.fixFee || 0);
+      var delay = j.order && j.order.approximateFulfillmentDelay;
+      return { amountWei: amountWei, inAmt: inAmt, value: value, out: out, tx: tx, orderId: j.orderId, delay: delay, at: Date.now(), chain: br.chain };
+    });
+  }
+  function brQuoteNow() {
+    var inp = $('brPay'), outEl = $('brGet'); if (!inp || !outEl) return;
+    br.quote = null; brRenderGo();
+    var amt = Number(inp.value);
+    if (!(amt > 0)) { outEl.value = ''; setText('brQuote', 'Type an amount for a quote.'); brRenderTerms(null); return; }
+    var E = window.ethers, wei;
+    try { wei = E.parseUnits(String(inp.value), 18); } catch (e) { outEl.value = ''; setText('brQuote', 'Type an amount for a quote.'); return; }
+    var seq = ++br.seq;
+    setText('brQuote', 'Getting a quote…');
+    brQuote(wei, wallet.account).then(function (q) {
+      if (seq !== br.seq) return;
+      br.quote = q;
+      outEl.value = q.out > 0n ? brFmtHype(q.out) : '';
+      var rate = amt > 0 ? Number(E.formatUnits(q.out, 18)) / amt : 0;
+      setText('brQuote', '1 ETH ≈ ' + String(Number(rate.toPrecision(5))) + ' HYPE · ' + BR_CHAINS[br.chain].name + ' to HyperEVM · deBridge');
+      brRenderTerms(q); brRenderGo();
+    }).catch(function (e) {
+      if (seq !== br.seq) return;
+      outEl.value = ''; setText('brQuote', 'No quote right now: ' + (e && e.message ? e.message : 'try again in a moment.')); brRenderTerms(null); brRenderGo();
+    });
+  }
+  function brRenderTerms(q) {
+    var t = $('brTerms'); if (!t) return;
+    var fee = brFeePct() ? 'Confetti fee ' + brFeePct() + '%' : 'no Confetti fee';
+    t.textContent = q ? fee + ' · leaves your wallet: ' + brFmtEth(q.value) + ' ETH · about ' + (q.delay ? q.delay + ' min' : '2 min') : fee + ' · deBridge fee · about 2 minutes';
+  }
+  function brRenderGo() {
+    var b = $('brGo'); if (!b) return;
+    var label = !wallet.account ? 'Connect wallet'
+      : br.busy ? (br.status || 'Check your wallet…')
+      : br.inflight ? 'On its way…'
+      : !br.quote ? 'Bring ETH'
+      : 'Bring ' + brFmtEth(br.quote.amountWei) + ' ETH';
+    b.textContent = label;
+    b.disabled = !!(wallet.account && (br.busy || br.inflight || !br.quote));
+  }
+  function brSwitchTo(id) {
+    var eth = wallet.eth; if (!eth) return Promise.reject(new Error('No wallet.'));
+    if (wallet.chainId === id) return Promise.resolve();
+    return eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: BR_CHAINS[id].hex }] }).then(function () {
+      return eth.request({ method: 'eth_chainId' });
+    }).then(function (hex) { wallet.chainId = parseInt(hex, 16); if (wallet.chainId !== id) throw new Error('The wallet is still on ' + chainName(wallet.chainId) + '.'); });
+  }
+  function brGo() {
+    if (br.busy || br.inflight) return;
+    if (!wallet.account) { connect(); return; }
+    if (!br.quote) return;
+    var E = window.ethers, q0 = br.quote, q = null, hash = null;
+    br.busy = true; br.status = 'Switching to ' + BR_CHAINS[br.chain].name + '…'; brRenderGo(); setText('brHint', '');
+    brSwitchTo(br.chain).then(function () {
+      br.status = 'Getting the final quote…'; brRenderGo();
+      return Date.now() - q0.at < BR_QUOTE_FRESH_MS && q0.tx && q0.tx.data && q0.chain === br.chain ? q0 : brQuote(q0.amountWei, wallet.account);
+    }).then(function (fq) {
+      q = fq; br.quote = fq; brRenderTerms(fq);
+      if (!fq.tx || !fq.tx.data) throw new Error('deBridge gave no transaction for this amount.');
+      br.status = 'Confirm in your wallet…'; brRenderGo();
+      setText('brHint', 'Your wallet shows one transaction on ' + BR_CHAINS[br.chain].name + ' for ' + brFmtEth(fq.value) + ' ETH. Nothing is sent until you confirm.');
+      var prov = new E.BrowserProvider(wallet.eth);
+      return prov.getSigner().then(function (s) { return s.sendTransaction({ to: fq.tx.to, data: fq.tx.data, value: fq.value }); });
+    }).then(function (tx) {
+      hash = tx.hash;
+      br.inflight = { hash: hash, chain: br.chain, orderId: q.orderId || null, since: Date.now(), out: q.out, state: 'sent' };
+      br.busy = false; br.status = ''; brRenderGo();
+      setText('brHint', 'Sent. deBridge is filling it: the HYPE lands in this wallet on HyperEVM in a minute or two. You can switch back to HyperEVM any time; the page keeps watching.');
+      toast('ETH sent on ' + BR_CHAINS[br.chain].name + '. HYPE lands on HyperEVM in a minute or two.', 'ok');
+      $('brPay').value = ''; $('brGet').value = ''; setText('brQuote', 'Type an amount for a quote.'); brRenderTerms(null);
+      brTrack();
+      renderAction();
+    }).catch(function (e) {
+      br.busy = false; br.status = ''; brRenderGo();
+      setText('brHint', 'Not sent: ' + (e && (e.shortMessage || e.message) ? (e.shortMessage || e.message) : 'the wallet said no.'));
+      if (br.quote === q0) br.quote.at = 0;
+    });
+  }
+  /* Follow the order: the tx gives the order id, the order gives its state; done when the HYPE is out. */
+  function brTrack() {
+    if (br.poll) clearInterval(br.poll);
+    br.poll = setInterval(function () {
+      var f = br.inflight; if (!f) { clearInterval(br.poll); br.poll = null; return; }
+      if (Date.now() - f.since > 30 * 60000) { f.state = 'slow'; renderAction(); return; }
+      var p = f.orderId ? Promise.resolve(f.orderId) : brFetch(BR_API + '/dln/tx/' + f.hash + '/order-ids').then(function (j) { return j && j.orderIds && j.orderIds[0]; });
+      p.then(function (id) {
+        if (!id) return;
+        f.orderId = id;
+        return brFetch(BR_API + '/dln/order/' + id + '/status').then(function (s) {
+          var st = s && s.status || '';
+          if (/^(Fulfilled|SentUnlock|ClaimedUnlock)$/.test(st)) {
+            br.inflight = null; clearInterval(br.poll); br.poll = null;
+            toast('Landed: about ' + brFmtHype(f.out) + ' HYPE is in this wallet on HyperEVM.', 'ok');
+            setText('brHint', 'Landed. Switch back to HyperEVM to go on.');
+            brRenderGo(); renderAction();
+          } else if (/Cancel/.test(st)) {
+            br.inflight = null; clearInterval(br.poll); br.poll = null;
+            setText('brHint', 'deBridge cancelled the order; the ETH comes back to the wallet it left. Try again, or a different amount.');
+            brRenderGo(); renderAction();
+          } else { f.state = st || f.state; renderAction(); }
+        });
+      }).catch(function () { /* next tick */ });
+    }, 5000);
+  }
+  function initBridge() {
+    var card = $('bridgeCard'); if (!card) return;
+    var sel = $('brChain');
+    if (sel) sel.addEventListener('change', function () { br.chain = Number(sel.value) || 42161; brQuoteNow(); });
+    $('brPay').addEventListener('input', function () { clearTimeout(br.timer); br.timer = setTimeout(brQuoteNow, 400); });
+    $('brGo').addEventListener('click', brGo);
+    brRenderTerms(null); brRenderGo();
   }
 
   /* ---- local demo (DEMO: localhost or 127.0.0.1 with ?demo=...) ------------------------------
@@ -10399,6 +10566,8 @@
   var SWAP_V3_ROUTER_ABI = [
     'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
     'function unwrapWETH9(uint256 amountMinimum, address recipient) payable',
+    'function unwrapWETH9WithFee(uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable',
+    'function sweepTokenWithFee(address token, uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable',
     'function refundETH() payable',
     'function multicall(bytes[] data) payable returns (bytes[] results)',
   ];
@@ -10477,10 +10646,11 @@
   /* The card's boxes from a quote (the first quote, or a re-quote right before the wallet opens). */
   function swShowQuote(q) {
     var T = swTokens(), E = window.ethers, amt = Number(E.formatUnits(q.amountIn, T[sw.pay].dec));
-    var outEl = $('swGet'); if (outEl) outEl.value = q.out > 0n ? swFmt(q.out, T[sw.get].dec) : '';
+    var v3 = q.route.kind === 'v3';
+    var outEl = $('swGet'); if (outEl) outEl.value = q.out > 0n ? swFmt(v3 ? swNet(q.out) : q.out, T[sw.get].dec) : '';
     var unit = amt > 0 ? Number(E.formatUnits(q.out, T[sw.get].dec)) / amt : 0;
-    setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + q.impact.toFixed(q.impact < 0.1 ? 2 : 1) + '% · ' + (q.route.kind === 'v3' ? 'HyperSwap V3' : 'HyperSwap V2'));
-    setText('swTerms', 'min received ' + swFmt(q.minOut, T[sw.get].dec) + ' ' + sw.get);
+    setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + q.impact.toFixed(q.impact < 0.1 ? 2 : 1) + '% · ' + (v3 ? 'HyperSwap V3' + swFeeNote() : 'HyperSwap V2'));
+    setText('swTerms', 'min received ' + swFmt(v3 ? swNet(q.minOut) : q.minOut, T[sw.get].dec) + ' ' + sw.get);
   }
 
   /* A quote older than SW_QUOTE_FRESH_MS is asked again right before the wallet opens, so min received comes from
@@ -10510,6 +10680,12 @@
   }
 
   function swapCfg() { return (cfg && cfg.swap) || {}; }
+  /* The Confetti fee on a V3 swap (the owner, 2026-11-02: "1% on hype to usdc"): taken by HyperSwap's own router inside
+     the swap call (sweepTokenWithFee / unwrapWETH9WithFee, capped at 100 bips by the router) to the fee wallet in
+     config.fees; nothing extra to sign. Shown net: the amount and min received are what the wallet gets. */
+  function swFeeBips() { var f = feeCfg(); return f.wallet ? f.swapBips : 0; }
+  function swNet(x) { var b = swFeeBips(); return b ? x - (x * BigInt(b)) / 10000n : x; }
+  function swFeeNote() { var b = swFeeBips(); return b ? ' · Confetti fee ' + (b / 100) + '%' : ''; }
   function swTokens() {
     return {
       HYPE: { sym: 'HYPE', dec: 18, native: true, addr: swapCfg().whype },
@@ -10592,7 +10768,7 @@
     if (amountIn == null) { outEl.value = ''; setText('swQuote', 'Type an amount for a quote.'); setText('swTerms', 'min received —'); swRenderGo(); return; }
     /* the whole HYPE balance typed by hand left nothing for gas, and the wallet's error read like no HYPE at all */
     var bal = sw.bal[sw.pay];
-    if (bal != null) {
+    if (bal != null && !DEMO) {   /* the demo's pretend address holds nothing on chain: it still shows quotes */
       var room = T[sw.pay].native ? (bal > SW_GAS_KEEP ? bal - SW_GAS_KEEP : 0n) : bal;
       if (amountIn > room) {
         outEl.value = '';
@@ -10606,13 +10782,14 @@
       if (seq !== sw.seq) return;
       var out = r.out, impact = r.impact;
       var minOut = out > 0n ? swMinOut(out, sw.slip, impact) : null;
-      outEl.value = out > 0n ? swFmt(out, T[sw.get].dec) : '';
+      var net = route.kind === 'v3' ? swNet(out) : out;
+      outEl.value = out > 0n ? swFmt(net, T[sw.get].dec) : '';
       var unit = Number(E.formatUnits(out, T[sw.get].dec)) / amt;
-      setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + impact.toFixed(impact < 0.1 ? 2 : 1) + '% · ' + (route.kind === 'v3' ? 'HyperSwap V3' : 'HyperSwap V2'));
+      setText('swQuote', '1 ' + sw.pay + ' = ' + String(Number(unit.toPrecision(5))) + ' ' + sw.get + ' · moves the pool ' + impact.toFixed(impact < 0.1 ? 2 : 1) + '% · ' + (route.kind === 'v3' ? 'HyperSwap V3' + swFeeNote() : 'HyperSwap V2'));
       if (minOut == null) { setText('swTerms', 'Too big for this pool right now: try a smaller amount.'); swRenderGo(); return; }
       sw.quote = { route: route, amountIn: amountIn, out: out, minOut: minOut, impact: impact, at: Date.now(), slip: sw.slip };
       if (sw.pay === 'HYPE' && sw.get === 'USDC') swNoteHypeUsd(amountIn, out);
-      setText('swTerms', 'min received ' + swFmt(minOut, T[sw.get].dec) + ' ' + sw.get);
+      setText('swTerms', 'min received ' + swFmt(route.kind === 'v3' ? swNet(minOut) : minOut, T[sw.get].dec) + ' ' + sw.get);
       swRenderGo();
     }).catch(function () {
       if (seq !== sw.seq) return;
@@ -10656,14 +10833,16 @@
       return sendTx(desc, v2.swapExactTokensForETHSupportingFeeOnTransferTokens, [q.amountIn, q.minOut, path, wallet.account, E.ZeroAddress, deadline]);
     }
     var v3 = new E.Contract(swapCfg().v3Router, SWAP_V3_ROUTER_ABI, wallet.signer);
+    var bips = swFeeBips(), feeTo = feeCfg().wallet;
     var params = {
       tokenIn: pay.addr, tokenOut: get.addr, fee: q.route.fee,
-      // HYPE out: the router keeps the WHYPE and unwraps it to the wallet in the same call
-      recipient: get.native ? swapCfg().v3Router : wallet.account,
+      // HYPE out, or a fee: the router keeps the output and pays it out (less the fee) in the same call
+      recipient: get.native || bips ? swapCfg().v3Router : wallet.account,
       deadline: deadline, amountIn: q.amountIn, amountOutMinimum: q.minOut, sqrtPriceLimitX96: 0n,
     };
     var calls = [v3.interface.encodeFunctionData('exactInputSingle', [params])];
-    if (get.native) calls.push(v3.interface.encodeFunctionData('unwrapWETH9', [q.minOut, wallet.account]));
+    if (get.native) calls.push(bips ? v3.interface.encodeFunctionData('unwrapWETH9WithFee', [q.minOut, wallet.account, BigInt(bips), feeTo]) : v3.interface.encodeFunctionData('unwrapWETH9', [q.minOut, wallet.account]));
+    else if (bips) calls.push(v3.interface.encodeFunctionData('sweepTokenWithFee', [get.addr, q.minOut, wallet.account, BigInt(bips), feeTo]));
     if (pay.native) calls.push(v3.interface.encodeFunctionData('refundETH', []));
     return sendTx(desc, v3.multicall, [calls, pay.native ? { value: q.amountIn } : {}]);
   }
@@ -10743,7 +10922,7 @@
     $('swGo').addEventListener('click', swGo);
     swRenderGo();
   }
-  function swOnWallet() { try { swRefreshBalances(); swRenderGo(); } catch (e) { /* never blocks the page */ } }
+  function swOnWallet() { try { swRefreshBalances(); swRenderGo(); } catch (e) { /* never blocks the page */ } try { brRenderTerms(br.quote); brRenderGo(); } catch (e) { /* the box renders when it exists */ } }   /* the fee lines read config, which lands after init */
 
 
   /* ---- Limit orders (the owner, 2026-10-25: "add limit orders to confetti") --------------------------------
@@ -11350,6 +11529,7 @@
 
   function init() {
     try { initSwap(); } catch (e) { /* the swap card never blocks the page */ }
+    try { initBridge(); } catch (e) { /* the Bring ETH box never blocks the page */ }
     try { initOnramp(); } catch (e) { /* the on-ramp never blocks the page */ }
     try { initPosView(); } catch (e) { /* the view switch never blocks the page */ }
     try { initLimits(); } catch (e) { /* limit orders never block the page */ }
