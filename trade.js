@@ -9135,7 +9135,7 @@
       nt.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
     var tb = $('tourBtn');
-    if (tb) tb.addEventListener('click', function () { startTour(0); });
+    if (tb) tb.addEventListener('click', function () { location.href = PRACTICE_URL; });   /* (2026-11-02) the practice run on the demo, in place of the coach-mark tour */
     /* the strip carries Balance · In trades · P&L and the owed row: the ticket's own strip may hide on desktop */
     if ($('dkAcct') && $('dkOwed')) document.body.classList.add('dk-ready');
     initPhoneHeader();
@@ -9429,6 +9429,7 @@
   /* The page tells the tour what the user just did; the step waiting for it moves on. A fill
      lands on the position card step, wherever the tour is between OPEN POSITION and the fill. */
   function tourEvent(name) {
+    try { practiceEvent(name); } catch (e) { /* the practice run never blocks a trade */ }
     if (!tour.on) return;
     var s = TOUR[tour.i];
     if (!s) return;
@@ -9618,6 +9619,8 @@
       add('Swap HYPE for USDC', 'btn-primary', function () { setup.opened = step; openDeposit(); });
     } else if (step === 'deposit') {
       add('Deposit USDC', 'btn-primary', function () { setup.opened = step; openDeposit(); });
+    } else if (step === 'trade') {
+      add('Practice first', 'btn-sm', function () { location.href = PRACTICE_URL; });   /* a demo trade, open to close, pretend money */
     }
     row.hidden = !row.childNodes.length;
   }
@@ -9668,7 +9671,7 @@
     }
     if (setup.scrolled !== setup.step && (r.top < 48 || r.bottom > vh - 8) && t.scrollIntoView) {
       setup.scrolled = setup.step;
-      t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      litScrollTo(t, r);
     }
     var pad = 6, gap = 10;
     var box = { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad };
@@ -9712,6 +9715,242 @@
     if (seg) seg.classList.toggle('dep-dim', now === 'swap' || now === 'deposit');
     var fromWallet = $('depFromWallet');
     if (fromWallet) Array.prototype.forEach.call(fromWallet.children, function (c) { c.classList.toggle('dep-dim', now === 'swap' && c.id !== 'depSwap'); });
+  }
+
+  /* ---- PRACTICE RUN (the owner, 2026-11-02: "do that same flow through for setting up trades and show them all the
+     parts of a trade with a demo trade from open to close. limit orders too"). On the demo (trade.html?demo=1&practice=1:
+     pretend money, a fresh account, nothing sent) the same lit-section flow as First steps takes a new trader through
+     every part of a trade: the coin, up or down, the amount, leverage, the receipt, take profit / stop loss, OPEN and
+     the fill, the position card, CLOSE and the result; then, on a desktop, a limit order placed, waiting in Orders and
+     cancelled. Each part clears itself when they do it (the page's own events, or the state); a part that only shows
+     something has a Got it. Reached from "Try the demo", from Practice first on the first-trade step, and from the
+     "?" button. Ends on Trade for real. Limit orders are on the desktop ticket only (the picker is dk-only), so a
+     phone's run says so and skips them. */
+  var PRACTICE = !!(DEMO && demoOpt('practice') === '1');
+  var PRACTICE_URL = 'trade.html?demo=1&practice=1';
+  var prac = { on: false, i: -1, dims: null, ring: null, card: null, timer: null, scrolled: null, placed: 0, steps: [] };
+
+  function pracFirstCard() { return typeof firstCard === 'function' ? firstCard() : null; }
+  function pracRow() {
+    var c = pracFirstCard();
+    if (isPhone()) { var pid = c ? c.getAttribute('data-id') : null; return (pid && phRowFor(pid)) || document.querySelector('#phRows .ph-row[data-pid]') || c; }
+    return c;
+  }
+  function pracResult() { return document.querySelector('#posLines .result-card'); }
+  function pracLimitWaits() {
+    if (!(lim.px > 0) || !state.market) return false;
+    var now = marketPrice(state.market);
+    return !(isFinite(now) && now > 0 && limitCrossed({ isLong: form.side === 'long', limitPx: lim.px }, now));
+  }
+
+  /* id, title, text(), target(), and one of: on (the page's event that clears it), done() (state that clears it),
+     btn (a Got it when it only shows something). sheet: phones open / close the ticket sheet first. desk: desktop only. */
+  var PRAC_ALL = [
+    { id: 'coin', title: 'Pick a coin', on: 'market', sheet: false,
+      target: function () { return $('marketBtn'); },
+      btn: function () { return state.market ? 'Keep ' + state.market.symbol : 'Keep it'; },
+      text: function () { return 'Pretend money: nothing here is sent or real. ' + tapWord() + ' the coin to choose what to trade' + (state.market ? '; ' + state.market.symbol + ' is picked for you' : '') + '. Up to 1000x on memes.'; } },
+    { id: 'side', title: 'Up or down?', on: 'side',
+      target: function () { return isSheetMode() && !ui.sheet ? $('mbarPair') : $('sidePair'); },
+      text: function () { return 'BUY / LONG if you think the price goes up, SELL / SHORT if you think it goes down. You win when it moves your way. ' + tapWord() + ' one.'; } },
+    { id: 'amount', title: 'Amount', on: 'amount', sheet: true,
+      target: function () { return $('amountBox'); },
+      text: function () { return 'What you put in, and the most you can lose on this trade. ' + tapWord() + ' $10.'; } },
+    { id: 'lev', title: 'Leverage', on: 'lev', sheet: true,
+      target: function () { return $('levBox'); },
+      text: function () {
+        var amt = isFinite(form.margin) && form.margin > 0 ? fmtUsdShort(form.margin) : 'your amount';
+        return 'Leverage multiplies your result: your ' + amt + ' moves like ' + fmtUsdShort((form.margin > 0 ? form.margin : 10) * form.lev) + ' at ' + form.lev + 'x. A ' + fmtMove(bustMovePct(form.lev)) + '% move against you hits the liquidation price and you lose the ' + amt + '. Higher leverage, smaller move. ' + tapWord() + ' a leverage.';
+      } },
+    { id: 'receipt', title: 'Your trade in dollars', btn: 'Got it', sheet: true,
+      target: function () { return isDesk() ? $('dkReceipt') : isPhone() ? $('phReceipt') : $('previewBox'); },
+      text: function () { return 'What you risk, how big the position is (amount × leverage), the liquidation price and how far away it is, what a 1% move pays you, the price it opens near, and the costs: the spread and the fee on a win.'; } },
+    { id: 'tpsl', title: 'Take profit / Stop loss', btn: 'Skip for now', desk: true, sheet: true,
+      target: function () { return $('dkTpSlBox'); },
+      done: function () { var t = $('dkTpPx'), s = $('dkSlPx'); return !!((t && Number(t.value) > 0) || (s && Number(s.value) > 0)); },
+      text: function () { return 'Optional. A take profit closes the trade for you at a price in your favour, a stop loss at a price against you. They live in this browser and fire while the page is open. Type one, or skip.'; } },
+    { id: 'open', title: function () { return isDesk() ? 'OPEN' : 'OPEN POSITION'; }, on: 'submit', sheet: true,
+      target: function () { return tk.phase ? $('ticketProgress') : $('actionBtn'); },
+      text: function () { var b = $('actionBtn'); return tapWord() + ' ' + (b && /^OPEN/i.test(b.textContent) ? b.textContent.trim() : 'OPEN POSITION') + '. The button says your trade. For real money your wallet asks you to confirm; here nothing is sent.'; } },
+    { id: 'fill', title: 'About 6 seconds', on: 'opened', sheet: true,
+      target: function () { return $('ticketProgress'); },
+      text: function () { return 'Your order is sent. It fills at the market price in about ' + fillSecs() + ' seconds: Sent, then Opening, then Open at the price you got.'; } },
+    { id: 'card', title: 'Your position', btn: 'Got it', sheet: false,
+      target: function () { return pracRow(); },
+      text: function () {
+        if (isPhone()) return 'Every open position gets a row at the top of the page: profit or loss in $ and %, and a bar for how far the price is from liquidation. It turns amber, then red, as the price gets close. ' + tapWord() + ' the row for the entry price, the price now, the liquidation price, take profit and stop loss, and Close.';
+        if (isDesk()) return 'Every open position is a card under the chart: its size, what you put in, the price you got in at, the price now, the liquidation price and how far away it is, and profit or loss in $ and %. The liquidation turns amber, then red, as the price gets close.';
+        return 'Every open position gets a card: profit or loss in $ and %, the price you got in at, the price now, and the liquidation price. It turns amber, then red, as the price gets close.';
+      } },
+    { id: 'close', title: function () { return isDesk() ? 'Close' : 'CLOSE POSITION'; }, on: 'closed', sheet: false,
+      target: function () {
+        var c = pracFirstCard();
+        if (isPhone()) return pracRow();
+        return c ? c.querySelector('.close-btn') || c.querySelector('[data-role="act"]') : null;
+      },
+      text: function () {
+        if (isPhone()) return tapWord() + ' the row, then Close: the sheet shows about what you get back, right over the button. It closes at the market price in about ' + fillSecs() + ' s and shows the result.';
+        return tapWord() + ' Close any time to take your money out. The button says about what you get back. It closes at the market price in about ' + fillSecs() + ' s, right here on the card.';
+      } },
+    { id: 'result', title: 'Open to close', btn: 'Next', sheet: false,
+      target: function () { return pracResult(); },
+      text: function () { return 'The result card: what you got back, the fee, your profit or loss. That is a whole trade. With real money, Withdraw sends your balance back to your wallet.'; } },
+    { id: 'limit', title: 'Limit orders', desk: true, sheet: true,
+      target: function () { return $('dkOrderType'); },
+      done: function () { return lim.type === 'limit'; },
+      text: function () { return 'Market opens now. Limit waits for your price and opens when the market gets there. Pick Limit.'; } },
+    { id: 'limitpx', title: 'Your price', desk: true, sheet: true,
+      target: function () { return $('dkLimitBox'); },
+      done: function () { return lim.type === 'limit' && pracLimitWaits(); },
+      text: function () { return 'The box starts at the market price. For a buy, set it lower; for a sell, higher. Try about 1% away: the order waits for it.'; } },
+    { id: 'place', title: 'Place it', desk: true, sheet: true,
+      target: function () { return $('actionBtn'); },
+      done: function () { return lim.orders.length > prac.placed; },
+      text: function () { var b = $('actionBtn'); return tapWord() + ' ' + (b ? b.textContent.trim() : 'LIMIT') + '. The order is stored in this browser and fires from this page while it is open.'; } },
+    { id: 'orders', title: 'Orders', btn: 'Leave it', desk: true, sheet: false,
+      target: function () { var t = $('tabOrders'); if (t && t.getAttribute('aria-selected') !== 'true') t.click(); return $('limLines'); },
+      done: function () { return lim.orders.length < prac.placedNow; },
+      text: function () { return 'Here it waits, with the live price beside it. When the price touches your limit it opens like a market order, and the fill lands a few seconds later. Cancel takes it back; it expires after a day.'; } },
+    { id: 'done', title: 'That is every part of a trade', sheet: false,
+      target: function () { return null; },
+      text: function () { return (isDesk() ? '' : 'Limit orders are on the desktop ticket for now. ') + 'Trade for real: the site first checks what your wallet needs (HyperEVM, HYPE for gas, USDC, a deposit) and shows you one step at a time.'; } }
+  ];
+
+  function pracSteps() { return PRAC_ALL.filter(function (s) { return !s.desk || isDesk(); }); }
+
+  function practiceStart() {
+    if (!PRACTICE || prac.on) return;
+    prac.on = true; prac.i = -1; prac.steps = pracSteps();
+    try { if (lim.orders.length) { lim.orders = []; limSave(); } } catch (e) { /* a fresh run: the demo's own list only */ }
+    prac.dims = [0, 1, 2, 3].map(function () { var d = el('div', 'setup-dim'); document.body.appendChild(d); return d; });
+    prac.ring = el('div', 'setup-ring'); prac.ring.hidden = true; document.body.appendChild(prac.ring);
+    var c = el('div', 'setup-card');
+    c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'Practice run'); c.setAttribute('aria-live', 'polite');
+    [['count', 'setup-count'], ['title', 'setup-title'], ['text', 'setup-text']].forEach(function (r) { var n = el('div', r[1]); n.setAttribute('data-role', r[0]); c.appendChild(n); });
+    c.appendChild(el('div', 'setup-btns'));
+    document.body.appendChild(c);
+    prac.card = c;
+    prac.timer = setInterval(practicePlace, 300);
+    window.addEventListener('resize', practicePlace);
+    window.addEventListener('scroll', practicePlace, true);
+    var at = demoOpt('part'), k = 0;                                    /* &part=limit starts the run there (previews) */
+    prac.steps.forEach(function (x, j) { if (x.id === at) k = j; });
+    practiceGo(k);
+  }
+
+  function practiceEnd() {
+    if (!prac.on) return;
+    prac.on = false;
+    if (prac.timer) { clearInterval(prac.timer); prac.timer = null; }
+    window.removeEventListener('resize', practicePlace);
+    window.removeEventListener('scroll', practicePlace, true);
+    (prac.dims || []).concat([prac.ring, prac.card]).forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+    prac.dims = null; prac.ring = null; prac.card = null;
+  }
+
+  function practiceGo(i) {
+    if (!prac.on) return;
+    if (i >= prac.steps.length) { practiceEnd(); return; }
+    prac.i = i; prac.scrolled = null;
+    var s = prac.steps[i];
+    if (s.id === 'place') prac.placed = lim.orders.length;
+    if (s.id === 'orders') prac.placedNow = lim.orders.length;
+    if (isSheetMode()) { if (s.sheet === true) openSheet(); else if (s.sheet === false) closeSheet(); }
+    setRole(prac.card, 'count', 'Part ' + (i + 1) + ' of ' + prac.steps.length);
+    setRole(prac.card, 'title', typeof s.title === 'function' ? s.title() : s.title);
+    var row = prac.card.querySelector('.setup-btns'); row.textContent = '';
+    function add(label, cls, fn) { var b = el('button', 'btn ' + (cls || ''), label); b.type = 'button'; b.addEventListener('click', fn); row.appendChild(b); return b; }
+    if (s.id === 'done') {
+      add('Trade for real', 'btn-primary', function () { location.href = 'trade.html'; });
+      add('Run it again', '', function () { location.href = PRACTICE_URL; });
+    } else if (s.btn) {
+      add(typeof s.btn === 'function' ? s.btn() : s.btn, 'btn-primary btn-sm', function () { practiceGo(prac.i + 1); });
+    }
+    row.appendChild(el('span', 'grow'));
+    if (s.id !== 'done') add('Stop', 'btn-ghost btn-sm', function () { practiceEnd(); });
+    row.hidden = false;
+    practicePlace();
+  }
+
+  /* The page's events (the same ones the tour used) clear the part waiting for them. 'opened' lands the fill
+     wherever the run is between OPEN and the fill. */
+  function practiceEvent(name) {
+    if (!prac.on) return;
+    var s = prac.steps[prac.i]; if (!s) return;
+    var at = prac.i;
+    if (name === 'opened' && (s.id === 'open' || s.id === 'fill')) {
+      var card = 0; prac.steps.forEach(function (x, k) { if (x.id === 'card') card = k; });
+      setTimeout(function () { if (prac.on && prac.i === at) practiceGo(card); }, 900);
+      return;
+    }
+    if (s.on !== name) return;
+    setTimeout(function () { if (prac.on && prac.i === at) practiceGo(at + 1); }, 450);
+  }
+
+  function practicePlace() {
+    if (!prac.on || !prac.card) return;
+    var s = prac.steps[prac.i]; if (!s) return;
+    if (s.done && s.done()) { practiceGo(prac.i + 1); return; }
+    var dlg = document.querySelector('dialog[open]');
+    if (dlg) { prac.card.hidden = true; prac.ring.hidden = true; pracDims(null); return; }   /* the position sheet or a picker carries the part */
+    prac.card.querySelector('[data-role="text"]').textContent = s.text();
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var t = s.target();
+    var r = t && t.getClientRects().length ? t.getBoundingClientRect() : null;
+    if (r && (r.width < 1 || r.height < 1)) r = null;
+    prac.card.hidden = false;
+    var cw = prac.card.offsetWidth, ch = prac.card.offsetHeight;
+    if (!r) {
+      prac.ring.hidden = true;
+      pracDims(null);
+      prac.card.style.left = Math.max(12, Math.round((vw - cw) / 2)) + 'px';
+      prac.card.style.top = Math.max(12, Math.round((vh - ch) / 2)) + 'px';
+      return;
+    }
+    if (prac.scrolled !== prac.i && (r.top < 48 || r.bottom > vh - 8) && t.scrollIntoView) {
+      prac.scrolled = prac.i;
+      litScrollTo(t, r);
+    }
+    var pad = 6, gap = 10;
+    var box = { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad };
+    pracDims(box);
+    prac.ring.hidden = false;
+    prac.ring.setAttribute('data-n', 'Part ' + (prac.i + 1));
+    prac.ring.classList.toggle('is-low', box.top < 26);
+    prac.ring.style.left = Math.round(box.left) + 'px';
+    prac.ring.style.top = Math.round(box.top) + 'px';
+    prac.ring.style.width = Math.round(box.right - box.left) + 'px';
+    prac.ring.style.height = Math.round(box.bottom - box.top) + 'px';
+    var low = box.top < 26, lab = low ? 22 : 0;
+    var below = vh - (box.bottom + gap + lab), above = box.top - gap;
+    var top, left = null;
+    if (below >= ch + 8) top = box.bottom + gap + lab;
+    else if (above >= ch + 8) top = box.top - gap - ch;
+    else if (box.left - gap >= cw + 12) { left = box.left - gap - cw; top = clamp(box.top, 8, Math.max(8, vh - ch - 8)); }
+    else if (vw - box.right - gap >= cw + 12) { left = box.right + gap; top = clamp(box.top, 8, Math.max(8, vh - ch - 8)); }
+    else top = below >= above ? Math.min(vh - ch - 8, box.bottom + gap) : Math.max(8, box.top - gap - ch);
+    if (left == null) left = clamp(Math.round((box.left + box.right) / 2 - cw / 2), 12, Math.max(12, vw - cw - 12));
+    prac.card.style.left = Math.round(left) + 'px';
+    prac.card.style.top = Math.round(top) + 'px';
+  }
+
+  /* Bring a lit element into view. An element in the sticky ticket column stays put under scrollIntoView, so one near
+     the top edge is cleared by scrolling the page up instead (to 0 at most); the rest centre as before. */
+  function litScrollTo(t, r) {
+    if (r.top < 48 && window.scrollY > 0) { window.scrollTo({ top: Math.max(0, window.scrollY + r.top - 80), behavior: 'smooth' }); return; }
+    t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function pracDims(box) {
+    var d = prac.dims; if (!d) return;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    function put(n, l, t, w, h) { var on = w > 0 && h > 0; n.hidden = !on; if (on) { n.style.left = l + 'px'; n.style.top = t + 'px'; n.style.width = w + 'px'; n.style.height = h + 'px'; } }
+    if (!box) { put(d[0], 0, 0, vw, vh); put(d[1], 0, 0, 0, 0); put(d[2], 0, 0, 0, 0); put(d[3], 0, 0, 0, 0); return; }
+    var l = clamp(Math.round(box.left), 0, vw), t = clamp(Math.round(box.top), 0, vh), r = clamp(Math.round(box.right), 0, vw), b = clamp(Math.round(box.bottom), 0, vh);
+    put(d[0], 0, 0, vw, t);
+    put(d[1], 0, b, vw, vh - b);
+    put(d[2], 0, t, l, b - t);
+    put(d[3], r, t, vw - r, b - t);
   }
 
   /* ---- local demo (DEMO: localhost or 127.0.0.1 with ?demo=...) ------------------------------
@@ -9808,7 +10047,7 @@
     renderWallet(); renderAccount(); renderPositions(); renderAction(); renderStatus(); renderRefer(); renderSession(); buildMarketMenu();
     var bar = $('demoBar'); if (bar) bar.hidden = false; else toast('Demo: a pretend account on this computer. Nothing is sent.', null, null, 6000);
     document.documentElement.setAttribute('data-demo', '1');
-    demoWhenPriced(demoSeed);
+    demoWhenPriced(function () { demoSeed(); if (PRACTICE) setTimeout(practiceStart, 700); });
   }
 
   function demoWhenPriced(fn) {
@@ -9843,11 +10082,12 @@
     var p2 = demoPos(wif, false, 10, 50, pw * 0.989);   /* a loss, its liquidation getting close (amber) */
     acct.positions = [p1, p2];
     acct.available = 50; acct.marginInUse = 20; acct.pending = 0; acct.loaded = true; acct.owner = wallet.account;
+    if (PRACTICE) { acct.positions = []; acct.marginInUse = 0; }   /* the practice run starts with nothing open */
     /* &bal=20: the balance (a low-balance ticket) */
     if (demoOpt('bal') !== '' && isFinite(Number(demoOpt('bal')))) acct.available = Number(demoOpt('bal'));
     var wpid = String(p2.id);
     /* ?demo=idle: both positions open and nothing in flight (the Position sheet, Close all) */
-    if (DEMO !== 'idle') {
+    if (DEMO !== 'idle' && !PRACTICE) {
       acct.closeReqs[wpid] = { requestedAt: chainNow() - 1, px0: pw, block: demo.block, busy: false };
       if (demoOpt('hold') === '1') demo.hold['c' + wpid] = true;    // held for the 'Finish now' screenshots only; the public demo's close lands
     }
@@ -9869,7 +10109,7 @@
      [demoLog('PositionLiquidated', [63n, me, me, x63, numToUsd6(10), numToUsd6(0.05), 0n], demoHash()), 4800],
      [demoLog('PositionOpened', [p1.id, me, p1.instrumentId, true, numToUsd6(10), 20, p1.entryPx18, 41n, true], demoHash()), 900],
      [demoLog('PositionOpened', [p2.id, me, p2.instrumentId, false, numToUsd6(10), 50, p2.entryPx18, 42n, true], demoHash()), 600]
-    ].forEach(function (x) { hist.blockTs[x[0].blockNumber] = now - x[1]; addLogs([x[0]]); });
+    ].filter(function (x) { return !PRACTICE || x[1] > 1000; }).forEach(function (x) { hist.blockTs[x[0].blockNumber] = now - x[1]; addLogs([x[0]]); });   /* the practice run keeps the three past outcomes only */
     hist.done = true;
     if (DEMO === 'pending') {
       /* an open request the ticket follows, held: Opening, then late, then expired */
