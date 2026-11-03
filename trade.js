@@ -9457,7 +9457,7 @@
      clears itself when the wallet shows it: there is no Next. Shown until the wallet's first trade, then never
      again for that wallet (LS.setup); a wallet with any trade in its history never sees it. The "? How to trade"
      tour no longer starts by itself; it replays from its button. */
-  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false };
+  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null };
   var SETUP_ORDER = ['connect', 'chain', 'hype', 'swap', 'deposit', 'trade'];
   var SETUP_TITLES = { connect: 'Connect your wallet', chain: 'Switch to HyperEVM', hype: 'Get HYPE on HyperEVM', swap: 'Swap HYPE for USDC', deposit: 'Deposit USDC', trade: 'Open your first trade' };
   var SETUP_WAIT_MS = 8000;   /* a slow history scan does not hold a new wallet back for ever */
@@ -9475,7 +9475,28 @@
       return !wallet.eth && !!(window.phantom && window.phantom.ethereum);
     } catch (e) { return false; }
   }
-  function setupBridgeUrl() { return (cfg && cfg.setup && cfg.setup.bridgeUrl) || 'https://app.debridge.finance/'; }
+  /* Get HYPE through the site's own Swap card (the owner, 2026-11-02: "use our sites swap"): a wallet with USDC on
+     HyperEVM but no gas swaps a little of it for HYPE right there, pay USDC / get HYPE filled in. The card is desktop-only
+     and sits below the fold of the sticky column, so the step borrows it into a host above the layout and hands it back after. */
+  function setupSwapCase() { return !!(wallet.account && acct.walletUsdc >= 0.5 && $('swapCard')); }
+  function setupSwapShow() {
+    var card = $('swapCard'); if (!card || setup.swapHome) return;
+    setup.swapHome = { parent: card.parentNode, next: card.nextSibling };
+    var host = $('setupSwapHost'); if (host) { host.hidden = false; host.appendChild(card); }   /* every width: the desktop column keeps it below the fold */
+    card.classList.add('is-setup');
+    try {
+      var payT = $('swPayToken'), getT = $('swGetToken'), pay = $('swPay');
+      if (payT && getT && (payT.value !== 'USDC' || getT.value !== 'HYPE')) { payT.value = 'USDC'; getT.value = 'HYPE'; payT.dispatchEvent(new Event('change')); }
+      if (pay && !(Number(pay.value) > 0)) { pay.value = String(Math.min(1, Math.max(0.5, Math.floor(acct.walletUsdc * 10) / 10))); pay.dispatchEvent(new Event('input')); }
+    } catch (e) { /* the card still works by hand */ }
+  }
+  function setupSwapHide() {
+    var card = $('swapCard'), home = setup.swapHome; if (!card || !home) return;
+    card.classList.remove('is-setup');
+    if (home.parent && card.parentNode !== home.parent) home.parent.insertBefore(card, home.next && home.next.parentNode === home.parent ? home.next : null);
+    var host = $('setupSwapHost'); if (host) host.hidden = true;
+    setup.swapHome = null;
+  }
 
   /* What this wallet needs next; null when the page is for trading; 'wait' while the wallet is being read. */
   function setupStepNow() {
@@ -9536,6 +9557,7 @@
     window.removeEventListener('resize', setupPlace);
     window.removeEventListener('scroll', setupPlace, true);
     if (setup.ph) { setup.ph.hidden = true; document.body.appendChild(setup.ph); }
+    setupSwapHide();
     (setup.dims || []).concat([setup.ring, setup.card]).forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
     setup.dims = null; setup.ring = null; setup.card = null;
     renderDepSetup(false);
@@ -9559,6 +9581,7 @@
       li.classList.toggle('is-now', k === n);
     });
     setupAutoOpen();
+    if (step === 'hype' && setupSwapCase()) setupSwapShow(); else setupSwapHide();
     setupPlace();
   }
 
@@ -9579,9 +9602,9 @@
     if (s === 'connect') return 'Confetti checks what your wallet has and shows you only the next thing to do: HyperEVM, HYPE for gas, USDC, a deposit, then your first trade.' + (wallet.eth || getInjected() ? ' Nothing is signed by connecting.' : ' No wallet in this browser: the button opens Confetti in your wallet app.');
     if (s === 'chain') return 'Your wallet is on <b>' + chainName(wallet.chainId) + '</b>. Confetti runs on HyperEVM (chain 999). One tap asks your wallet to switch, or to add HyperEVM first.';
     if (s === 'hype') {
-      if (usdc >= minMargin()) return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet but no HYPE for gas. Every send on HyperEVM needs a little (about 0.01 HYPE is enough): swap ETH for HYPE in your wallet or on a bridge and send it here, then deposit.';
+      if (setupSwapCase()) return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet but no HYPE for gas. Every send on HyperEVM needs a little (about 0.01 HYPE). Swap a little of it for HYPE right here on Confetti\'s swap: 1 USDC covers many sends. Then deposit the rest.';
       if (depSwapSmall()) return 'Trades are in USDC. The HYPE here buys about <b>' + fmtUsd(swHypeWorth(ui.hypeWei)) + '</b>, under the ' + fmtUsdShort(minMargin()) + ' minimum for a trade: add a little more HYPE, or USDC.';
-      return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Swap ETH for HYPE in your wallet or on a bridge and send it to this wallet on HyperEVM' + (onrampOn() ? ', or pay with Apple Pay and it arrives in a few minutes' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
+      return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Send HYPE or USDC to this wallet on HyperEVM' + (onrampOn() ? ', or pay with Apple Pay and HYPE arrives in a few minutes' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
     }
     if (s === 'swap') return 'Trades are in USDC, not HYPE. ' + have + ' Add USDC swaps your HYPE for USDC in one tap on HyperSwap and keeps 0.03 HYPE for gas.';
     if (s === 'deposit') return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet' + (acct.available > 0 ? ' and <b>' + fmtUsd(acct.available) + '</b> on Confetti' : '') + '. Deposit at least ' + fmtUsdShort(minMargin()) + ' onto the exchange. The first time is two confirms: approve USDC, then deposit.';
@@ -9604,7 +9627,6 @@
     var row = setup.card.querySelector('.setup-btns'); if (!row) return;
     row.textContent = '';
     function add(label, cls, fn) { var b = el('button', 'btn ' + (cls || ''), label); b.type = 'button'; b.addEventListener('click', fn); row.appendChild(b); return b; }
-    function link(label, cls, href) { var a = el('a', 'btn ' + (cls || ''), label); a.href = href; a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); return a; }
     if (step === 'connect') {
       add('Connect wallet', 'btn-primary', function () { connect(); });
       row.appendChild(el('span', 'grow'));
@@ -9614,8 +9636,7 @@
     } else if (step === 'hype') {
       var ramp = onrampOn();
       if (ramp) add('Pay with Apple Pay', 'btn-primary', function () { setup.opened = 'hype'; openDeposit(); setDepWhere('card'); });
-      link('Bridge ETH to HYPE', ramp ? '' : 'btn-primary', setupBridgeUrl());
-      add('I have USDC on Hyperliquid', '', function () { setup.opened = 'hype'; openDeposit(); setDepWhere('hl'); });
+      add('I have USDC on Hyperliquid', ramp || setupSwapCase() ? '' : 'btn-primary', function () { setup.opened = 'hype'; openDeposit(); setDepWhere('hl'); });
     } else if (step === 'swap') {
       add('Swap HYPE for USDC', 'btn-primary', function () { setup.opened = step; openDeposit(); });
     } else if (step === 'deposit') {
@@ -9631,6 +9652,7 @@
     function vis(id) { var n = $(id); return n && !n.hidden && n.getClientRects().length ? n : null; }
     if (s === 'connect') return vis('phAcct') || vis('connectBtn');
     if (s === 'chain') return vis('chainBanner') || vis('phAcct') || vis('connectBtn');
+    if (s === 'hype') return setup.swapHome ? vis('swapCard') : null;   /* the site's own Swap card, pay USDC / get HYPE */
     if (s === 'trade') return isSheetMode() && !ui.sheet ? (vis('mbarPair') || vis('mobileBar') || vis('ticket')) : vis('ticket');   /* phones: the BUY / SELL bar opens the sheet */
     return null;
   }
@@ -9651,6 +9673,7 @@
   function setupPlace() {
     if (!setup.on || !setup.card) return;
     setupAutoOpen();
+    if (setup.step === 'hype') { if (setupSwapCase()) setupSwapShow(); else setupSwapHide(); }   /* the wallet's USDC may land after the step shows */
     var dlg = document.querySelector('dialog[open]');
     var inDep = !!(dlg && dlg.id === 'depositModal' && (setup.step === 'swap' || setup.step === 'deposit' || setup.step === 'hype'));
     renderDepSetup(inDep);
