@@ -446,6 +446,19 @@
         <p>Points move between wallets. Send in the bar takes an address and a whole number of points and calls the PointsRelay on HyperEVM, a contract with no owner and no storage that only emits the transfer as an event. The indexer reads those events in block order. A transfer counts when the sender's balance at that block (earned, minus sent, plus received) covers the amount. House wallets cannot send or receive. Anything else is ignored and listed under rejected in <a href="points.json">points.json</a> with its transaction hash. Referral shares, daily caps and streaks run on earned points only, so received points pay no one. The leaderboard ranks by balance. Relay: <span id="relayAddr">not deployed yet</span>.</p>
       </section>
 
+      <section id="phantom">
+        <h2>Using Phantom? Ignore these warnings</h2>
+        <p>Phantom runs every new site and transaction past a scanner, and HyperEVM is new to it. These can come up on Confetti. None of them means something is wrong, and each has a way past.</p>
+        <ol>
+          <li><b>“This site may be unsafe” when you connect.</b> A scanner flag on a new domain. Tap <i>Proceed anyway</i> (sometimes behind <i>Ignore warning</i>). Confetti's contracts are open and verified on Sourcify; the addresses are on the <a href="contracts.html">contracts page</a>.</li>
+          <li><b>“Switch network” or “Unknown network”.</b> Confetti asks Phantom to switch to HyperEVM (chain 999), or to add it first. Tap <i>Approve</i>, then <i>Switch</i>.</li>
+          <li><b>“This transaction could not be simulated” or “Unverified contract”.</b> Phantom cannot preview HyperEVM transactions yet. The page tells you the exact amount and contract before each confirm. Tap <i>Confirm anyway</i>.</li>
+          <li><b>“You are allowing this site to spend your USDC”.</b> The approval is for the exact amount you deposit, never unlimited. Tap <i>Confirm</i>.</li>
+          <li><b>Phantom closes or freezes mid-swap.</b> Reopen it and come back: nothing is lost, the page picks up where you were. Still stuck? Swap on HyperSwap in a browser tab, then deposit here.</li>
+        </ol>
+        <p>The trade page shows this list beside each first step. Seen a warning that is not here? Send a screenshot to <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>.</p>
+      </section>
+
       <section id="bugs">
         <h2>Found something</h2>
         <p>Report a bug at <a href="https://github.com/confettitrade/confetti/issues" target="_blank" rel="noopener">github.com/confettitrade/confetti/issues</a> or to <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>.<br>Security reports: see <a href="/.well-known/security.txt">security.txt</a> and the <a href="terms.html#security">terms</a>.</p>

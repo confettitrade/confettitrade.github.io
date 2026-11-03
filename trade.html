@@ -13,14 +13,14 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=fresh1">
+  <link rel="stylesheet" href="paper.css?v=steps1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
   <style>
-    /* Page-specific rules only. Tokens and components come from paper.css?v=fresh1. */
+    /* Page-specific rules only. Tokens and components come from paper.css?v=steps1. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
     /* The lowered-leverage box over OPEN (fitLeverage / renderLevFit): what changed, why, and YES */
@@ -1095,6 +1095,23 @@
       <button class="dir-btn dir-short is-solid" type="button" data-open-side="short"><span class="dir-label">SELL / SHORT</span><span class="dir-hint">price goes down</span></button>
     </div>
   </div>
+  <!-- First steps: Phantom's warnings and the way past each (the owner, 2026-11-02: "if using Phantom, ignore these
+       warnings ... and how to get past them"); the page moves this block into the step card -->
+  <div class="setup-ph" id="setupPhantom" hidden>
+    <details>
+      <summary>Using Phantom? Ignore these warnings</summary>
+      <p>Phantom runs every new site and transaction past a scanner, and HyperEVM is new to it. These can come up on Confetti. None of them means something is wrong, and each has a way past:</p>
+      <ol>
+        <li><b>“This site may be unsafe” when you connect.</b> A scanner flag on a new domain. Tap <i>Proceed anyway</i> (sometimes behind <i>Ignore warning</i>). Confetti's contracts are open and verified on Sourcify.</li>
+        <li><b>“Switch network” or “Unknown network”.</b> Confetti asks Phantom to switch to HyperEVM (chain 999), or to add it first. Tap <i>Approve</i>, then <i>Switch</i>.</li>
+        <li><b>“This transaction could not be simulated” or “Unverified contract”.</b> Phantom cannot preview HyperEVM transactions yet. The page tells you the exact amount and contract before each confirm. Tap <i>Confirm anyway</i>.</li>
+        <li><b>“You are allowing this site to spend your USDC”.</b> The approval is for the exact amount you deposit, never unlimited. Tap <i>Confirm</i>.</li>
+        <li><b>Phantom closes or freezes mid-swap.</b> Reopen it and come back: nothing is lost, the page picks up where you were. Still stuck? Swap on HyperSwap in a browser tab, then deposit here.</li>
+      </ol>
+      <p>Seen a different one? <a href="docs.html#phantom" target="_blank" rel="noopener">The full list</a>.</p>
+    </details>
+  </div>
+
   <div class="sheet-scrim" id="sheetScrim" hidden></div>
 
   <!-- Check before a big trade (100x and up, or Max), and Close all -->
@@ -1144,6 +1161,7 @@
     <div class="sheet-grab ph-only" aria-hidden="true"></div>
     <form method="dialog" id="depositForm" autocomplete="off" novalidate>
       <div class="panel-head"><span id="depositTitle">Add USDC</span><button class="btn btn-sm btn-ghost btn-plain" type="button" data-close aria-label="Close">✕</button></div>
+      <div class="setup-strip" id="depSetup" hidden><span class="setup-count" id="depSetupN">Step 4 of 6</span><b id="depSetupTitle">Deposit USDC</b><span class="setup-strip-text" id="depSetupText"></span><a class="setup-strip-ph" href="docs.html#phantom" target="_blank" rel="noopener">Using Phantom? Ignore its warnings</a></div>
       <div class="panel-body stack">
         <div class="notice" id="depHype" hidden>You need a little HYPE on HyperEVM to pay network fees (about 0.01).</div>
         <div class="label">Where is your USDC?</div>
@@ -1356,7 +1374,7 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=pnl4" defer></script>
+  <script src="trade.js?v=steps1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
