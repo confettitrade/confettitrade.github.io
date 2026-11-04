@@ -165,9 +165,16 @@
   var CHECKED = ['usdc', 'oracle', 'staking', 'referrals', 'sessionRouter', 'marketRules', 'extension'];
   /* the CHECKED addresses this page sends transactions to (usdc has its own refusal: usdcBad) */
   var TX_TARGETS = { referrals: 'Refer', sessionRouter: 'One-click' };
-  var RPC_HOSTS = ['rpc.hyperliquid.xyz', 'hyperliquid.drpc.org', 'rpc.purroofgroup.com'];
+  var RPC_HOSTS = ['rpc.hyperliquid.xyz', 'hyperliquid.drpc.org', 'rpc.purroofgroup.com', 'rpc.blockfront.network'];
   var INFO_HOSTS = ['api.hyperliquid.xyz'];
   var DEFAULT_RPC = 'https://rpc.hyperliquid.xyz/evm';
+  /* Blockfront (2026-11-04, CF_PNL): the owner's own Hyperliquid nodes, which the keeper and the house bots read
+     through. Every read of this page goes there first and falls back to config.json's rpcUrl (then the official
+     RPC) when it fails or falls behind; the WebSocket's newHeads drives the P&L cards and the fill watch block by
+     block. Pinned here like the contracts; config.json "blockfront": false turns it off. Blockfront's eth_getLogs
+     takes at most about 1,000 blocks a call on this plan, so the history scans keep config.json's logRpcUrl. */
+  var BLOCKFRONT_RPC = 'https://rpc.blockfront.network/v1/confetti/rpc';
+  var BLOCKFRONT_WS = 'wss://rpc.blockfront.network/v1/confetti/ws';
   var DEFAULT_INFO = 'https://api.hyperliquid.xyz/info';
   /* One-time acceptance of terms.html, kept in localStorage; the order button waits for it. */
   var TERMS_KEY = 'confetti.terms';
@@ -768,6 +775,7 @@
        chain poll; this is what every fill and liquidation settles on */
     oraclePxById: {},
     oraclePxAt: {},       /* id -> Date.now() of that read */
+    oraclePx18ById: {},   /* id -> the same price as the exchange holds it, 1e18 BigInt (the exact P&L works on this) */
     /* owner settings read from the exchange (null until read; see the constants above) */
     winFeeBps: null, lossFeeBps: null, minMargin: null, borrowFreeHours: null, maxWinBps: null, free: null,
     /* per instrument id: { long, short } maxPositionUsd() in USD, read with the chain poll */
@@ -775,7 +783,7 @@
     /* why this page sends nothing (v4 gate), or null; see sendGate() */
     gate: null,
     /* request windows in seconds (minDelay / grace / expiry), the jump guard, the fee shares */
-    minDelay: 5, grace: 3, expiry: 60, maxJumpBps: null, stakerShareBps: null, referralShareBps: null
+    minDelay: 2, grace: 3, expiry: 60, maxJumpBps: null, stakerShareBps: null, referralShareBps: null
   };
 
   /* ---- house market-activity bots ----------------------------------------------------
@@ -835,13 +843,13 @@
 
   /* Open requests this page is watching, by request id (string): the OpenRequest fields plus
      the block it was filed in (for the outcome lookup) and what the page is doing about it. */
-  var pend = { opens: {}, timer: null, tick: null, inFlight: false, scanning: false, scan: { account: null, from: Infinity } };
+  var pend = { opens: {}, done: {}, timer: null, tick: null, inFlight: false, scanning: false, scan: { account: null, from: Infinity }, lastPoll: 0 };
 
   /* Referral state for the connected account: the stored ?ref code, its resolved address, the
      account's own code / earnings and whether its referrer is already locked on chain. */
   var ref = { code: lsGet('confetti.ref') || '', addr: null, locked: null, referrer: null, myCode: '', earned: null, loaded: false, vaults: [], vaultsLoaded: false };
 
-  var read = { provider: null, logProvider: null, exchange: null, referrals: null, router: null, factory: null, v2: null, v3: null };
+  var read = { provider: null, logProvider: null, sendProvider: null, exchange: null, referrals: null, router: null, factory: null, v2: null, v3: null };
 
   /* The v2 / v3 banners: each shown for the connected account while that Exchange still holds its
      balance, margin or a pending open request (a pending close keeps its position's margin in use). */
@@ -849,7 +857,7 @@
 
   /* One-click session of the connected account. key: ethers.Wallet from localStorage (or null);
      onchain: router.sessionOf(account) { key, expiry, cap } once read; gasWei: the key's HYPE. */
-  var sess = { key: null, onchain: null, gasWei: null, feeWei: null, loaded: false, demoOn: false };
+  var sess = { key: null, onchain: null, gasWei: null, feeWei: null, loaded: false, demoOn: false, nonce: null, nonceFor: null, nonceOk: false, priorityWei: null };
   /* Opens filed through one-tap that have no request on chain yet (the owner, 2026-10-31: "people hate waiting for their
      trades to go through"): list = their cards and chart lines from the tap on, queue = the session key's sends, one at a time. */
   var quick = { list: [], next: 1, last: 0, queue: Promise.resolve() };
@@ -941,7 +949,7 @@
           markPx: Number(c.markPx),
           midPx: Number(c.midPx),
           /* the same validator oracle the chain settles on, as a fallback estimate */
-          oraclePx: Number(c.oraclePx)
+          oraclePx: Number(c.oraclePx), oraclePxStr: c.oraclePx, at: Date.now()
         };
       });
       renderMarketHeader();
@@ -2221,9 +2229,28 @@
   /* Seconds on the chain's clock right now: the latest block timestamp plus the time since it
      was read. The request windows are measured on this clock. */
   function chainNow() {
+    if (chainClock.off != null && Date.now() - chainClock.at < 15000) return Date.now() / 1000 + chainClock.off;
     if (house.chainTs == null) return Date.now() / 1000;
     return house.chainTs + (Date.now() - house.chainTsAt) / 1000;
   }
+
+  /* (CF_PNL) The chain clock, smooth. A block's timestamp is its second, floored, and its head reaches the page some
+     way into that second (0.4-0.7 s through Blockfront), so a clock set to each head's timestamp ran back half a second
+     at every block and the countdowns stuttered (2.7, 2.5, 3.0 s). The chain's lead over this computer's clock is the
+     largest (timestamp - time seen) of the last 30 heads: a head is never seen before its second began, so the largest
+     is the closest. */
+  var chainClock = { off: null, at: 0, samples: [] };
+  function noteChainClock(ts, seenMs) {
+    chainClock.samples.push(ts - seenMs / 1000);
+    if (chainClock.samples.length > 30) chainClock.samples.shift();
+    chainClock.off = Math.max.apply(null, chainClock.samples);
+    chainClock.at = seenMs;
+  }
+
+  /* When a fill (or a close) that lands in the block with timestamp t shows on the card, on the chain clock: t, plus
+     how long into its second the block feed's answer for a block comes in (heads.seenLag, about 0.7 s). The countdowns
+     count to this, so 0.0 is the moment the card changes. */
+  function fillEta(requestedAt) { return requestedAt + fillSecs() + (headsFresh() && heads.seenLag != null ? heads.seenLag : 0); }
 
   /* The bust move in units of 1 / (lev x 10000), as ImpactLib.bustPrice works it: the smaller
      of 9500 (95% of 1/lev) and 10000 - BUST_GAP_BPS x lev (1/lev minus the gap). */
@@ -2719,7 +2746,7 @@
     }
     if (!notice && wallet.account && wallet.chainId === CHAIN_ID && hypeLow()) notice = HYPE_NOTE;
     if (setup) cls += ' go-setup';
-    if (state.busy && !tk.phase) { disabled = true; note = state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession ? 'Sending…' : 'Confirm in your wallet…'; err = false; }
+    if (state.busy && !tk.phase) { disabled = true; note = sendWord(); err = false; }
     if (!termsAccepted()) disabled = true;
     /* phones (piece 13): OPEN says the trade, an armed OPEN says 'Tap again', the problem goes to row D */
     var ph = isPhone() ? phActionView({ label: label, cls: cls, disabled: disabled, note: note, err: err, setup: setup }) : null;
@@ -3994,11 +4021,86 @@
     return b;
   }
 
+  /* (CF_PNL) Phones: an order on its way in is a row at the top, shaped as the position row it becomes (the side, the
+     coin, the leverage, the P&L of the position filled at the print now), its status line counting the fill down where
+     the liquidation bar will be. Newest first, above the open positions, as the cards are. */
+  function phOpenings() {
+    if (!wallet.account) return [];
+    var out = [];
+    (ui.openEnds || []).forEach(function (x) { out.push({ r: x.r, kind: 'end', key: 'e' + x.key, say: x.say }); });
+    quick.list.slice().reverse().forEach(function (r) { out.push({ r: r, kind: 'quick', key: 'q' + r.key }); });
+    pendingOpenList().slice().reverse().forEach(function (r) { out.push({ r: r, kind: 'open', key: 'o' + r.id }); });
+    return out;
+  }
+
+  function phOpeningRowEl(o) {
+    var r = o.r;
+    var b = el('button', 'ph-row is-filling ' + (r.isLong ? 'is-long' : 'is-short'));
+    b.type = 'button';
+    b.setAttribute('data-open', o.key);
+    var who = el('span', 'ph-row-who');
+    who.appendChild(el('span', 'ph-side', r.isLong ? 'LONG' : 'SHORT'));
+    who.appendChild(el('span', 'ph-sym', reqSym(r)));
+    who.appendChild(el('span', 'ph-lev', r.leverage + 'x'));
+    b.appendChild(who);
+    var money = el('span', 'ph-money');
+    var n = el('span', 'ph-pnl-n', '—'); n.setAttribute('data-role', 'pnl');
+    var pc = el('span', 'ph-pct'); pc.setAttribute('data-role', 'pct');
+    money.appendChild(n); money.appendChild(pc);
+    b.appendChild(money);
+    var note = el('span', 'ph-row-note'); note.setAttribute('data-role', 'note');
+    b.appendChild(note);
+    var prog = el('span', 'ph-row-prog'); prog.setAttribute('data-role', 'prog'); prog.setAttribute('aria-hidden', 'true');
+    prog.appendChild(el('i'));
+    b.appendChild(prog);
+    return b;
+  }
+
+  function fillPhOpening(row, o) {
+    if (o.kind === 'end') {
+      /* a refund or a revert: the reason in red where the countdown was, the money untouched */
+      setRole(row, 'pnl', ''); setRole(row, 'pct', '');
+      var en = row.querySelector('[data-role="note"]'), ep = row.querySelector('[data-role="prog"]');
+      if (en && en.textContent !== o.say) { en.textContent = o.say; en.className = 'ph-row-note is-bad'; }
+      if (ep) { ep.className = 'ph-row-prog is-bad'; if (ep.firstChild) ep.firstChild.style.width = '100%'; }
+      if (row.getAttribute('aria-label') !== o.say) row.setAttribute('aria-label', o.say);
+      return;
+    }
+    var r = o.r, f = openingFigures(r), st = openingStatus(r, o.kind);
+    var known = f.fresh && isFinite(f.pnl);
+    var cls = known ? (f.pnl > 0 ? ' pos' : f.pnl < 0 ? ' neg' : '') : '';
+    var n = setRole(row, 'pnl', !f.fresh ? 'price delayed' : known ? fmtUsd(f.pnl, true) : '—');
+    if (n) n.className = 'ph-pnl-n' + cls;
+    var pc = setRole(row, 'pct', known ? fmtPct1(f.pnl / r.margin) : '');
+    if (pc) pc.className = 'ph-pct' + cls;
+    var note = row.querySelector('[data-role="note"]'), prog = row.querySelector('[data-role="prog"]');
+    if (note) {
+      var k = st.say + '|' + (st.btn || '') + '|' + st.tone;
+      if (note.getAttribute('data-k') !== k) {
+        note.setAttribute('data-k', k);
+        note.textContent = '';
+        note.appendChild(document.createTextNode(st.say + (st.btn ? ' ' : '')));
+        if (st.btn) note.appendChild(el('b', 'ph-row-act', st.btn));
+        note.className = 'ph-row-note' + (st.tone ? ' is-' + st.tone : '');
+      }
+    }
+    if (prog) {
+      prog.className = 'ph-row-prog' + (st.tone ? ' is-' + st.tone : '') + (st.sending ? ' is-sending' : '');
+      if (prog.firstChild) prog.firstChild.style.width = Math.round(st.share * 100) + '%';
+    }
+    var label = sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x, ' + fmtUsd(r.margin) + ' in, size ' + fmtUsd(r.margin * r.leverage) + '. ' + st.say + '.' +
+      (isFinite(f.entry) ? ' Entry about ' + fmtPrice(f.entry, f.sz) + ', liquidation about ' + fmtPrice(f.liq, f.sz) + '.' : '') + (known ? ' P&L ' + fmtUsd(f.pnl, true) + '.' : '');
+    if (row.getAttribute('aria-label') !== label) row.setAttribute('aria-label', label);
+  }
+
   function fillPhRow(row, it, nearest, many) {
     var p = it.p, m = positionMarket(p), sz = m ? m.szDecimals : null;
     var est = it.est, delayed = !!(est && est.delayed), known = !delayed && isFinite(it.px);
     var cls = est && est.pnl > 0 ? ' pos' : est && est.pnl < 0 ? ' neg' : '';
-    var n = setRole(row, 'pnl', delayed ? 'price delayed' : known ? fmtUsd(est.pnl, true) : '—');
+    var pnlText = delayed ? 'price delayed' : known ? fmtUsd(est.pnl, true) : '—';
+    var pnlNode = row.querySelector('[data-role="pnl"]');
+    if (pnlNode && pnlNode.textContent !== pnlText) tickPnl(pnlNode, p, est);
+    var n = setRole(row, 'pnl', pnlText);
     if (n) n.className = 'ph-pnl-n' + (known ? cls : '');
     var pc = setRole(row, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
     if (pc) pc.className = 'ph-pct' + (known ? cls : '');
@@ -4078,10 +4180,12 @@
     var many = n > PH_ROWS_MAX && !ui.phMore;
     var shown = many ? list.slice(0, PH_ROWS_MAX) : list;
     var rest = n - shown.length;
-    var sig = shown.map(function (it) { return it.pid; }).join(',') + '|' + rest;
+    var opens = phOpenings();
+    var sig = opens.map(function (o) { return o.key; }).join(',') + '|' + shown.map(function (it) { return it.pid; }).join(',') + '|' + rest;
     if (host.getAttribute('data-sig') !== sig) {
       host.setAttribute('data-sig', sig);
       host.textContent = '';
+      opens.forEach(function (o) { host.appendChild(phOpeningRowEl(o)); });
       shown.forEach(function (it) {
         var row = phRowEl(it); host.appendChild(row);
         if (isPhone() && fx.fresh[it.pid]) { delete fx.fresh[it.pid]; if (!reducedMotion()) row.classList.add('is-fresh'); }
@@ -4094,6 +4198,10 @@
       }
     }
     var nearest = phNearest(list);
+    opens.forEach(function (o) {
+      var row = host.querySelector('.ph-row[data-open="' + o.key + '"]');
+      if (row) fillPhOpening(row, o);
+    });
     shown.forEach(function (it) {
       var row = host.querySelector('.ph-row[data-pid="' + it.pid + '"]');
       if (row) fillPhRow(row, it, nearest, n > 2);
@@ -4126,6 +4234,14 @@
     var row = ev.target && ev.target.closest ? ev.target.closest('.ph-row') : null;
     if (!row) return;
     if (row.hasAttribute('data-more')) { ui.phMore = true; renderPhRows(); return; }
+    if (row.hasAttribute('data-open')) {
+      /* an order on its way in: its row acts only when it needs a tap (Finish now when late, Get $X back when expired);
+         an ended one goes on a tap */
+      var k = row.getAttribute('data-open');
+      if (k.charAt(0) === 'e') { ui.openEnds = (ui.openEnds || []).filter(function (x) { return 'e' + x.key !== k; }); dropRecent(k.slice(1)); renderPhRows(); return; }
+      if (k.charAt(0) === 'o' && pend.opens[k.slice(1)]) openReqAction(pend.opens[k.slice(1)]);
+      return;
+    }
     openPhPosSheet(row.getAttribute('data-pid'), row);
   }
 
@@ -4231,7 +4347,7 @@
     if (cr) {
       var v = progressView('close', cr, p ? p.margin : 0);
       var on = (v.steps || []).filter(function (s) { return /is-on/.test(s[1]); })[0];
-      var left = cr.requestedAt != null ? cr.requestedAt + fillSecs() - chainNow() : fillSecs();
+      var left = cr.requestedAt != null ? fillEta(cr.requestedAt) - chainNow() : fillSecs();
       var text = on ? on[0] : 'Closing…', note = v.note || '';
       /* the slow state reads as one sentence ('Still closing. Your wallet will ask you to finish
          it.'); the money rule stays as the note under it */
@@ -4244,7 +4360,7 @@
         btn: v.btn || '', note: note, share: clamp(1 - left / fillSecs(), 0, 1)
       };
     }
-    if (ui.closing[pid]) return { text: state.viaSession ? 'Sending…' : 'Confirm in your wallet…', tone: '', share: 0 };
+    if (ui.closing[pid]) return { text: sendWord(), tone: '', share: 0 };
     if (ui.checking[pid]) return { text: 'Checking the result…', tone: '', share: 1 };
     if (ui.settling[pid]) return { text: 'Closed. Adding it to your balance…', tone: 'done', share: 1 };
     return null;
@@ -4290,9 +4406,12 @@
     var m = positionMarket(p), sz = m ? m.szDecimals : null;
     var st = closeStatus(pid, p);
     if (!st) delete ui.phFrozen[pid];
-    var fz = ui.phFrozen[pid];
-    var px = fz ? fz.px : closePriceFor(p);
+    /* (CF_PNL) live through the close (the owner: "updating in realtime as the trade is taking place"): the close fills at
+       the oracle print of the block it lands in, so the figures at the latest print are the ones it settles to; the
+       real ones replace them when it lands. Frozen only once the position is gone and its result is not read yet. */
+    var fz = posById(pid) ? null : ui.phFrozen[pid];
     var est = fz ? fz.est : positionEstimate(p);
+    var px = fz ? fz.px : est.px > 0 ? est.px : closePriceFor(p);
     var room = fz ? fz.room : liqRoom(p, px);
     var known = !est.delayed && isFinite(px);
     var fin = !!(st && st.final);
@@ -4308,7 +4427,9 @@
     var have = known || fin;
     var tone = have ? (pnl > 0 ? ' pos' : pnl < 0 ? ' neg' : '') : '';
     phShow(d, '.js-ps-pnlrow', true);
-    phText(d, '.js-ps-pnl', have ? fmtUsd(pnl, true) : est.delayed ? 'price delayed' : '—');
+    var spText = have ? fmtUsd(pnl, true) : est.delayed ? 'price delayed' : '—', spNode = phq(d, '.js-ps-pnl');
+    if (spNode && spNode.textContent !== spText && !fin) tickPnl(spNode, p, est);
+    phText(d, '.js-ps-pnl', spText);
     phCls(d, '.js-ps-pnl', 'ph-ps-pnl-n js-ps-pnl' + tone);
     phText(d, '.js-ps-pct', have ? fmtPct1(pnl / p.margin) : '');
     phCls(d, '.js-ps-pct', 'ph-ps-pct js-ps-pct' + tone);
@@ -4335,10 +4456,10 @@
     /* the money coming back: the estimate until the close lands, then the real amount */
     phShow(d, '.js-ps-back', !(fin && res.liq));
     phText(d, '.js-ps-backk', fin ? 'Back in your balance' : 'You get back about');
-    phText(d, '.js-ps-est', fin ? fmtUsd(res.paid) : known ? fmtUsd(est.payout) : '—');
+    phText(d, '.js-ps-est', fin ? fmtUsd(res.paid) : known ? (est.liquidated ? '$0.00' : fmtUsd(est.payout)) : '—');
     /* the one muted line */
-    var note = !st ? 'Closes at the price a few seconds after you tap, about ' + fillSecs() + ' s.' + (sessionLive() ? '' : ' Your wallet asks next.')
-      : fin ? '' : 'The figures are from the moment you tapped.';
+    var note = !st ? 'Closes at the oracle price of the block it fills in, about ' + fillSecs() + ' s after you tap.' + (sessionLive() ? '' : ' Your wallet asks next.')
+      : fin ? '' : 'Live: it settles at the oracle price of the block the close lands in.';
     phText(d, '.js-ps-note', note);
     phShow(d, '.js-ps-note', !!note);
     /* Keep open and Close, or the status slot in their place */
@@ -4482,14 +4603,103 @@
 
   /* ---- read provider and contract reads -------------------------------------- */
 
-  function makeProvider(url) {
+  /* (CF_PNL) ethers polls for a new block every pollingInterval while it waits for a receipt: at its default 4000 ms a
+     request mined in a second was noticed after 4 s (measured, ethers 6.13.2 as loaded here: 4,035 ms for a receipt
+     that existed at 1,000 ms), the biggest part of "fills seemed to lag". 500 ms here; the newHeads watch below
+     answers even sooner. */
+  var TX_POLL_MS = 500;
+  /* A read that hangs this long moves to the next endpoint; that endpoint then sits out RPC_COOLDOWN_MS. */
+  var RPC_TIMEOUT_MS = 4000, RPC_COOLDOWN_MS = 30000;
+  /* JSON-RPC errors that mean "this node cannot serve that" (rate limit, range, capacity), not "the call reverted" */
+  var RPC_CAPACITY = { '-32005': 1, '-32016': 1, '-32029': 1, '-32090': 1, '35': 1, '429': 1 };
+  var rpcState = { down: {}, used: '', fails: 0 };
+
+  function rawProvider(url) {
     var E = window.ethers;
     return new E.JsonRpcProvider(url, { chainId: CHAIN_ID, name: 'hyperevm' }, {
       staticNetwork: true,
       batchMaxCount: Number(cfg.rpcBatchMaxCount) >= 1 ? Number(cfg.rpcBatchMaxCount) : 1,
-      polling: false
+      polling: false,
+      pollingInterval: TX_POLL_MS
     });
   }
+
+  /* A provider on urls[0] whose every call moves to the next url when the one before fails (no answer, a timeout,
+     or a capacity error); a revert or any other answer is the answer. A raw transaction is never sent twice on a
+     timeout (the first may have gone through); only a send that never left goes on to the next url. */
+  function makeProvider(url, fallbacks) {
+    var urls = [url].concat(fallbacks || []).filter(function (u, i, a) { return u && a.indexOf(u) === i; });
+    var p = rawProvider(urls[0]);
+    if (urls.length < 2) return p;
+    var backs = urls.map(function (u, i) { return i === 0 ? p : rawProvider(u); });
+    var own = p._send.bind(p);
+    function capacity(resp) {
+      return (resp || []).some(function (r) { return r && r.error && RPC_CAPACITY[String(r.error.code)]; });
+    }
+    p._send = function (payload) {
+      var list = Array.isArray(payload) ? payload : [payload];
+      var sending = list.some(function (q) { return q && q.method === 'eth_sendRawTransaction'; });
+      var now = Date.now();
+      var order = urls.map(function (u, i) { return i; }).filter(function (i) { return !(rpcState.down[urls[i]] > now); });
+      if (!order.length) order = urls.map(function (u, i) { return i; });
+      function attempt(k) {
+        var i = order[k], u = urls[i];
+        var send = i === 0 ? own(payload) : backs[i]._send(payload);
+        var timer = null;
+        var limit = new Promise(function (ok, no) { timer = setTimeout(function () { var e = new Error('timeout'); e.rpcTimeout = true; no(e); }, RPC_TIMEOUT_MS); });
+        return Promise.race([send, limit]).then(function (resp) {
+          clearTimeout(timer);
+          if (k + 1 < order.length && capacity(resp)) { var c = new Error('capacity'); c.rpcCapacity = true; throw c; }
+          rpcState.used = u;
+          return resp;
+        }).catch(function (e) {
+          clearTimeout(timer);
+          if (k + 1 >= order.length || (sending && e && e.rpcTimeout)) throw e;
+          if (!(e && e.rpcCapacity)) { rpcState.down[u] = Date.now() + RPC_COOLDOWN_MS; rpcState.fails++; }
+          return attempt(k + 1);
+        });
+      }
+      return attempt(0);
+    };
+    return p;
+  }
+
+  /* (CF_PNL) The send path's provider: the dry run, the gas estimate and the raw transaction go to Blockfront and to
+     config.json's rpcUrl at once, and the first good answer is taken. A trader far from one of them still gets the near
+     one (measured from California: Blockfront 250 ms a call, drpc 55), and the same signed transaction sent twice is
+     one transaction (the second node answers "already known"). A revert comes back only when every node says so. */
+  function makeRaceProvider(urls) {
+    urls = urls.filter(function (u, i, a) { return u && a.indexOf(u) === i; });
+    var ps = urls.map(rawProvider);
+    var p = ps[0];
+    if (ps.length < 2) return p;
+    var own = p._send.bind(p);
+    function bad(resp) { return !resp || (resp || []).some(function (r) { return !r || r.error; }); }
+    p._send = function (payload) {
+      return new Promise(function (ok, no) {
+        var left = ps.length, firstResp = null, firstErr = null, done = false;
+        ps.forEach(function (q, i) {
+          var send = i === 0 ? own(payload) : q._send(payload);
+          var timer = null;
+          var limit = new Promise(function (y, n) { timer = setTimeout(function () { n(new Error('timeout')); }, RPC_TIMEOUT_MS); });
+          Promise.race([send, limit]).then(function (resp) {
+            clearTimeout(timer);
+            if (done) return;
+            if (!bad(resp)) { done = true; rpcState.used = urls[i]; ok(resp); return; }
+            if (!firstResp) firstResp = resp;
+          }, function (e) { clearTimeout(timer); if (!firstErr) firstErr = e; }).then(function () {
+            if (done || --left > 0) return;
+            done = true;
+            if (firstResp) ok(firstResp); else no(firstErr || new Error('no answer'));
+          });
+        });
+      });
+    };
+    return p;
+  }
+
+  /* Blockfront first unless config.json says "blockfront": false. */
+  function blockfrontOn() { return !DEMO && !(cfg && cfg.blockfront === false); }
 
   function initRead() {
     if (!window.ethers || !cfg.rpcUrl) return;
@@ -4499,8 +4709,10 @@
     vaultIface = new E.Interface(VAULT_FACTORY_ABI);
     routerIface = new E.Interface(ROUTER_ABI);
     proxyIface = new E.Interface(PROXY_ABI);
-    read.provider = makeProvider(cfg.rpcUrl);
-    read.logProvider = cfg.logRpcUrl && cfg.logRpcUrl !== cfg.rpcUrl ? makeProvider(cfg.logRpcUrl) : read.provider;
+    read.provider = blockfrontOn() ? makeProvider(BLOCKFRONT_RPC, [cfg.rpcUrl, DEFAULT_RPC]) : makeProvider(cfg.rpcUrl, [DEFAULT_RPC]);
+    read.sendProvider = blockfrontOn() ? makeRaceProvider([BLOCKFRONT_RPC, cfg.rpcUrl]) : read.provider;
+    /* the history scans ask for 20,000-block ranges: config.json's logRpcUrl, then the read endpoints */
+    read.logProvider = cfg.logRpcUrl && cfg.logRpcUrl !== cfg.rpcUrl ? makeProvider(cfg.logRpcUrl, [cfg.rpcUrl]) : read.provider;
     if (hasExchange()) read.exchange = new E.Contract(cfg.contracts.exchange, EXCHANGE_ABI, read.provider);
     var refAddr = cfg.contracts && cfg.contracts.referrals;
     if (isAddr(refAddr)) read.referrals = new E.Contract(refAddr, REFERRALS_ABI, read.provider);
@@ -4518,7 +4730,9 @@
       longCap: usd6ToNum(r.longOiCapUsd), shortCap: usd6ToNum(r.shortOiCapUsd),
       maxNotional: usd6ToNum(r.maxNotionalUsd), payoutCapX: Number(r.payoutCapX),
       entryDeadbandBps: Number(r.entryDeadbandBps), borrowRateX10: Number(r.borrowRateX10),
-      opensPaused: !!r.opensPaused, retired: !!r.retired, frozenPx: px18ToNum(r.lastPx18)
+      opensPaused: !!r.opensPaused, retired: !!r.retired, frozenPx: px18ToNum(r.lastPx18),
+      /* the live impact curve in the contract's units, and the frozen price of a retired market (settle.js) */
+      raw: window.ConfettiSettle ? window.ConfettiSettle.curve(r) : null, lastPx18: r.lastPx18 != null ? BigInt(r.lastPx18) : null
     };
   }
 
@@ -4678,47 +4892,88 @@
     });
   }
 
-  /* The settlement price of a market right now (the oracle; a retired market's frozen price).
+  /* The settlement price of a market right now (the oracle; a retired market's frozen price), 1e18 as a BigInt.
      Resolves to null when the feed is dead. */
   function readOraclePx(id) {
-    return read.exchange.execPrice(id, true, true).then(function (px) { return px18ToNum(px); }).catch(function () { return null; });
+    return read.exchange.execPrice(id, true, true).then(function (px) { return BigInt(px); }).catch(function () { return null; });
   }
 
-  /* (2026-11-02, the owner: "the card does not update fast enough", the current profit card) The P&L cards price on
-     the settlement oracle, which the chain poll read only every CHAIN_EVERY_MS. This reads it every ORACLE_EVERY_MS for
-     the markets with an open position only, while the page is visible: one call per such market. */
+  /* ---- the settlement price, exact (CF_PNL, 2026-11-04) ----
+     The owner: "i want the pnl card to be updating in realtime as the trade is taking place", "very accurate and fast".
+     Every fill, close and liquidation settles on the HyperCore oracle print the exchange reads through the price
+     precompile (Exchange._execPrice -> PriceOracle.oraclePrice). Hyperliquid's validators publish that print about every
+     3 s; between prints the exchange settles at the last one, whatever the book does. So a card shows the latest print,
+     exactly, as soon as it exists, and nothing in between: measured over 10 minutes on 8 markets, the bbo-anchored
+     price the cards showed before (the mid's move since the last 2 s oracle read) sat 0.8-4 bps off the settlement
+     price at the 90th percentile and up to 29 bps at worst (at 1000x, 1 bp is a tenth of the margin); the print is off
+     only in the quarter second it takes to read it.
+     Sources, best first: the block feed below (Blockfront newHeads, execPrice at every block: the number the contract
+     itself would use; first with a new print 70 % of the time, about 0.4 s ahead of Hyperliquid's stream), then
+     Hyperliquid's activeAssetCtx stream (the same oracle a little later, plus a few prints a minute that never reach
+     the EVM: used only while the block feed is quiet, and in the demo), then the 2 s poll (tickOracle). A print is taken
+     only from a look newer than the one in hand, so a slow answer never puts an older price back. */
+  var oracle = { at: {}, src: {}, block: {} };   /* id -> when the price in hand was observed, by which source, at which block */
+
+  function setOraclePx(id, px18, src, seenAt, block) {
+    if (id == null || px18 == null || !(px18 > 0n)) return false;
+    var at = seenAt || Date.now();
+    if (oracle.at[id] && at < oracle.at[id] && house.oraclePx18ById[id] != null) return false;   /* an older look */
+    var moved = house.oraclePx18ById[id] !== px18;
+    house.oraclePx18ById[id] = px18;
+    house.oraclePxById[id] = px18ToNum(px18);
+    house.oraclePxAt[id] = Date.now();
+    oracle.at[id] = at; oracle.src[id] = src; oracle.block[id] = block || null;
+    if (moved) oracle.moves = (oracle.moves || 0) + 1;
+    return moved;
+  }
+
+  /* The 2 s poll: only while the block feed is quiet (the feed reads the same price at every block). */
   var oracleBusy = false;
   function tickOracle() {
-    if (DEMO || document.hidden || oracleBusy || !read.exchange || !wallet.account || !acct.loaded) return;
-    var ids = [];
-    acct.positions.forEach(function (p) { if (p.instrumentId != null && ids.indexOf(p.instrumentId) < 0) ids.push(p.instrumentId); });
+    if (DEMO || document.hidden || oracleBusy || !read.exchange || headsFresh()) return;
+    var ids = cardInstruments();
     if (!ids.length) return;
     var account = wallet.account;
     oracleBusy = true;
+    var asked = Date.now();
     Promise.all(ids.map(readOraclePx)).then(function (opx) {
       if (wallet.account !== account) return;
-      var now = Date.now(), moved = false;
-      ids.forEach(function (id, i) {
-        if (opx[i] == null) return;
-        if (house.oraclePxById[id] !== opx[i]) moved = true;
-        house.oraclePxById[id] = opx[i]; house.oraclePxAt[id] = now;
-      });
-      if (moved) { updatePositionPrices(); renderAccount(); }
+      var moved = false;
+      ids.forEach(function (id, i) { if (opx[i] != null && setOraclePx(id, opx[i], 'poll', asked)) moved = true; });
+      if (moved) drawCards();
     }).catch(function () { /* the 10 s chain poll still reads it */ }).then(function () { oracleBusy = false; });
   }
 
-  /* (2026-11-02, the owner: "i want that to be as fast as possible") The settlement oracle moves every 3-5 s, so the
-     P&L cards follow Hyperliquid's live best bid and ask (the bbo stream, one per coin held) between oracle reads: a coin's shown price is its
-     last settlement price moved by the mid's change since that read. The mid sits 1-55 bps off the oracle by coin, so
-     anchoring to each read keeps that gap out of the number. Only while a position is open and the tab is visible;
-     display only (cards, P&L, the room to liquidation), never a request or a TP/SL trigger. */
-  var FAST_FRESH_MS = 3000, FAST_DRAW_MS = 250;
-  var fast = { ws: null, mids: {}, at: {}, subs: {}, anchors: {}, retry: 0, again: null, ping: null, draw: null };
+  /* The markets a card needs a price for: open positions, orders on their way in, the market on the ticket. */
+  function cardInstruments() {
+    var ids = [];
+    function add(id) { if (id != null && ids.indexOf(id) < 0) ids.push(id); }
+    if (wallet.account && acct.loaded) acct.positions.forEach(function (p) { add(p.instrumentId); });
+    pendingOpenList().forEach(function (r) { add(r.instrumentId); });
+    quick.list.forEach(function (r) { add(r.instrumentId); });
+    if (state.market && state.market.instrumentId != null) add(state.market.instrumentId);
+    return ids;
+  }
 
-  /* the coins with an open position: the bbo subscriptions the feed should hold */
+  /* One redraw per frame however many prices and blocks land in it. */
+  var drawPending = false;
+  function drawCards() {
+    if (drawPending) return;
+    drawPending = true;
+    var run = function () { drawPending = false; try { updatePositionPrices(); renderAccount(); } catch (e) { /* never stops the feed */ } };
+    if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(run); else setTimeout(run, 16);
+  }
+
+  /* ---- Hyperliquid's oracle stream (activeAssetCtx), one socket for the coins the cards need ----
+     The second source of the settlement price (the demo's only one): the validator oracle the precompile returns,
+     parsed digit for digit into the precompile's integer. Built on the 2026-11-02 feed's socket (one per page, while a
+     card needs it and the tab is visible, 1-30 s backoff, a ping every 30 s); that feed's bbo-anchored price is gone
+     from the cards: it was not the price anything settles on. */
+  var fast = { ws: null, subs: {}, retry: 0, again: null, ping: null, px: {}, at: {} };
+
   function fastCoins() {
     var out = {};
-    acct.positions.forEach(function (p) { var m = positionMarket(p); if (m && m.coin) out[m.coin] = true; });
+    cardInstruments().forEach(function (id) { var inst = state.byInstId[id]; var m = inst && inst.market; if (m && m.coin) out[m.coin] = true; });
     return out;
   }
 
@@ -4726,12 +4981,31 @@
     var ws = fast.ws;
     if (!ws || ws.readyState !== 1) return;
     var want = fastCoins();
-    var send = function (method, coin) { try { ws.send(JSON.stringify({ method: method, subscription: { type: 'bbo', coin: coin } })); } catch (e) { /* closing */ } };
+    var send = function (method, coin) { try { ws.send(JSON.stringify({ method: method, subscription: { type: 'activeAssetCtx', coin: coin } })); } catch (e) { /* closing */ } };
     Object.keys(want).forEach(function (c) { if (!fast.subs[c]) { fast.subs[c] = true; send('subscribe', c); } });
-    Object.keys(fast.subs).forEach(function (c) { if (!want[c]) { delete fast.subs[c]; delete fast.mids[c]; send('unsubscribe', c); } });
+    Object.keys(fast.subs).forEach(function (c) { if (!want[c]) { delete fast.subs[c]; send('unsubscribe', c); } });
   }
 
-  function fastWanted() { return !DEMO && !document.hidden && !!wallet.account && acct.loaded && acct.positions.length > 0; }
+  function fastWanted() {
+    if (document.hidden || !Object.keys(fastCoins()).length) return false;
+    return DEMO ? true : !!(wallet.account && acct.loaded);
+  }
+
+  /* A print from the stream: taken in the demo always, on the live page only while the block feed is quiet (the
+     chain answers first most of the time, and the stream carries a few prints a minute the EVM never sees). */
+  function onFastCtx(coin, ctx) {
+    var m = state.byCoin[coin];
+    if (!m || m.instrumentId == null || !ctx || !window.ConfettiSettle) return;
+    var inst = state.byInstId[m.instrumentId];
+    if (inst && inst.retired) return;
+    var raw = window.ConfettiSettle.parseOracle(ctx.oraclePx, m.szDecimals);
+    if (raw == null) return;
+    var px18 = window.ConfettiSettle.oracle18(raw, m.szDecimals);
+    fast.px[coin] = px18; fast.at[coin] = Date.now();
+    if (!DEMO && headsFresh()) return;
+    if (DEMO && acct.positions.some(function (p) { return p.instrumentId === m.instrumentId; })) pnlBeat(null);
+    if (setOraclePx(m.instrumentId, px18, 'hl', Date.now())) drawCards();
+  }
 
   function syncFastFeed() {
     if (!fastWanted()) { closeFastFeed(); return; }
@@ -4750,12 +5024,8 @@
     ws.onmessage = function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (!msg || msg.channel !== 'bbo' || !msg.data || !fast.subs[msg.data.coin]) return;
-      var q = msg.data.bbo || [], bid = q[0] && Number(q[0].px), ask = q[1] && Number(q[1].px);
-      if (!(bid > 0 && ask > 0)) return;
-      fast.mids[msg.data.coin] = (bid + ask) / 2;
-      fast.at[msg.data.coin] = Date.now();
-      if (!fast.draw) fast.draw = setTimeout(function () { fast.draw = null; updatePositionPrices(); renderAccount(); }, FAST_DRAW_MS);
+      if (!msg || msg.channel !== 'activeAssetCtx' || !msg.data || !fast.subs[msg.data.coin]) return;
+      onFastCtx(msg.data.coin, msg.data.ctx);
     };
     ws.onclose = function () {
       if (fast.ws !== ws) return;
@@ -4773,21 +5043,389 @@
     if (fast.again) { clearTimeout(fast.again); fast.again = null; }
     if (fast.ping) { clearInterval(fast.ping); fast.ping = null; }
     var ws = fast.ws;
-    fast.ws = null; fast.mids = {}; fast.at = {}; fast.subs = {}; fast.anchors = {};
+    fast.ws = null; fast.subs = {};
     if (ws) { try { ws.close(); } catch (e) { /* gone */ } }
   }
 
-  /* The price a card shows for market m: the settlement price, moved by the live mid since it was read. */
-  function livePrice(m) {
-    var sp = settlePrice(m);
-    if (!sp.fresh || !m || !fast.ws || !(Date.now() - (fast.at[m.coin] || 0) <= FAST_FRESH_MS)) return sp;
-    var mid = fast.mids[m.coin];
-    if (!(mid > 0)) return sp;
-    var key = m.instrumentId != null ? m.instrumentId : m.coin, at = house.oraclePxAt[m.instrumentId];
-    var a = fast.anchors[key];
-    if (!a || a.at !== at || a.opx !== sp.px) a = fast.anchors[key] = { at: at, opx: sp.px, mid: mid };
-    return { px: a.opx * (mid / a.mid), fresh: true };
+  /* The price a card shows for market m: the settlement price, as the exchange would take it now. */
+  function livePrice(m) { return settlePrice(m); }
+
+  /* ---- the block feed (Blockfront newHeads) ----
+     One WebSocket while the tab is visible. Each new block: the chain clock (the countdowns), and one JSON-RPC batch
+     read at that very block: execPrice of every market a card needs, previewClose of every open position (each card is
+     held to it, block by block: heads.audit), the payout queue (the loss fee), and while a trade is in flight the
+     exchange's logs in that block (request, fill, refund, close, liquidation: the cards change in the block it happens,
+     with no poll and no wait on a receipt) and the receipts a send waits on. The 2 s oracle poll and the 400 ms request
+     poll stand in whenever this goes quiet for HEADS_STALE_MS. */
+  var HEADS_STALE_MS = 2500, HEADS_PING_MS = 25000, HEAD_READ_MS = 4000;
+  var heads = {
+    ws: null, retry: 0, again: null, ping: null, last: 0, block: 0, ts: 0, hash: null, busy: false, next: null,
+    receipts: {}, logs: {}, rounds: 0, warned: {},
+    audit: { blocks: 0, checked: 0, agree: 0, disagree: 0, last: null }
+  };
+  /* (CF_PNL) for a test or a curious trader in the console: how the cards stand against the contract, and the last
+     60 block reads (when the head came, when its read answered, how many calls) */
+  heads.trace = [];
+  window.ConfettiPnlAudit = function () { return JSON.parse(JSON.stringify({ heads: { block: heads.block, rounds: heads.rounds, fresh: headsFresh(), seenLag: heads.seenLag, clockOff: chainClock.off }, audit: heads.audit, src: oracle.src, rpc: rpcState.used, trace: heads.trace }, function (k, v) { return typeof v === 'bigint' ? String(v) : v; })); };
+
+  function headsFresh() { return !!heads.ws && heads.last > 0 && Date.now() - heads.last < HEADS_STALE_MS; }
+  /* only for a connected trader (a visitor's ticket price comes from the 10 s chain read, as before): one socket and at
+     most one small batch a block per trader */
+  function headsWanted() { return blockfrontOn() && !document.hidden && typeof WebSocket === 'function' && !!read.exchange && !!exIface && !!wallet.account; }
+
+  function syncHeads() {
+    if (!headsWanted()) { closeHeads(); return; }
+    if (heads.ws || heads.again) return;
+    var ws;
+    try { ws = new WebSocket(BLOCKFRONT_WS); } catch (e) { return; }
+    heads.ws = ws;
+    ws.onopen = function () {
+      if (heads.ws !== ws) return;
+      heads.retry = 0;
+      try {
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_subscribe', params: ['newHeads'] }));
+        /* (CF_PNL) and the exchange's logs, pushed as each block lands: measured on Blockfront 120 ms after its head and
+           0.5 s ahead of reading them at the head; the read at the head stays as the backstop */
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'eth_subscribe', params: ['logs', { address: cfg.contracts.exchange }] }));
+      } catch (e) { /* closing */ }
+      heads.ping = setInterval(function () { try { ws.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'eth_blockNumber', params: [] })); } catch (e) { /* closing */ } }, HEADS_PING_MS);
+    };
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg && msg.id === 3 && msg.result) { heads.logSub = msg.result; return; }
+      var h = msg && msg.method === 'eth_subscription' && msg.params ? msg.params.result : null;
+      if (!h) return;
+      if (heads.logSub && msg.params.subscription === heads.logSub) { onPushedLog(h); return; }
+      if (h.number && h.hash) onHead(h);
+    };
+    ws.onclose = function () {
+      if (heads.ws !== ws) return;
+      if (heads.ping) { clearInterval(heads.ping); heads.ping = null; }
+      heads.ws = null;
+      if (headsWanted()) {
+        var wait = Math.min(30000, 1000 * Math.pow(2, heads.retry++));
+        heads.again = setTimeout(function () { heads.again = null; syncHeads(); }, wait);
+      }
+    };
+    ws.onerror = function () { /* onclose follows */ };
   }
+
+  function closeHeads() {
+    if (heads.again) { clearTimeout(heads.again); heads.again = null; }
+    if (heads.ping) { clearInterval(heads.ping); heads.ping = null; }
+    var ws = heads.ws;
+    heads.ws = null;
+    if (ws) { try { ws.close(); } catch (e) { /* gone */ } }
+  }
+
+  function onHead(h) {
+    var n = parseInt(h.number, 16), ts = parseInt(h.timestamp, 16);
+    if (!(n > heads.block)) return;
+    heads.block = n; heads.ts = ts; heads.hash = h.hash;
+    noteChainClock(ts, Date.now());
+    if (h.baseFeePerGas) { try { heads.baseFee = BigInt(h.baseFeePerGas); } catch (e) { /* not a number */ } }
+    noteHeadTs(n, ts);
+    noteBlock({ number: n, timestamp: ts });
+    heads.audit.blocks++;
+    var job = { n: n, hash: h.hash, ts: ts, seen: Date.now() };
+    if (heads.busy) { heads.next = job; return; }
+    readAtHead(job);
+  }
+
+  /* Anything whose end the cards are waiting for: an order on its way in, a request, a close, a send. */
+  function inFlight() {
+    return quick.list.length > 0 || pendingOpenList().length > 0 || Object.keys(acct.closeReqs).length > 0 ||
+      Object.keys(ui.closing).length > 0 || Object.keys(heads.receipts).length > 0 || !!(tk.phase && tk.phase !== 'opened') || nearBust();
+  }
+
+  /* (CF_PNL, weak spot 1) A position in the last fifth of its way to liquidation, or past it: its liquidation can land in
+     any block, so the block feed reads the logs then too and the result card comes in the block it happens (it came
+     with the next 10 s account read before). */
+  function nearBust() {
+    if (!wallet.account || !acct.loaded) return false;
+    return acct.positions.some(function (p) {
+      var px = house.oraclePxById[p.instrumentId];
+      if (!(px > 0)) return false;
+      var room = liqRoom(p, px);
+      return room.cls === 'is-red' || room.away === 0;
+    });
+  }
+
+  function rpcCall(to, data, tag) { return ['eth_call', [{ to: to, data: data }, tag]]; }
+
+  function readAtHead(job) {
+    var ex = cfg.contracts.exchange, tag = '0x' + job.n.toString(16);
+    var calls = [], use = [];
+    cardInstruments().forEach(function (id) { calls.push(rpcCall(ex, exIface.encodeFunctionData('execPrice', [id, true, true]), tag)); use.push(['px', id]); });
+    var mine = wallet.account && acct.loaded ? acct.positions.slice() : [];
+    mine.forEach(function (p) { calls.push(rpcCall(ex, exIface.encodeFunctionData('previewClose', [p.id]), tag)); use.push(['pv', p]); });
+    if (mine.length) {
+      calls.push(rpcCall(ex, exIface.encodeFunctionData('queueLength', []), tag)); use.push(['qlen']);
+      calls.push(rpcCall(ex, exIface.encodeFunctionData('queueHead', []), tag)); use.push(['qhead']);
+    }
+    var range = null;
+    if (wallet.account && inFlight()) {
+      range = logsRange(job.n);
+      calls.push(['eth_getLogs', [{ address: ex, fromBlock: '0x' + range.from.toString(16), toBlock: tag }]]); use.push(['logs']);
+    } else heads.logsFrom = null;
+    Object.keys(heads.receipts).forEach(function (hash) { calls.push(['eth_getTransactionReceipt', [hash]]); use.push(['rc', hash]); });
+    if (!calls.length) { heads.last = Date.now(); return; }
+    heads.busy = true;
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, HEAD_READ_MS);
+    var account = wallet.account;
+    fetch(BLOCKFRONT_RPC, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl ? ctrl.signal : undefined,
+      body: JSON.stringify(calls.map(function (c, i) { return { jsonrpc: '2.0', id: i, method: c[0], params: c[1] }; }))
+    }).then(function (res) { if (!res.ok) throw new Error('head read ' + res.status); return res.json(); }).then(function (out) {
+      if (wallet.account !== account) return;
+      var byId = [];
+      (Array.isArray(out) ? out : [out]).forEach(function (x) { if (x && x.id != null) byId[x.id] = x; });
+      heads.rounds++;
+      heads.last = Date.now();
+      heads.trace.push({ n: job.n, seen: job.seen, done: Date.now(), calls: calls.length, logs: !!range });
+      if (heads.trace.length > 60) heads.trace.shift();
+      /* how far into a block's second its answer lands, smoothed: what the countdowns add to reach 0 with the card */
+      if (chainClock.off != null) {
+        var lag = clamp(Date.now() / 1000 + chainClock.off - job.ts, 0, 3);
+        heads.seenLag = heads.seenLag == null ? lag : heads.seenLag * 0.8 + lag * 0.2;
+      }
+      var at = { px: {}, pv: [], qlen: null, qhead: null }, logs = null, moved = false;
+      use.forEach(function (u, i) {
+        var x = byId[i];
+        if (!x || x.error || x.result == null) return;
+        try {
+          if (u[0] === 'px') { at.px[u[1]] = BigInt(x.result); if (setOraclePx(u[1], at.px[u[1]], 'chain', job.seen, job.n)) moved = true; }
+          else if (u[0] === 'pv') { var d = exIface.decodeFunctionResult('previewClose', x.result); at.pv.push({ p: u[1], pnl: BigInt(d[0]), fee: BigInt(d[1]), payout: BigInt(d[2]) }); }
+          else if (u[0] === 'qlen') at.qlen = Number(BigInt(x.result));
+          else if (u[0] === 'qhead') at.qhead = Number(BigInt(x.result));
+          else if (u[0] === 'logs') { logs = x.result; if (range) heads.logsFrom = range.to + 1; }
+          else if (u[0] === 'rc') onHeadReceipt(u[1], x.result);
+        } catch (e) { /* one bad answer never stops the rest */ }
+      });
+      if (at.qlen != null && at.qhead != null) { house.queueLen = at.qlen; house.queueHead = at.qhead; }
+      at.pv.forEach(function (c) { auditCard(c, job, at); });
+      if (at.pv.length) pnlBeat(job.n);
+      if (logs) onBlockLogs(logs, job);
+      if (moved || at.pv.length || logs) drawCards();
+    }).catch(function () { /* the next block reads again; the polls stand in while this stays quiet */ }).then(function () {
+      clearTimeout(timer);
+      heads.busy = false;
+      var next = heads.next; heads.next = null;
+      if (next && next.n > job.n) readAtHead(next);
+    });
+  }
+
+  /* Hold a card to the contract: this page's settlement of position p at block job.n (that block's price, time and
+     queue) against previewClose(p) read at the same block. Equal to the 1e-6 USDC, or the card shows the contract's
+     figures (p.chainPv) until the model agrees again, and the position and its market are read afresh. */
+  /* (CF_PNL, weak spot 2) Between two oracle prints (3 s, and 6-24 s on a quiet coin) the P&L rightly holds still while the
+     chart moves, and a still number reads as a stuck one. A dot by Your positions pulses at every block the cards were
+     read and held to the contract (or, in the demo, at every oracle print): the number is still because the price that
+     counts is, not because the page stopped. Hidden with no position open or while the feeds are quiet. */
+  function pnlBeat(block) {
+    ['pnlBeat', 'phPnlBeat'].forEach(function (id) {
+      var d = $(id);
+      if (!d) return;
+      var on = !!(wallet.account && acct.loaded && acct.positions.length);
+      if (d.hidden === on) d.hidden = !on;
+      if (!on) return;
+      var t = block ? 'Live: every figure is the exchange\'s own settlement at block ' + block.toLocaleString('en-US') + '.' : 'Live: every figure is the exchange\'s settlement at the latest oracle print.';
+      if (d.title !== t) d.title = t;
+      if (reducedMotion()) return;
+      d.removeAttribute('data-beat');
+      void d.offsetWidth;
+      d.setAttribute('data-beat', '1');
+    });
+  }
+  setInterval(function () {
+    /* a beat that stops: the dot dims (and "price delayed" follows after PX_FRESH_MS) */
+    var quiet = !DEMO ? !headsFresh() : !(Object.keys(fast.at).some(function (c) { return Date.now() - fast.at[c] < 5000; }));
+    ['pnlBeat', 'phPnlBeat'].forEach(function (id) { var d = $(id); if (d) d.classList.toggle('is-quiet', quiet); });
+  }, 1000);
+
+  function auditCard(c, job, at) {
+    var p = c.p, S = window.ConfettiSettle, inst = state.byInstId[p.instrumentId];
+    var px18 = at.px[p.instrumentId];
+    if (!S || !p.raw || !inst || !inst.raw || px18 == null) return;
+    var qEmpty = at.qlen == null ? true : at.qlen === at.qhead;
+    var mine = S.previewClose(p.raw, inst.raw, px18, BigInt(job.ts), qEmpty);
+    heads.audit.checked++;
+    var same = mine.pnl === c.pnl && mine.fee === c.fee && mine.payout === c.payout;
+    heads.audit.last = { block: job.n, id: String(p.id), same: same };
+    if (same) { heads.audit.agree++; p.chainPv = null; p.checkedAt = job.n; return; }
+    heads.audit.disagree++;
+    p.chainPv = { block: job.n, px18: px18, pnl: c.pnl, fee: c.fee, payout: c.payout };
+    if (!heads.warned[String(p.id)]) {
+      heads.warned[String(p.id)] = true;
+      console.warn('P&L card #' + p.id + ' at block ' + job.n + ': page ' + mine.pnl + '/' + mine.fee + '/' + mine.payout + ', previewClose ' + c.pnl + '/' + c.fee + '/' + c.payout + '; showing the contract\'s figures and reading the position again.');
+      setTimeout(function () { refreshAccount(); loadInstruments(); }, 0);
+    }
+  }
+
+  /* A receipt the block feed found for a send that waits on it (sendTx races this with ethers' own wait). */
+  function onHeadReceipt(hash, rc) {
+    var w = heads.receipts[hash];
+    if (!w || !rc) return;
+    delete heads.receipts[hash];
+    w({ hash: rc.transactionHash || hash, blockNumber: Number(rc.blockNumber), status: Number(rc.status), logs: rc.logs || [], viaHeads: true });
+  }
+
+  function headReceipt(hash) {
+    return new Promise(function (ok) { heads.receipts[hash] = ok; });
+  }
+
+  /* ---- (CF_PNL) the trade's own events, in the block they happen ----
+     The exchange's logs, read at each head while something is in flight (readAtHead): this account's request, its
+     fill or refund, a close request, the close or the liquidation. Each is handled once (heads.logs), by whichever path
+     sees it first (this, a send's receipt, the request poll, which stays as the stand-in); the account read that
+     follows only confirms it. Before this the page learned of a fill from a receipt ethers noticed after 4 s, then a
+     request poll that trusted an empty read only 4 s after that, then a log query: a 3 s fill reached the card after
+     about 9. */
+  var BLOCK_TS_KEEP = 64;
+  heads.tsByBlock = {};
+
+  function noteHeadTs(n, ts) {
+    heads.tsByBlock[n] = ts;
+    var old = n - BLOCK_TS_KEEP;
+    if (heads.tsByBlock[old] != null) delete heads.tsByBlock[old];
+  }
+
+  /* A log the block feed pushed: handled at once if it is this account's (onBlockLogs dedupes it with the read at the
+     head). Its block's time is the head's when that came first, else the latest head's plus the blocks between. */
+  function onPushedLog(l) {
+    if (!wallet.account || !l || !l.topics || l.removed) return;
+    var n = Number(l.blockNumber);
+    var ts = heads.tsByBlock[n] != null ? heads.tsByBlock[n] : heads.ts ? heads.ts + Math.max(0, n - heads.block) : Math.floor(chainNow());
+    onBlockLogs([l], { n: n, ts: ts, seen: Date.now() });
+  }
+
+  function onBlockLogs(logs, job) {
+    if (!wallet.account || !Array.isArray(logs) || !logs.length) return;
+    var me = wallet.account.toLowerCase();
+    var mine = {};
+    acct.positions.forEach(function (p) { mine[String(p.id)] = p; });
+    var any = false;
+    var byBlock = {};
+    logs.forEach(function (l) { var b = Number(l.blockNumber); (byBlock[b] = byBlock[b] || []).push(l); });
+    parsedLogs(logs).forEach(function (ev) {
+      var a = ev.args;
+      var key = ev.tx + ':' + ev.name + ':' + String(a[0]);
+      if (heads.logs[key]) return;
+      var who = ev.name === 'CloseRequestCancelled' ? null : (a.trader || a.owner);
+      var ours = who ? String(who).toLowerCase() === me : !!mine[String(a.positionId)];
+      if (!ours) return;
+      heads.logs[key] = true;
+      any = true;
+      var at = { n: ev.block != null ? ev.block : job.n, ts: heads.tsByBlock[ev.block] != null ? heads.tsByBlock[ev.block] : job.ts };
+      var same = byBlock[at.n] || logs;
+      if (ev.name === 'OpenRequested') onOpenRequested(ev, at);
+      else if (ev.name === 'PositionOpened' || ev.name === 'OpenRequestCancelled') onOpenEnded(ev, same, at);
+      else if (ev.name === 'CloseRequested') onCloseRequested(ev, at);
+      else if (ev.name === 'PositionClosed' || ev.name === 'PositionLiquidated' || ev.name === 'CloseRequestCancelled') onCloseEnded(ev, same, mine);
+    });
+    if (any) renderPositions();
+  }
+
+  /* A request this account filed: the order's card starts its countdown from the request's own block. */
+  function onOpenRequested(ev, at) {
+    var a = ev.args, id = String(a.requestId);
+    if (pend.done[id]) return;
+    var q = quick.list.filter(function (x) { return x.txHash && x.txHash.toLowerCase() === String(ev.tx).toLowerCase(); })[0];
+    var r = pend.opens[id];
+    if (r) { r.requestedAt = at.ts; r.block = at.n; }
+    else trackOpenRequest({
+      id: id, instrumentId: Number(a.instrumentId), isLong: !!a.isLong, margin: usd6ToNum(a.marginUsdc), leverage: Number(a.leverage),
+      px0: px18ToNum(a.px0), requestedAt: at.ts, block: at.n, localAt: Date.now()
+    });
+    if (q) { quick.list = quick.list.filter(function (x) { return x !== q; }); q.reqId = id; }
+    if (tk.phase === 'wallet' && tk.txHash && tk.txHash.toLowerCase() === String(ev.tx).toLowerCase()) tkSet('req', { reqId: id });
+  }
+
+  /* The position as executeOpen just booked it, from its PositionOpened event: the terms the exchange stamps at the
+     fill are the market's and the house's right now, so the card is exact at once; positions(id), read right after,
+     replaces it (provisional until then: the maximum profit is the one stamp that may differ, and only on a win the
+     size of the house's cap). */
+  function provisionalPosition(ev, at) {
+    var a = ev.args, S = window.ConfettiSettle;
+    var inst = state.byInstId[Number(a.instrumentId)] || {};
+    var margin6 = BigInt(a.marginUsdc), lev = Number(a.leverage);
+    var cap = margin6 * BigInt(inst.payoutCapX || 0);
+    var bps = liveOr(house.maxWinBps, 'maxWinBps');
+    if (house.free != null && bps != null) { var byHouse = BigInt(Math.floor(house.free * 1e6)) * BigInt(bps) / 10000n; if (byHouse < cap) cap = byHouse; }
+    var t = {
+      isLong: !!a.isLong, marginUsdc: margin6, leverage: lev, maxProfitUsdc: cap, entryPx18: BigInt(a.entryPx18), openedAt: at.ts,
+      deadbandBps: inst.deadbandBps || 0, winFeeBps: liveOr(house.winFeeBps, 'winFeeBps') || 0, lossFeeBps: liveOr(house.lossFeeBps, 'lossFeeBps') || 0,
+      entryDeadbandBps: inst.entryDeadbandBps || 0, borrowRateX10: inst.borrowRateX10 || 0, borrowFreeHours: freeHours() || 0
+    };
+    return {
+      id: BigInt(a.positionId), instrumentId: Number(a.instrumentId), isLong: !!a.isLong, margin: usd6ToNum(margin6), leverage: lev,
+      entry: px18ToNum(t.entryPx18), entryPx18: t.entryPx18, openedAt: at.ts, deadbandBps: t.deadbandBps, payoutCapX: inst.payoutCapX || 0,
+      maxProfit: usd6ToNum(cap), winFeeBps: t.winFeeBps, lossFeeBps: t.lossFeeBps, entryDeadbandBps: t.entryDeadbandBps,
+      borrowRateX10: t.borrowRateX10, borrowFreeHours: t.borrowFreeHours, preview: null, provisional: true,
+      raw: S ? S.position(t) : null
+    };
+  }
+
+  /* A request of this account ended: filled (the position takes the order's place in the same render) or refunded
+     (the reason takes it, at once). */
+  function onOpenEnded(ev, logs, at) {
+    var a = ev.args, id = String(a.requestId);
+    if (pend.done[id]) return;
+    pend.done[id] = true;
+    var r = pend.opens[id];
+    if (!r && ev.name === 'PositionOpened') r = { id: id, instrumentId: Number(a.instrumentId), isLong: !!a.isLong, margin: usd6ToNum(a.marginUsdc), leverage: Number(a.leverage) };
+    if (ev.name === 'PositionOpened') {
+      var p = provisionalPosition(ev, at);
+      if (!posById(p.id)) {
+        acct.positions.push(p);
+        acct.positions.sort(function (x, y) { return x.id < y.id ? -1 : x.id > y.id ? 1 : 0; });
+        acct.marginInUse += p.margin;
+        acct.pending = Math.max(0, acct.pending - p.margin);
+      }
+    } else if (r) {
+      acct.available += r.margin;
+      acct.pending = Math.max(0, acct.pending - r.margin);
+    }
+    if (pend.opens[id]) { delete pend.opens[id]; savePendingIds(); }
+    if (r) reportOpenOutcome(r, logs, ev.tx);
+    afterTx();
+  }
+
+  /* A close request of this account: the card counts the close down from the request's own block. */
+  function onCloseRequested(ev, at) {
+    var a = ev.args, pid = String(a.positionId);
+    if (!posById(pid)) return;
+    var cr = acct.closeReqs[pid];
+    if (cr) { cr.requestedAt = at.ts; cr.block = at.n; if (isFinite(px18ToNum(a.px0))) cr.px0 = px18ToNum(a.px0); }
+    else acct.closeReqs[pid] = { requestedAt: at.ts, px0: px18ToNum(a.px0), block: at.n, localAt: Date.now() };
+    watchPending();
+  }
+
+  /* A close of this account ended: closed or liquidated (the result takes the position's place in the same render),
+     or a close request cancelled (the position stays open). */
+  function onCloseEnded(ev, logs, mine) {
+    var a = ev.args, pid = String(a.positionId);
+    var pos = mine[pid] || posById(pid) || (ui.checking[pid] && ui.checking[pid] !== true ? ui.checking[pid] : null);
+    delete acct.closeReqs[pid];
+    if (ev.name !== 'CloseRequestCancelled' && pos) {
+      acct.positions = acct.positions.filter(function (p) { return String(p.id) !== pid; });
+      acct.marginInUse = Math.max(0, acct.marginInUse - pos.margin);
+      if (ev.name === 'PositionClosed') acct.available += usd6ToNum(a.payoutUsdc);
+    }
+    reportCloseOutcome(pid, logs, ev.tx, pos);
+    afterTx();
+  }
+
+  /* The logs to read at a head: every block since the last read while something is in flight (a busy read can
+     skip heads; HyperEVM blocks are final, so a range by number is safe), at most 900 blocks back. */
+  function logsRange(n) {
+    if (heads.logsFrom == null || heads.logsFrom > n) heads.logsFrom = n;
+    var from = Math.max(heads.logsFrom, n - 900);
+    return { from: from, to: n };
+  }
+
 
   function refreshMarketChain() {
     if (DEMO) return Promise.resolve();
@@ -4796,13 +5434,14 @@
     if (!m || !ex || m.instrumentId == null) return Promise.resolve();
     var id = m.instrumentId;
     var none = function () { return null; };
+    var asked = Date.now();
     return Promise.all([ex.openInterest(id), ex.instrument(id), readOraclePx(id), ex.maxPositionUsd(id, true).catch(none), ex.maxPositionUsd(id, false).catch(none)]).then(function (r) {
       house.oi[m.symbol] = { long: usd6ToNum(r[0][0]), short: usd6ToNum(r[0][1]) };
       var inst = normInst(r[1], id);
       inst.market = m;
       m.inst = inst;
       state.byInstId[id] = inst;
-      if (r[2] != null) { house.oraclePxById[id] = r[2]; house.oraclePxAt[id] = Date.now(); }
+      if (r[2] != null) setOraclePx(id, r[2], 'read', asked);
       /* maxPositionUsd(id, isLong): the biggest open the exchange takes right now, every limit in one number */
       if (r[3] != null && r[4] != null) house.maxPos[id] = { long: usd6ToNum(r[3]), short: usd6ToNum(r[4]) };
       loadHouseBotOi();
@@ -4883,7 +5522,9 @@
             deadbandBps: Number(p.deadbandBps), payoutCapX: Number(p.payoutCapX), maxProfit: usd6ToNum(p.maxProfitUsdc),
             winFeeBps: Number(p.winFeeBps), lossFeeBps: Number(p.lossFeeBps), entryDeadbandBps: Number(p.entryDeadbandBps),
             borrowRateX10: Number(p.borrowRateX10), borrowFreeHours: Number(p.borrowFreeHours),
-            preview: pv ? { pnl: usd6ToNum(pv.pnlUsdc), fee: usd6ToNum(pv.feeUsdc), payout: usd6ToNum(pv.payoutUsdc) } : null
+            preview: pv ? { pnl: usd6ToNum(pv.pnlUsdc), fee: usd6ToNum(pv.feeUsdc), payout: usd6ToNum(pv.payoutUsdc) } : null,
+            /* the same position in the contract's own units: the cards settle it with settle.js, exactly */
+            raw: window.ConfettiSettle ? window.ConfettiSettle.position(p) : null
           });
           var known = acct.closeReqs[String(ids[i])];
           if (cr && Number(cr.requestedAt) > 0) {
@@ -4902,9 +5543,10 @@
         /* the settlement price of every market with a position, for the PnL estimate */
         var instIds = [];
         positions.forEach(function (p) { if (instIds.indexOf(p.instrumentId) < 0) instIds.push(p.instrumentId); });
+        var asked = Date.now();
         return Promise.all(instIds.map(readOraclePx)).then(function (opx) {
           if (wallet.account !== a) return;
-          instIds.forEach(function (id, i) { if (opx[i] != null) { house.oraclePxById[id] = opx[i]; house.oraclePxAt[id] = Date.now(); } });
+          instIds.forEach(function (id, i) { if (opx[i] != null) setOraclePx(id, opx[i], 'read', asked); });
           var before = acct.loaded && acct.owner === a ? acct.positions : null;
           var have = {};
           positions.forEach(function (p) { have[String(p.id)] = true; });
@@ -5103,18 +5745,27 @@
     return inst && inst.market ? inst.market : null;
   }
 
-  /* What a close would pay now: the local estimate at the on-chain oracle price when the page
-     has read one (what a keeper fill settles on); otherwise the contract's own previewClose
-     from the last account read; the stats-feed oracle or the mid as a last resort. */
+  /* (CF_PNL) What the position is worth right now, exactly as the exchange would settle it: settle.js on the
+     position's own stamped terms and the market's live curve, at the latest settlement print, the borrow at the latest
+     block's time; at or past the liquidation price, the whole margin, as liquidate() takes it. While the contract
+     disagreed with that at the last block (heads.audit), the contract's own previewClose figures instead. Without a
+     fresh price, no number (an old one is how a lost position read +$554). The float estimate (estimateClose) is left
+     for a position read before settle.js loaded. { pnl, fee, payout, borrow, flat, liquidated, exact, px } in USD. */
   function positionEstimate(pos) {
     var inst = state.byInstId[pos.instrumentId];
     var queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
-    var retired = inst && inst.retired;
-    if (retired) return estimateClose(pos, inst, inst.frozenPx, queueEmpty);
-    var sp = livePrice(positionMarket(pos));
-    if (sp.fresh) return estimateClose(pos, inst, sp.px, queueEmpty);
-    /* no fresh price: no number (an old one is how a lost position read +$554) */
-    return { pnl: NaN, fee: NaN, payout: NaN, flat: false, delayed: true };
+    var S = window.ConfettiSettle;
+    var retired = !!(inst && inst.retired);
+    if (!retired && !settlePrice(positionMarket(pos)).fresh) return { pnl: NaN, fee: NaN, payout: NaN, flat: false, delayed: true };
+    var px18 = retired ? inst.lastPx18 : house.oraclePx18ById[pos.instrumentId];
+    if (S && pos.raw && inst && inst.raw && px18 != null && px18 > 0n) {
+      var c = pos.chainPv;
+      if (c) return { pnl: S.usd(c.pnl), fee: S.usd(c.fee), payout: S.usd(c.payout), borrow: 0, flat: c.pnl === 0n, liquidated: false, exact: true, chain: true, px: S.px(c.px18) };
+      var now = house.chainTs != null ? house.chainTs : Math.floor(Date.now() / 1000);
+      var v = S.value(pos.raw, inst.raw, px18, BigInt(Math.floor(now)), queueEmpty);
+      return { pnl: S.usd(v.pnl), fee: S.usd(v.fee), payout: S.usd(v.payout), borrow: S.usd(v.borrow), flat: v.flat, liquidated: v.liquidated, exact: true, px: S.px(px18) };
+    }
+    return estimateClose(pos, inst, retired ? inst.frozenPx : settlePrice(positionMarket(pos)).px, queueEmpty);
   }
 
   function openPnl() {
@@ -5264,13 +5915,28 @@
     return out;
   }
 
+  /* (CF_PNL) A P&L that just moved with the settlement price shows which way for 700 ms: a soft green or red wash
+     behind the number (no layout change; none under reduced motion). The figure itself is already the new one. */
+  var TICK_MS = 700;
+  function tickPnl(node, p, est) {
+    if (!node || !est || !isFinite(est.pnl)) return;
+    var before = node._pnl;
+    node._pnl = est.pnl;
+    if (before == null || !isFinite(before) || before === est.pnl || reducedMotion()) return;
+    node.removeAttribute('data-tick');
+    void node.offsetWidth;   /* restart the wash on a second move inside 700 ms */
+    node.setAttribute('data-tick', est.pnl > before ? 'up' : 'down');
+    clearTimeout(node._tick);
+    node._tick = setTimeout(function () { node.removeAttribute('data-tick'); }, TICK_MS);
+  }
+
   /* The live parts of a position card: P&L in $ and %, the price now (the oracle, what a close
      settles on), the liquidation line and what a close gives back. */
   function fillPositionPnl(card, p) {
     var m = positionMarket(p);
     var sz = m ? m.szDecimals : null;
-    var px = closePriceFor(p);
     var est = positionEstimate(p);
+    var px = est.px > 0 ? est.px : closePriceFor(p);
     var delayed = !!est.delayed;
     var known = !delayed && isFinite(px);
     /* desktop (>= 901): the table row splits the P&L into $ and % and the liquidation into price,
@@ -5280,15 +5946,18 @@
     var pnl = card.querySelector('[data-role="pnl"]');
     if (pnl) {
       var t = delayed ? 'price delayed' : !known ? '—' : dk ? fmtUsd(est.pnl, true) : fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')';
-      if (pnl.textContent !== t) pnl.textContent = t;
+      if (pnl.textContent !== t) { tickPnl(pnl, p, est); pnl.textContent = t; }
       pnl.className = (dk ? 'dk-cell dk-num dk-pnl' : 'pc-pnl') + (delayed ? ' is-delayed' : sign);
-      pnl.title = delayed ? 'Waiting for a fresh price; the numbers come back as soon as one arrives.' : known ? 'If you close now: about ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') : '';
+      pnl.title = delayed ? 'Waiting for a fresh price; the numbers come back as soon as one arrives.' : !known ? ''
+        : est.liquidated ? 'The settlement price has reached the liquidation price: the ' + fmtUsd(p.margin) + ' put in is lost and nothing comes back.'
+        : 'Exactly what the exchange settles this position to at the settlement price ' + fmtPrice(px, sz) + (p.checkedAt ? ', checked against the contract at block ' + p.checkedAt : '') + '. If you close now: ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') + '.';
     }
     if (dk) {
       var pct = setRole(card, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
       if (pct) pct.className = 'dk-cell dk-num dk-pct' + sign;
     }
-    setRole(card, 'now', delayed ? 'delayed' : isFinite(px) ? fmtPrice(px, sz) : '—');
+    var nowEl = setRole(card, 'now', delayed ? 'delayed' : isFinite(px) ? fmtPrice(px, sz) : '—');
+    if (nowEl) nowEl.title = 'The settlement price: the Hyperliquid oracle print every fill, close and liquidation settles on. It moves when the oracle prints, about every 3 s.';
     var room = liqRoom(p, px);
     var away = isFinite(room.away) ? (room.away * 100).toFixed(room.away >= 0.01 ? 1 : 2) + '%' : '';
     if (dk) {
@@ -5305,8 +5974,9 @@
       var liqEl = setRole(card, 'liq', fmtPrice(room.liq, sz) + (away ? ' (' + away + ' away)' : ''));
       if (liqEl) liqEl.className = 'pc-v' + (room.cls ? ' ' + room.cls : '');
     }
-    card.classList.toggle('is-near', room.cls === 'is-red');
-    var estEl = setRole(card, 'est', dk ? (known ? 'Close · about ' + fmtUsd(est.payout) : 'Close') : known ? 'you get back about ' + fmtUsd(est.payout) : '');
+    card.classList.toggle('is-near', room.cls === 'is-red' || !!est.liquidated);
+    var estText = est.liquidated ? 'liquidation price reached: nothing comes back' : 'you get back about ' + fmtUsd(est.payout);
+    var estEl = setRole(card, 'est', dk ? (known ? 'Close · about ' + fmtUsd(est.payout) : 'Close') : known ? estText : '');
     if (dk && estEl && pnl && estEl.title !== pnl.title) estEl.title = pnl.title;
   }
 
@@ -5349,8 +6019,8 @@
     if (req.requestedAt == null) return { steps: [sent, [verb + '…', 'is-on'], [end, '']] };
     var ph = requestPhase(req.requestedAt);
     if (ph.phase === 'wait' && !ph.expiring && !ph.soon) {
-      var left = req.requestedAt + fillSecs() - chainNow();
-      return { steps: [sent, [verb + '… ' + (left > 0.5 ? 'about ' + Math.ceil(left) + ' s' : 'any second now'), 'is-on'], [end, '']], note: close ? '' : 'Your price is set when it fills.' };
+      var left = fillEta(req.requestedAt) - chainNow();
+      return { steps: [sent, [verb + ' · ' + (left > 0.05 ? left.toFixed(1) + ' s' : 'any moment'), 'is-on'], [end, '']], note: close ? '' : 'Your price is set when it fills.' };
     }
     if (ph.phase === 'fallback' || ph.phase === 'wait') {
       var note;
@@ -5538,56 +6208,147 @@
     if (auto) auto.hidden = !v.late;
   }
 
-  /* A request still opening: a card with the steps; its button appears only when there is
-     something to do (Finish now when late, Get $X back when expired). */
-  function quickView(r) {
-    return {
-      steps: [['Sending…', 'is-on'], ['Opening', ''], ['Open', '']],
-      note: 'About ' + fmtPrice(r.px0, szOf(reqSym(r))) + ' now. Your price is set when it fills.'
-    };
+  /* ---- (CF_PNL) an order on its way in, drawn as the position it becomes ----
+     The owner: "we were going to make it so that visually to the trader it looked instant on the card". From the tap
+     the card is the position: side, coin, leverage, what was put in and the size; the entry it will fill at (the
+     latest settlement print with the market's entry spread: the keeper fills at the print of the block it lands in,
+     Exchange.executeOpen); the liquidation that entry gives; the P&L of that position at the print now (before the fill
+     that is the spread, all it can have made or lost); and, where CLOSE POSITION will be, the fill counting down:
+     Sending, then Filling · 2.4 s from the request's block to the block the keeper's fill lands in (minDelay + 1 s,
+     p50 3 s over 839 keeper trades). When the fill lands the card keeps its place and its figures become the real ones;
+     a refund or a revert takes its place at once and says so. Late and expired requests keep their words and buttons
+     (progressView). kind: 'quick' (sent, no request on chain yet) or 'open' (a request, pend.opens). */
+  function openingFigures(r) {
+    var S = window.ConfettiSettle, inst = state.byInstId[r.instrumentId], m = inst && inst.market;
+    var out = { px: NaN, entry: NaN, liq: NaN, pnl: NaN, payout: NaN, away: NaN, cls: '', sz: m ? m.szDecimals : null, fresh: false };
+    if (!S || !inst || !m) return out;
+    var px18 = house.oraclePx18ById[r.instrumentId];
+    out.fresh = settlePrice(m).fresh && px18 != null;
+    if (!out.fresh) return out;
+    var margin6 = BigInt(numToUsd6(r.margin));
+    var entry18 = S.openEntry(px18, r.isLong, inst.entryDeadbandBps || 0);
+    var pos = S.position({
+      isLong: r.isLong, marginUsdc: margin6, leverage: r.leverage, maxProfitUsdc: margin6 * BigInt(inst.payoutCapX || 0), entryPx18: entry18,
+      openedAt: Math.floor(house.chainTs || 0), deadbandBps: inst.deadbandBps || 0, winFeeBps: liveOr(house.winFeeBps, 'winFeeBps') || 0,
+      lossFeeBps: liveOr(house.lossFeeBps, 'lossFeeBps') || 0, entryDeadbandBps: inst.entryDeadbandBps || 0, borrowRateX10: inst.borrowRateX10 || 0,
+      borrowFreeHours: freeHours() || 0
+    });
+    var qEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
+    var v = inst.raw ? S.value(pos, inst.raw, px18, BigInt(Math.floor(house.chainTs || 0)), qEmpty) : null;
+    out.px = S.px(px18); out.entry = S.px(entry18);
+    out.liq = S.px(S.positionBust(pos));
+    if (v) { out.pnl = S.usd(v.pnl); out.payout = S.usd(v.payout); }
+    out.away = out.liq > 0 ? Math.max(0, r.isLong ? (out.px - out.liq) / out.px : (out.liq - out.px) / out.px) : NaN;
+    return out;
   }
 
-  /* An order from the tap until its request is on chain: looks like the request card it turns into. */
-  function quickOpenCard(r) {
-    var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
-    card.setAttribute('data-quick', r.key);
+  /* The status where CLOSE POSITION will be: { say, share (0..1 of the countdown), tone, btn, note }. */
+  function openingStatus(r, kind) {
+    if (kind === 'quick') return { say: r.walletPath ? 'Sent from your wallet…' : 'Sending…', share: 0, tone: '', note: 'fills at the oracle price', sending: true };
+    if (r.requestedAt == null) return { say: 'Filling…', share: 0, tone: '', note: 'fills at the oracle price' };
+    var ph = requestPhase(r.requestedAt);
+    if (ph.phase === 'wait' && !ph.expiring && !ph.soon) {
+      var left = fillEta(r.requestedAt) - chainNow();
+      return {
+        say: left > 0.05 ? 'Filling · ' + left.toFixed(1) + ' s' : 'Filling · any moment', share: clamp(1 - left / fillSecs(), 0, 1), tone: '',
+        note: 'fills at the oracle price'
+      };
+    }
+    var v = progressView('open', r, r.margin);
+    var on = (v.steps || []).filter(function (s) { return /is-on/.test(s[1]); })[0];
+    return { say: on ? on[0] : 'Filling…', share: 1, tone: v.cls === 'is-bad' ? 'bad' : v.cls === 'is-late' ? 'warn' : '', btn: v.btn || '', btnCls: v.btnCls, note: v.note || '' };
+  }
+
+  function openingCard(r, kind) {
+    var card = el('div', 'pos-card is-filling ' + (r.isLong ? 'is-long' : 'is-short') + (posTable() ? ' dk-row' : ''));
+    card.setAttribute(kind === 'quick' ? 'data-quick' : 'data-req', kind === 'quick' ? r.key : r.id);
+    if (kind === 'open') card.title = 'Request #r' + r.id;
+    var act = function () { if (kind === 'open') openReqAction(r); };
+    var size = fmtUsd(r.margin * r.leverage);
     if (posTable()) {
-      card.classList.add('dk-row', 'dk-wide');
-      card.appendChild(dkWho(r.isLong, reqSym(r), r.leverage, 'Opening', ' · ' + fmtUsdShort(r.margin)));
-      var st = dkStatusEl(null);
-      card.appendChild(st);
-      dkSetStatus(st, quickView(r));
+      card.appendChild(dkWho(r.isLong, reqSym(r), r.leverage));
+      card.appendChild(dkCell('dk-num', size, 'size'));
+      card.appendChild(dkCell('dk-num', fmtUsd(r.margin), 'margin'));
+      card.appendChild(dkCell('dk-num', '—', 'entry'));
+      card.appendChild(dkCell('dk-num', '—', 'now'));
+      var liq = dkCell('dk-liq');
+      var lp = el('span', 'dk-liq-px', '—'); lp.setAttribute('data-role', 'liq');
+      liq.appendChild(lp);
+      var bar = el('span', 'dk-bar'); bar.setAttribute('aria-hidden', 'true'); bar.appendChild(el('i'));
+      liq.appendChild(bar);
+      var aw = el('span', 'dk-away'); aw.setAttribute('data-role', 'away');
+      liq.appendChild(aw);
+      liq.appendChild(el('span', 'dk-away-w', 'away'));
+      card.appendChild(liq);
+      card.appendChild(dkCell('dk-num dk-pnl', '—', 'pnl'));
+      card.appendChild(dkCell('dk-num dk-pct', '', 'pct'));
+      var dka = dkCell('dk-act', null, 'act');
+      dka.appendChild(dkStatusEl(act));
+      card.appendChild(dka);
+      fillOpening(card, r, kind);
       return card;
     }
-    var box = makeProg('Opening ' + sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x · ' + fmtUsdShort(r.margin), function () {});
+    var head = el('div', 'pc-head');
+    var who = el('div', 'pc-who');
+    who.appendChild(el('span', 'pc-side', r.isLong ? 'LONG' : 'SHORT'));
+    who.appendChild(el('span', 'pc-sym', reqSym(r)));
+    who.appendChild(el('span', 'pc-lev', r.leverage + 'x'));
+    head.appendChild(who);
+    var pnl = el('span', 'pc-pnl', '—'); pnl.setAttribute('data-role', 'pnl');
+    head.appendChild(pnl);
+    card.appendChild(head);
+    var rows = el('div', 'pc-rows');
+    rows.appendChild(pcCell('Entry', '—', 'entry'));
+    rows.appendChild(pcCell('Now', '—', 'now'));
+    rows.appendChild(pcCell('Liquidation', '—', 'liq', true));
+    rows.appendChild(pcCell('Put in', fmtUsd(r.margin)));
+    rows.appendChild(pcCell('Size', size));
+    card.appendChild(rows);
+    var box = el('div', 'pc-act'); box.setAttribute('data-role', 'act');
+    box.appendChild(makeFillBlock(act));
+    var est = el('div', 'pc-est'); est.setAttribute('data-role', 'est');
+    box.appendChild(est);
     card.appendChild(box);
-    setProg(box, quickView(r));
+    fillOpening(card, r, kind);
     return card;
   }
 
-  function pendingOpenCard(r) {
-    var card = el('div', 'pos-card is-pending ' + (r.isLong ? 'is-long' : 'is-short'));
-    card.setAttribute('data-req', r.id);
-    card.title = 'Request #r' + r.id;
-    if (posTable()) {
-      /* desktop: one 40 px row, "Opening Long DOGE 20x · $10", the sentence and its button */
-      card.classList.add('dk-row', 'dk-wide');
-      card.appendChild(dkWho(r.isLong, reqSym(r), r.leverage, 'Opening', ' · ' + fmtUsdShort(r.margin)));
-      card.appendChild(dkStatusEl(function () { openReqAction(r); }));
-      updateOpenProg(card, r);
-      return card;
+  function fillOpening(card, r, kind) {
+    var f = openingFigures(r), st = openingStatus(r, kind);
+    var known = f.fresh && isFinite(f.pnl);
+    var dk = card.classList.contains('dk-row');
+    var pnl = card.querySelector('[data-role="pnl"]');
+    if (pnl) {
+      var t = !f.fresh ? 'price delayed' : !known ? '—' : dk ? fmtUsd(f.pnl, true) : fmtUsd(f.pnl, true) + ' (' + fmtPct1(f.pnl / r.margin) + ')';
+      if (pnl.textContent !== t) pnl.textContent = t;
+      pnl.className = (dk ? 'dk-cell dk-num dk-pnl' : 'pc-pnl') + (!f.fresh ? ' is-delayed' : f.pnl > 0 ? ' pos' : f.pnl < 0 ? ' neg' : '');
+      pnl.title = known ? 'Filled at the price now, the position would be worth this: the entry spread is its whole cost so far.' : '';
     }
-    card.appendChild(makeProg('Opening ' + sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x · ' + fmtUsdShort(r.margin), function () { openReqAction(r); }));
-    updateOpenProg(card, r);
-    return card;
+    if (dk) { var pc = setRole(card, 'pct', known ? fmtPct1(f.pnl / r.margin) : ''); if (pc) pc.className = 'dk-cell dk-num dk-pct' + (f.pnl < 0 ? ' neg' : f.pnl > 0 ? ' pos' : ''); }
+    var en = setRole(card, 'entry', isFinite(f.entry) ? '≈ ' + fmtPrice(f.entry, f.sz) : '—');
+    if (en) en.title = 'The oracle price now plus the entry spread. The real entry is the oracle price of the block the fill lands in.';
+    setRole(card, 'now', isFinite(f.px) ? fmtPrice(f.px, f.sz) : '—');
+    var away = isFinite(f.away) ? (f.away * 100).toFixed(f.away >= 0.01 ? 1 : 2) + '%' : '';
+    if (dk) {
+      setRole(card, 'liq', isFinite(f.liq) ? '≈ ' + fmtPrice(f.liq, f.sz) : '—');
+      setRole(card, 'away', away);
+      var lc = card.querySelector('.dk-liq .dk-bar i'), full = bustMovePct(r.leverage) / 100;
+      if (lc) lc.style.width = (away && full > 0 ? clamp(f.away / full, 0, 1) * 100 : 0).toFixed(1) + '%';
+      var box = card.querySelector('.dk-status');
+      if (box) dkSetStatus(box, { cls: st.tone === 'bad' ? 'is-bad' : st.tone === 'warn' ? 'is-late' : '', steps: [[st.say, 'is-on' + (st.tone === 'bad' ? ' is-bad' : st.tone === 'warn' ? ' is-warn' : '')]], note: st.note, btn: st.btn, btnCls: st.btnCls });
+      return;
+    }
+    setRole(card, 'liq', isFinite(f.liq) ? '≈ ' + fmtPrice(f.liq, f.sz) + (away ? ' (' + away + ' away)' : '') : '—');
+    var fill = card.querySelector('[data-role="fill"]');
+    if (fill) setFillBlock(fill, st);
+    setRole(card, 'est', st.note);
   }
 
-  function updateOpenProg(card, r) {
-    var dkBox = card.querySelector('.dk-status');
-    if (dkBox) { dkSetStatus(dkBox, progressView('open', r, r.margin)); return; }
-    var box = card.querySelector('.prog');
-    if (box) setProg(box, progressView('open', r, r.margin));
-  }
+  /* An order from the tap until its request is on chain, and a request until it fills: both drawn as the position
+     they become (openingCard). */
+  function quickOpenCard(r) { return openingCard(r, 'quick'); }
+  function pendingOpenCard(r) { return openingCard(r, 'open'); }
+  function updateOpenProg(card, r) { fillOpening(card, r, 'open'); }
 
   /* ---- desktop (>= 901 px): positions as a table (piece C) ----
      Each position is a 40 px row of nine cells on the --dk-pos-cols grid; a request, a close being
@@ -5782,6 +6543,26 @@
     var mode = ui.retrying[pid] && !ui.closing[pid] ? 'retrying' : cr ? 'req' : ui.closing[pid] ? 'wallet'
       : ui.checking[pid] ? 'checking' : ui.settling[pid] ? 'settling' : 'idle';
     var dk = card.classList.contains('dk-row');
+    /* (CF_PNL) cards: a close in flight keeps CLOSE POSITION's 52 px (the countdown where the button was, what comes
+       back under it, live), so the card does not jump at the tap; only a late or expired close, which needs its
+       words and buttons, takes the progress card */
+    if (!dk && mode === 'req' && cr.requestedAt != null) {
+      var cph = requestPhase(cr.requestedAt);
+      if (!(cph.phase === 'wait' && !cph.expiring && !cph.soon)) mode = 'late';
+    }
+    if (!dk && (mode === 'req' || mode === 'wallet' || mode === 'checking' || mode === 'settling')) {
+      if (act.getAttribute('data-mode') !== 'run') {
+        act.setAttribute('data-mode', 'run');
+        act.textContent = '';
+        act.appendChild(makeFillBlock(null));
+        var ce = el('div', 'pc-est'); ce.setAttribute('data-role', 'est');
+        act.appendChild(ce);
+      }
+      var fb = act.querySelector('.pc-fill');
+      if (fb) setFillBlock(fb, closingStatus(mode, cr));
+      return;
+    }
+    if (mode === 'late') mode = 'req';
     if (act.getAttribute('data-mode') !== mode) {
       act.setAttribute('data-mode', mode);
       act.textContent = '';
@@ -5814,11 +6595,50 @@
     var box = act.querySelector(dk ? '.dk-status' : '.prog');
     if (!box) return;
     var put = dk ? dkSetStatus : setProg;
-    if (mode === 'wallet') put(box, { steps: [[state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Closing', ''], ['Closed', '']] });
+    if (mode === 'wallet') put(box, { steps: [[sendWord(), 'is-on'], ['Closing', ''], ['Closed', '']] });
     else if (mode === 'retrying') put(box, { steps: [['Getting ready to close again…', 'is-on'], ['Closing again', ''], ['Closed', '']], note: 'Closing again. ' + (sessionLive() ? '' : 'Your wallet asks twice.') });
     else if (mode === 'checking') put(box, CHECKING_VIEW);
     else if (mode === 'settling') put(box, { cls: 'is-done', steps: [['Sent', 'is-done'], ['Closed', 'is-done'], ['Adding it to your balance…', 'is-on']] });
     else put(box, progressView('close', cr, p.margin));
+  }
+
+  /* What a send in flight says: the wallet's confirm, the one-time one-tap turn-on, or Sending (one-tap, and the demo
+     once its pretend one-tap is on, which asks no wallet) */
+  function sendWord() { return state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession || (DEMO && sess.demoOn) ? 'Sending…' : 'Confirm in your wallet…'; }
+
+  /* (CF_PNL) The countdown block (an order filling, a close settling): one sentence, the 3 px line that fills over
+     the wait, and a button when one is needed. */
+  function makeFillBlock(onBtn) {
+    var fill = el('div', 'pc-fill'); fill.setAttribute('data-role', 'fill');
+    var say = el('span', 'pc-fill-say'); say.setAttribute('data-role', 'say');
+    fill.appendChild(say);
+    var b1 = el('button', 'btn btn-sm'); b1.type = 'button'; b1.hidden = true; b1.setAttribute('data-role', 'b1');
+    if (onBtn) b1.addEventListener('click', onBtn);
+    fill.appendChild(b1);
+    var track = el('i', 'pc-fill-bar'); track.setAttribute('aria-hidden', 'true'); track.appendChild(el('i'));
+    fill.appendChild(track);
+    return fill;
+  }
+
+  function setFillBlock(fill, st) {
+    var cls = 'pc-fill' + (st.tone ? ' is-' + st.tone : '') + (st.btn ? ' has-btn' : '') + (st.sending ? ' is-sending' : '');
+    if (fill.className !== cls) fill.className = cls;
+    setRole(fill, 'say', st.say);
+    var b1 = fill.querySelector('[data-role="b1"]');
+    if (b1) { b1.hidden = !st.btn; if (st.btn && b1.textContent !== st.btn) b1.textContent = st.btn; b1.className = 'btn btn-sm' + (st.btnCls ? ' ' + st.btnCls : ''); b1.disabled = state.busy; }
+    var bar = fill.querySelector('.pc-fill-bar > i');
+    if (bar) bar.style.width = Math.round(clamp(st.share, 0, 1) * 100) + '%';
+  }
+
+  /* What a close in flight says, by its mode: sending, the countdown from the request's block to the block the
+     keeper's fill lands in, the result being read, done. */
+  function closingStatus(mode, cr) {
+    if (mode === 'wallet') return { say: sendWord(), share: 0, tone: '', sending: true };
+    if (mode === 'checking') return { say: 'Checking the result…', share: 1, tone: '' };
+    if (mode === 'settling') return { say: 'Closed · adding it to your balance…', share: 1, tone: 'done' };
+    if (!cr || cr.requestedAt == null) return { say: 'Closing…', share: 0, tone: '' };
+    var left = fillEta(cr.requestedAt) - chainNow();
+    return { say: left > 0.05 ? 'Closing · ' + left.toFixed(1) + ' s' : 'Closing · any moment', share: clamp(1 - left / fillSecs(), 0, 1), tone: '' };
   }
 
   /* A close whose request is gone from chain, while the logs are read for how it ended. */
@@ -6029,7 +6849,11 @@
     });
     pendingOpenList().forEach(function (r) {
       var card = host.querySelector('.pos-card[data-req="' + r.id + '"]');
-      if (card) updateOpenProg(card, r);
+      if (card) fillOpening(card, r, 'open');
+    });
+    quick.list.forEach(function (r) {
+      var card = host.querySelector('.pos-card[data-quick="' + r.key + '"]');
+      if (card) fillOpening(card, r, 'quick');
     });
     renderDkPosHead();
     renderPhRows();
@@ -6090,7 +6914,7 @@
     var title = 'Opening ' + sideWord(tk.isLong) + ' ' + tk.sym + ' ' + tk.lev + 'x · ' + fmtUsdShort(tk.margin);
     if (tk.phase === 'wallet') {
       return {
-        title: title, steps: [[state.turningOn ? 'Turn on one-tap in your wallet (once)…' : state.viaSession ? 'Sending…' : 'Confirm in your wallet…', 'is-on'], ['Opening', ''], ['Open', '']],
+        title: title, steps: [[sendWord(), 'is-on'], ['Opening', ''], ['Open', '']],
         note: state.turningOn ? 'One confirmation turns on one-tap for ' + ONE_TAP_DAYS + ' days. After it, trades go through with no popup.'
           : state.viaSession ? 'One-click is on: no wallet popup.' : 'Your wallet shows the trade. Nothing is sent until you confirm.'
       };
@@ -6620,19 +7444,37 @@
   function txLink(hash) { return DEMO ? null : { href: explorer('tx', hash), label: 'view' }; }
 
   /* Dry-run with eth_call for a decoded revert reason, send, then wait for one confirmation.
-     quiet: no "waiting for confirmation" toast (trades: their progress card says it). */
-  function sendTx(desc, method, args, quiet, from) {
+     quiet: no "waiting for confirmation" toast (trades: their progress card says it).
+     hooks (CF_PNL): sent(hash) the moment the transaction is out (the order's card follows it from there), and
+     overrides merged into the send (a session key's nonce and fees, so the send skips those reads). The receipt is
+     whichever comes first: ethers' own wait, or the block feed finding it at a head. */
+  function sendTx(desc, method, args, quiet, from, hooks) {
     if (DEMO) return Promise.reject(new Error('Demo: nothing is sent.'));
     return simulate(method, args, from).then(function (gas) {
-      return method.apply(null, gas ? withGas(args, gas) : args);
+      var a = gas ? withGas(args, gas) : args;
+      if (hooks && hooks.overrides) a = withOverrides(a, hooks.overrides);
+      return method.apply(null, a);
     }).then(function (tx) {
+      if (hooks && hooks.sent) { try { hooks.sent(tx.hash, tx); } catch (e) { /* never blocks the send */ } }
       var pending = quiet ? null : toast(desc + ': sent, waiting for the chain…', 'pending', txLink(tx.hash), 0);
-      return tx.wait().then(function (rc) {
+      var wait = tx.wait();
+      var both = headsFresh() ? Promise.race([wait, headReceipt(tx.hash)]) : wait;
+      return both.then(function (rc) {
+        delete heads.receipts[tx.hash];
         dismissToast(pending);
         if (!rc || rc.status !== 1) throw new Error(desc + ' reverted on chain.');
         return rc;
-      }, function (e) { dismissToast(pending); throw e; });
+      }, function (e) { delete heads.receipts[tx.hash]; dismissToast(pending); throw e; });
     });
+  }
+
+  /* args with overrides merged into the trailing overrides object (or one added). */
+  function withOverrides(args, o) {
+    var last = args[args.length - 1];
+    var has = last && typeof last === 'object' && !Array.isArray(last) && typeof last !== 'bigint' && !(last instanceof Uint8Array);
+    var merged = Object.assign({}, has ? last : {});
+    Object.keys(o).forEach(function (k) { if (o[k] != null && merged[k] == null) merged[k] = o[k]; });
+    return (has ? args.slice(0, -1) : args.slice()).concat([merged]);
   }
 
   /* The check before a send, as `from` on the page's own RPC (the wallet's RPC is a shared free one that turns away
@@ -6645,9 +7487,10 @@
     return method.populateTransaction.apply(method, args).then(function (tx) {
       var q = { to: tx.to, data: tx.data, from: from };
       if (tx.value) q.value = tx.value;
-      return read.provider.call(q).then(function () {
-        return read.provider.estimateGas(q).then(function (g) { return BigInt(g) * 13n / 10n; }, function () { return null; });
-      });
+      /* (CF_PNL) side by side: a revert still comes back from the call with its reason */
+      var sp = read.sendProvider || read.provider;
+      var gas = sp.estimateGas(q).then(function (g) { return BigInt(g) * 13n / 10n; }, function () { return null; });
+      return Promise.all([sp.call(q), gas]).then(function (r) { return r[1]; });
     });
   }
 
@@ -6703,7 +7546,7 @@
     var pk = k ? lsGet(k) : null;
     if (!pk || !window.ethers || !read.provider) { sess.key = null; return; }
     if (sess.key && sess.key.privateKey === pk) return;
-    try { sess.key = new window.ethers.Wallet(pk, read.provider); } catch (e) { sess.key = null; }
+    try { sess.key = new window.ethers.Wallet(pk, read.sendProvider || read.provider); } catch (e) { sess.key = null; }
   }
 
   function dropSessionKey() {
@@ -6757,11 +7600,17 @@
     return Promise.all([
       read.router.sessionOf(a),
       key ? read.provider.getBalance(key.address) : Promise.resolve(null),
-      read.provider.getFeeData().catch(function () { return null; })
+      read.provider.getFeeData().catch(function () { return null; }),
+      key ? read.provider.getTransactionCount(key.address, 'pending').catch(function () { return null; }) : Promise.resolve(null)
     ]).then(function (r) {
       if (wallet.account !== a) return;
       var fd = r[2];
       if (fd) sess.feeWei = BigInt(fd.maxFeePerGas != null ? fd.maxFeePerGas : fd.gasPrice || 0n);
+      if (fd && fd.maxPriorityFeePerGas != null) sess.priorityWei = BigInt(fd.maxPriorityFeePerGas);
+      if (key && r[3] != null && (sess.nonceOk || sess.nonce == null || sess.nonceFor !== key.address)) {
+        var nn = Number(r[3]);
+        if (sess.nonceFor !== key.address || sess.nonce == null || nn > sess.nonce) { sess.nonceFor = key.address; sess.nonce = nn; sess.nonceOk = true; }
+      }
       var s = r[0];
       sess.onchain = s && s.key !== ZERO ? { key: s.key, expiry: Number(s.expiry), cap6: BigInt(s.maxMarginPerTrade), referrer: s.referrer } : null;
       sess.gasWei = r[1] == null ? null : BigInt(r[1]);
@@ -6964,10 +7813,10 @@
     return walkError(err, function (e) { return e.code === 'INSUFFICIENT_FUNDS' || /insufficient funds/i.test(String(e.message || '')); });
   }
 
-  function walletTrade(desc, kind, args) {
+  function walletTrade(desc, kind, args, hooks) {
     return Promise.resolve().then(function () {
       requireSigner();
-      return sendTx(desc, exchangeWrite()[kind], args, true, wallet.account);
+      return sendTx(desc, exchangeWrite()[kind], args, true, wallet.account, hooks && hooks.sent ? { sent: hooks.sent } : null);
     });
   }
 
@@ -6976,24 +7825,24 @@
      before anything is sent (no session, expired, over the cap) or a key out of gas falls back to
      the wallet once; an on-chain revert never does (the call already ran). Trades send quietly:
      the progress card where the user clicked says what is happening, not a toast. */
-  function sendTrade(desc, kind, args, again) {
+  function sendTrade(desc, kind, args, again, hooks) {
     var opening = kind === 'requestOpen', asks = opening || kind === 'requestClose';
     if (DEMO) {
-      if (ONE_TAP_FORCED && asks && !sess.demoOn) return ensureOneTap(null).then(function () { return demoTx(kind, args); });
-      return demoTx(kind, args);
+      if (ONE_TAP_FORCED && asks && !sess.demoOn) return ensureOneTap(null).then(function () { return demoTx(kind, args, hooks); });
+      return demoTx(kind, args, hooks);
     }
     if (!sessionCarries(kind, args)) {
       /* forced one-tap: the trader's own requests turn it on (or renew / top up / raise it) first, once */
       /* (no referrer test here: sessionRefOk says no when there is no session yet, the very case this is for, and
          turning on signs this same referrer into the session) */
       if (ONE_TAP_FORCED && asks && !again && read.router && !house.usdcBad && !house.gate) {
-        return ensureOneTap(opening ? args[2] : null).then(function () { return sendTrade(desc, kind, args, true); }, function (e) {
+        return ensureOneTap(opening ? args[2] : null).then(function () { return sendTrade(desc, kind, args, true, hooks); }, function (e) {
           /* forcing one-tap never stops a trade: the trader said no, or it cannot turn on, and only then the wallet */
           if (isUserRejection(e)) throw e;
-          return walletTrade(desc, kind, args);
+          return walletTrade(desc, kind, args, hooks);
         });
       }
-      return walletTrade(desc, kind, args);
+      return walletTrade(desc, kind, args, hooks);
     }
     var E = window.ethers;
     var target = kind === 'executeOpen' || kind === 'executeClose'
@@ -7001,12 +7850,49 @@
       : new E.Contract(read.router.target, ROUTER_ABI, sess.key);
     var sargs = kind === 'requestOpen' ? args.slice(0, 4) : args;
     state.viaSession = true; renderAction(); updateCards();
-    return inSessionTurn(function () { return sendTx(desc, target[kind], sargs, true, sess.key.address); }).catch(function (e) {
+    var keyAddr = sess.key.address;
+    return inSessionTurn(function () {
+      var sh = { sent: function (hash, tx) { sessNonceSent(keyAddr, tx); if (hooks && hooks.sent) hooks.sent(hash, tx); }, overrides: sessionOverrides(keyAddr) };
+      return sendTx(desc, target[kind], sargs, true, keyAddr, sh).then(function (rc) { sess.nonceOk = true; return rc; }, function (e) {
+        /* mined and reverted: the nonce is spent and the next one is right; anything else: read it again next time */
+        if (/reverted on chain/.test(String(e && e.message)) || (e && e.code === 'CALL_EXCEPTION' && e.receipt)) sess.nonceOk = true; else sess.nonce = null;
+        throw e;
+      });
+    }).catch(function (e) {
+      if (isNonceTrouble(e) && !(hooks && hooks.nonceRetry)) {
+        /* (CF_PNL) another tab sent with this key, or a node counted a nonce differently: read it again, once */
+        return sendTrade(desc, kind, args, again, Object.assign({}, hooks || {}, { nonceRetry: true }));
+      }
       if (!SESSION_ERRORS[revertName(e)] && !isGasShortfall(e)) throw e;
       state.viaSession = false; renderAction(); updateCards();
       /* the key ran dry or the session ended between the check and the send: refresh, then the forced path
          (one confirmation that fixes it) or, after that once, the wallet */
-      return refreshSession().then(function () { return again ? walletTrade(desc, kind, args) : sendTrade(desc, kind, args, false); });
+      return refreshSession().then(function () { return again ? walletTrade(desc, kind, args, hooks) : sendTrade(desc, kind, args, false, hooks); });
+    });
+  }
+
+  /* (CF_PNL) The session key's next nonce and its fees, known before the tap so the send goes out after the dry run
+     with no more reads: the nonce from the last send (or the last 10 s session read, whichever is higher), the fees as
+     ethers works them (twice the latest block's base fee plus the priority fee) from the block feed's base fee. Either
+     unknown: ethers reads it, as before. */
+  function sessionOverrides(addr) {
+    var o = {};
+    /* the cached nonce only after the send before it was mined (the session key sends one at a time) */
+    if (sess.nonceFor === addr && sess.nonce != null && sess.nonceOk) o.nonce = sess.nonce;
+    if (heads.baseFee != null && sess.priorityWei != null && headsFresh()) {
+      o.maxPriorityFeePerGas = sess.priorityWei;
+      o.maxFeePerGas = heads.baseFee * 2n + sess.priorityWei;
+      o.type = 2;
+    }
+    return o;
+  }
+  function sessNonceSent(addr, tx) { if (tx && tx.nonce != null) { sess.nonceFor = addr; sess.nonce = Number(tx.nonce) + 1; sess.nonceOk = false; } }
+  /* a send the node refused for its nonce (nothing went out, so sending again is safe); never "already known" */
+  function isNonceTrouble(e) {
+    return walkError(e, function (x) {
+      if (!x) return false;
+      if (x.code === 'NONCE_EXPIRED' || x.code === 'REPLACEMENT_UNDERPRICED') return true;
+      return /nonce too low|nonce too high|invalid nonce|replacement transaction underpriced/i.test(String(x.message || x.shortMessage || ''));
     });
   }
 
@@ -7055,8 +7941,21 @@
     var told = false;
     function tell(ok) { if (onFiled && !told) { told = true; try { onFiled(ok); } catch (e) { /* never blocks the ticket */ } } }
     setBusy(true);
-    tkSet('wallet', { reqId: null, isLong: isLong, sym: m.symbol, lev: lev, margin: margin });
-    sendTrade(desc, 'requestOpen', [m.instrumentId, isLong, margin6, lev, referrerArg()]).then(function (rc) {
+    tkSet('wallet', { reqId: null, isLong: isLong, sym: m.symbol, lev: lev, margin: margin, txHash: null });
+    /* (CF_PNL) once the wallet has sent it, the order has its card under Your positions too (the ticket's progress
+       card stays where the button was); the block feed or the receipt turns it into the request */
+    var wq = null;
+    var sentHook = function (hash) {
+      tk.txHash = hash;
+      if (!wq && !pend.opens[tk.reqId]) {
+        wq = { key: 'q' + quick.next++, instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev, px0: 0, tapAt: Date.now(), txHash: hash, walletPath: true };
+        quick.list.push(wq);
+        renderPositions();
+      }
+    };
+    var dropWq = function () { if (wq) { quick.list = quick.list.filter(function (q) { return q !== wq; }); wq = null; } };
+    sendTrade(desc, 'requestOpen', [m.instrumentId, isLong, margin6, lev, referrerArg()], false, { sent: sentHook }).then(function (rc) {
+      dropWq();
       var ev = receiptEvents(rc, 'OpenRequested')[0];
       if (ev) {
         var a = ev.args;
@@ -7064,9 +7963,9 @@
         trackOpenRequest({
           id: id, instrumentId: Number(a.instrumentId), isLong: !!a.isLong,
           margin: usd6ToNum(a.marginUsdc), leverage: Number(a.leverage), px0: px18ToNum(a.px0),
-          requestedAt: null, block: Number(rc.blockNumber), localAt: Date.now()
+          requestedAt: heads.tsByBlock[Number(rc.blockNumber)] != null ? heads.tsByBlock[Number(rc.blockNumber)] : null, block: Number(rc.blockNumber), localAt: Date.now()
         });
-        tkSet('req', { reqId: id });
+        if (tk.phase === 'wallet' || (tk.phase === 'req' && tk.reqId === id)) tkSet('req', { reqId: id });
         if (want.tp != null || want.sl != null) { try { tpslPark(id, want, m, isLong, lev); } catch (e) { /* ignore */ } }
         /* the next visit starts from this amount; a Max amount (the whole balance) is not kept,
            so a later all-in trade still goes through Max and its check */
@@ -7081,7 +7980,10 @@
       release();
       return afterTx();
     }).catch(function (e) {
+      var sent = !!wq;
+      dropWq();
       tkSet('error', { msg: describeError(e) });
+      if (sent) showOpenEnd('v' + Date.now(), { isLong: isLong, instrumentId: m.instrumentId, leverage: lev, margin: margin }, "Didn't go through", 'Your ' + m.symbol + ' ' + sideWord(isLong).toLowerCase() + ' did not go through: ' + describeError(e) + ' Nothing was taken.');
       tell(false);
     }).then(release);
   }
@@ -7093,7 +7995,7 @@
     if (Date.now() - quick.last < QUICK_GAP_MS) return;
     quick.last = Date.now();
     var mid = state.mids[m.coin];
-    var r = { key: 'q' + quick.next++, instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev, px0: isFinite(mid) ? Number(mid) : 0 };
+    var r = { key: 'q' + quick.next++, instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev, px0: isFinite(mid) ? Number(mid) : 0, tapAt: Date.now() };
     quick.list.push(r);
     acct.available -= margin; acct.pending += margin;
     if (!maxed) lsSet(LS.amount, String(margin));
@@ -7106,7 +8008,7 @@
       state.viaSession = false;
     }
     function tell(ok) { if (onFiled) { try { onFiled(ok); } catch (e) { /* never blocks the ticket */ } } }
-    sendTrade(desc, 'requestOpen', args).then(function (rc) {
+    sendTrade(desc, 'requestOpen', args, false, { sent: function (hash) { r.txHash = hash; renderPositions(); } }).then(function (rc) {
       var ev = receiptEvents(rc, 'OpenRequested')[0];
       /* on chain the money has moved: the account read coming next says so. The demo's own books already did. */
       drop(!!DEMO);
@@ -7116,7 +8018,7 @@
         trackOpenRequest({
           id: id, instrumentId: Number(a.instrumentId), isLong: !!a.isLong,
           margin: usd6ToNum(a.marginUsdc), leverage: Number(a.leverage), px0: px18ToNum(a.px0),
-          requestedAt: null, block: Number(rc.blockNumber), localAt: Date.now()
+          requestedAt: heads.tsByBlock[Number(rc.blockNumber)] != null ? heads.tsByBlock[Number(rc.blockNumber)] : null, block: Number(rc.blockNumber), localAt: Date.now()
         });
         if (want.tp != null || want.sl != null) { try { tpslPark(id, want, m, isLong, lev); } catch (e) { /* ignore */ } }
       } else {
@@ -7127,12 +8029,27 @@
       return afterTx();
     }).catch(function (e) {
       drop(true);
-      toast('Your ' + m.symbol + ' order did not go through: ' + describeError(e), 'err');
+      /* (CF_PNL) said where the order was, at once: the card (the row on a phone) turns into the reason */
+      var line = 'Your ' + m.symbol + ' ' + sideWord(isLong).toLowerCase() + ' did not go through: ' + describeError(e) + ' Nothing was taken.';
+      showOpenEnd('v' + r.key, r, "Didn't go through", line);
+      resultToast([recentEl('v' + r.key), phEndRow('v' + r.key)], line, 'err');
       tell(false);
       renderAccount(); renderPositions(); renderAction();
       return refreshAccount();
     }).catch(function () { /* the next regular read repairs the balance */ });
   }
+
+  /* (CF_PNL) The end of an order that never became a position (a refund, a revert), where its card was: a result card
+     (a row on a phone) for OPEN_END_MS, then gone. */
+  var OPEN_END_MS = 15000;
+  function showOpenEnd(key, r, title, line) {
+    addRecent({ key: key, cls: 'is-loss is-open-end', title: title + ' · ' + sideWord(r.isLong) + ' ' + reqSym(r) + ' ' + r.leverage + 'x', lines: [line], ttl: OPEN_END_MS });
+    ui.openEnds = (ui.openEnds || []).filter(function (x) { return x.key !== key; });
+    ui.openEnds.unshift({ key: key, r: r, say: line });
+    setTimeout(function () { ui.openEnds = (ui.openEnds || []).filter(function (x) { return x.key !== key; }); renderPhRows(); }, OPEN_END_MS);
+    renderPhRows();
+  }
+  function phEndRow(key) { return document.querySelector('#phRows .ph-row[data-open="e' + key + '"]'); }
 
   /* The fallback fill (after the keeper window, before expiry): the session key, else the wallet. */
   function executeOpenNow(r) {
@@ -7190,8 +8107,11 @@
     renderPositions();
     return sendTrade(desc, 'requestClose', [pos.id]).then(function (rc) {
       var ev = receiptEvents(rc, 'CloseRequested')[0];
-      acct.closeReqs[pid] = {
-        requestedAt: chainNow(), px0: ev ? px18ToNum(ev.args.px0) : NaN, block: Number(rc.blockNumber), localAt: Date.now()
+      var bn = Number(rc.blockNumber), seen = acct.closeReqs[pid];
+      /* the block feed may have seen the request first (with its block's own time), or the close itself */
+      if (seen && seen.block != null) { /* keep it */ }
+      else if (posById(pid) && !ui.reported[pid]) acct.closeReqs[pid] = {
+        requestedAt: heads.tsByBlock[bn] != null ? heads.tsByBlock[bn] : chainNow(), px0: ev ? px18ToNum(ev.args.px0) : NaN, block: bn, localAt: Date.now()
       };
       release();
       return afterTx().then(function () { return true; });
@@ -7298,8 +8218,12 @@
   }
 
   function trackOpenRequest(r) {
+    if (pend.done[r.id]) return;
+    var have = pend.opens[r.id];
+    if (have) { if (have.block == null && r.block != null) have.block = r.block; renderPositions(); return; }
     pend.opens[r.id] = r;
     savePendingIds();
+    if (r.requestedAt == null && r.block != null && heads.tsByBlock[r.block] != null) r.requestedAt = heads.tsByBlock[r.block];
     if (r.requestedAt == null && DEMO) r.requestedAt = chainNow();
     if (r.requestedAt == null) {
       /* the request's own timestamp from chain, so the countdown runs on the chain clock */
@@ -7424,6 +8348,7 @@
      the wallet's RPC, and the read node can be a block or two behind it, when an empty read means
      "not there yet", not "filled". */
   var GONE_AFTER_MS = 4000;
+  var HEADS_RESOLVE_MS = 3000;
   function readPast(q, latest) {
     if (q.block != null && !(latest > q.block)) return false;
     if (q.localAt && Date.now() - q.localAt < GONE_AFTER_MS) return false;
@@ -7433,6 +8358,8 @@
   function tickPending() {
     if (DEMO) { demoTickPending(); return; }
     if (pend.inFlight || !read.exchange || !wallet.account) return;
+    if (headsFresh() && Date.now() - pend.lastPoll < 2000) return;   /* the block feed reads them at every block */
+    pend.lastPoll = Date.now();
     var ex = read.exchange;
     var account = wallet.account;
     pend.inFlight = true;
@@ -7446,6 +8373,9 @@
           if (wallet.account !== account || !pend.opens[r.id] || r.busy) return;
           if (q && q.trader !== ZERO) { r.requestedAt = Number(q.requestedAt); return; }
           if (!readPast(r, latest)) return;
+          /* (CF_PNL) the block feed reads the fill or the refund from its block's logs and puts the position on the card
+             in the same render; this poll takes over only if that has not happened within HEADS_RESOLVE_MS */
+          if (headsFresh()) { if (!r.emptyAt) r.emptyAt = Date.now(); if (Date.now() - r.emptyAt < HEADS_RESOLVE_MS) return; }
           /* gone: filled or refunded by the keeper (or anyone). Say which. */
           delete pend.opens[r.id];
           savePendingIds();
@@ -7459,6 +8389,7 @@
           if (wallet.account !== account || acct.closeReqs[pid] !== cr || cr.busy) return;
           if (q && Number(q.requestedAt) > 0) { cr.requestedAt = Number(q.requestedAt); return; }
           if (!readPast(cr, latest)) return;
+          if (headsFresh()) { if (!cr.emptyAt) cr.emptyAt = Date.now(); if (Date.now() - cr.emptyAt < HEADS_RESOLVE_MS) return; }
           /* gone from chain: the card says "Checking the result…" until the logs say how it ended
              (settling, "Adding it to your balance…", only once they say it closed) */
           ui.checking[pid] = posById(pid) || true;
@@ -7532,7 +8463,9 @@
       var why = refundWhy(refunded.args.reason, sym, r.isLong);
       try { tpslDropPending(r.id); } catch (e) { /* ignore */ }
       if (mine) tkSet('refunded', { msg: "Didn't open: " + why + '. Your ' + fmtUsdShort(r.margin) + ' is back in your balance.' });
-      resultToast(shows, "Didn't open: " + why + '. ' + fmtUsd(r.margin) + ' is back in your balance.', 'err', link);
+      /* (CF_PNL) where the order's card was, at once */
+      if (r.instrumentId != null) showOpenEnd('f' + r.id, r, "Didn't open", "Didn't open: " + why + '. ' + fmtUsd(r.margin) + ' is back in your balance.');
+      resultToast(shows.concat([recentEl('f' + r.id), phEndRow('f' + r.id)]), "Didn't open: " + why + '. ' + fmtUsd(r.margin) + ' is back in your balance.', 'err', link);
     } else {
       toast('Your ' + sym + ' order is done.', null, link);
       if (tk.reqId === r.id) tkReset();
@@ -9811,7 +10744,7 @@
     { id: 'open', title: function () { return isDesk() ? 'OPEN' : 'OPEN POSITION'; }, on: 'submit', sheet: true,
       target: function () { return tk.phase ? $('ticketProgress') : $('actionBtn'); },
       text: function () { var b = $('actionBtn'); return tapWord() + ' ' + (b && /^OPEN/i.test(b.textContent) ? b.textContent.trim() : 'OPEN POSITION') + '. The button says your trade. For real money your wallet asks you to confirm; here nothing is sent.'; } },
-    { id: 'fill', title: 'About 6 seconds', on: 'opened', sheet: true,
+    { id: 'fill', title: function () { return 'About ' + fillSecs() + ' seconds'; }, on: 'opened', sheet: true,
       target: function () { return $('ticketProgress'); },
       text: function () { return 'Your order is sent. It fills at the market price in about ' + fillSecs() + ' seconds: Sent, then Opening, then Open at the price you got.'; } },
     { id: 'card', title: 'Your position', btn: 'Got it', sheet: false,
@@ -10193,7 +11126,8 @@
         maxLeverage: m.maxLeverage || 1, deadbandBps: Number(t.deadbandBps) || 1, clampBps: Number(t.clampBps) || 5,
         baseRate: 0.1, rateMultiplier: 15000, referenceNotional: 20000, positionMultiplier: 130000000,
         longCap: 1000000, shortCap: 1000000, maxNotional: 1000000, payoutCapX: 200, entryDeadbandBps: 1, borrowRateX10: 5,
-        opensPaused: false, retired: false, frozenPx: 0, market: m
+        opensPaused: false, retired: false, frozenPx: 0, market: m,
+        raw: window.ConfettiSettle ? window.ConfettiSettle.curve({ baseRateBps: 1000, rateMultiplier: 15000, referenceNotionalUsd: 20000000000n, positionMultiplierE6: 130000000000000n }) : null, lastPx18: null
       };
       m.inst = inst; m.instrumentId = i; state.byInstId[i] = inst;
       house.oi[m.symbol] = { long: 1950, short: 640 };
@@ -10203,11 +11137,19 @@
     hbots.loaded = true;
   }
 
-  /* The demo settles on the live mid (the real page reads the chain's oracle). */
+  /* (CF_PNL) The demo settles where the exchange settles: Hyperliquid's oracle print, from its activeAssetCtx stream
+     (the fast feed, which runs in the demo too), else the 30 s stats feed's oraclePx; the mid only until either has
+     answered. Before, the demo priced on the mid: 4-5 bps off the settlement price, measured. */
   function demoOracle() {
+    var S = window.ConfettiSettle;
     state.markets.forEach(function (m) {
+      if (m.instrumentId == null) return;
+      if (fast.at[m.coin] && Date.now() - fast.at[m.coin] < PX_FRESH_MS) return;   /* the stream holds it */
+      var c = state.ctx[m.coin];
+      var raw = c && c.oraclePxStr && S ? S.parseOracle(c.oraclePxStr, m.szDecimals) : null;
+      if (raw != null && c.at && Date.now() - c.at < 45000) { setOraclePx(m.instrumentId, S.oracle18(raw, m.szDecimals), 'ctx', c.at); return; }
       var px = state.mids[m.coin];
-      if (m.instrumentId != null && px > 0) { house.oraclePxById[m.instrumentId] = px; house.oraclePxAt[m.instrumentId] = state.midsAt || Date.now(); }
+      if (px > 0 && !(house.oraclePx18ById[m.instrumentId] != null && oracle.src[m.instrumentId] !== 'mid' && Date.now() - (house.oraclePxAt[m.instrumentId] || 0) < PX_FRESH_MS)) setOraclePx(m.instrumentId, toPx18(px), 'mid', state.midsAt || Date.now());
     });
   }
 
@@ -10255,14 +11197,20 @@
     })();
   }
 
-  function demoPos(m, isLong, margin, lev, entry) {
-    var px18 = toPx18(entry);
-    return {
+  function demoPos(m, isLong, margin, lev, entry, openedAt) {
+    var px18 = typeof entry === 'bigint' ? entry : toPx18(entry);
+    var p = {
       id: BigInt(demo.nextPos++), instrumentId: m.instrumentId, isLong: isLong, margin: margin, leverage: lev,
-      entry: px18ToNum(px18), entryPx18: px18, openedAt: Math.floor(Date.now() / 1000) - 900,
-      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, maxProfit: 10 * m.inst.payoutCapX, winFeeBps: 500, lossFeeBps: 500,
+      entry: px18ToNum(px18), entryPx18: px18, openedAt: openedAt != null ? openedAt : Math.floor(Date.now() / 1000) - 900,
+      deadbandBps: m.inst.deadbandBps, payoutCapX: m.inst.payoutCapX, maxProfit: margin * m.inst.payoutCapX, winFeeBps: 500, lossFeeBps: 500,
       entryDeadbandBps: m.inst.entryDeadbandBps, borrowRateX10: m.inst.borrowRateX10, borrowFreeHours: 1, preview: null
     };
+    /* (CF_PNL) the same position in the contract's units, so the demo's cards settle it exactly as the live page does */
+    if (window.ConfettiSettle) p.raw = window.ConfettiSettle.position({
+      isLong: isLong, marginUsdc: numToUsd6(margin), leverage: lev, maxProfitUsdc: numToUsd6(p.maxProfit), entryPx18: px18, openedAt: p.openedAt,
+      deadbandBps: p.deadbandBps, winFeeBps: 500, lossFeeBps: 500, entryDeadbandBps: p.entryDeadbandBps, borrowRateX10: p.borrowRateX10, borrowFreeHours: 1
+    });
+    return p;
   }
 
   function demoSeed() {
@@ -10317,9 +11265,12 @@
 
   /* A simulated transaction: about a second "in the wallet", then the state change and the
      event logs the exchange would emit. */
-  function demoTx(kind, args) {
-    return new Promise(function (ok) { setTimeout(ok, 900); }).then(function () {
-      var hash = demoHash();
+  function demoTx(kind, args, hooks) {
+    var hash = demoHash();
+    return new Promise(function (ok) { setTimeout(ok, 300); }).then(function () {
+      if (hooks && hooks.sent) { try { hooks.sent(hash, { nonce: null }); } catch (e) { /* never blocks */ } }
+      return new Promise(function (ok) { setTimeout(ok, 700); });
+    }).then(function () {
       var logs = [];
       if (kind === 'requestOpen') {
         var inst = state.byInstId[Number(args[0])];
@@ -10347,7 +11298,10 @@
 
   function demoFillOpen(r, hash) {
     var inst = state.byInstId[r.instrumentId];
-    var p = demoPos(inst.market, r.isLong, r.margin, r.leverage, oraclePriceFor(inst.market));
+    /* filled as the exchange fills: the oracle print now, the entry spread against the trader (executeOpen) */
+    var px18 = house.oraclePx18ById[r.instrumentId] != null ? house.oraclePx18ById[r.instrumentId] : toPx18(oraclePriceFor(inst.market));
+    var entry18 = window.ConfettiSettle ? window.ConfettiSettle.openEntry(px18, r.isLong, inst.entryDeadbandBps || 0) : px18;
+    var p = demoPos(inst.market, r.isLong, r.margin, r.leverage, entry18, Math.floor(chainNow()));
     acct.pending = Math.max(0, acct.pending - r.margin);
     acct.marginInUse += r.margin;
     acct.positions.push(p);
@@ -10445,6 +11399,7 @@
   function onVisibility() {
     syncLiveFeed();
     syncFastFeed();
+    syncHeads();
     if (document.hidden) return;
     tickMids(true);
     tickCtx(true);
@@ -10503,6 +11458,7 @@
 
     if (DEMO) {
       demoBoot();
+      setInterval(syncFastFeed, 1000);
     } else if (read.provider) {
       var boot = read.exchange ? loadHouseAddresses().then(loadInstruments) : Promise.resolve();
       boot.then(function () {
@@ -10519,6 +11475,9 @@
         setInterval(tickChain, CHAIN_EVERY_MS);
         setInterval(tickOracle, ORACLE_EVERY_MS);
         setInterval(syncFastFeed, 1000);
+        /* (CF_PNL) the block feed: the P&L cards and the fill watch, block by block */
+        syncHeads();
+        setInterval(syncHeads, 1000);
         setInterval(function () { if (!document.hidden) loadInstruments(); }, INSTRUMENTS_EVERY_MS);
         setTimeout(tryAutoConnect, 50);
       });

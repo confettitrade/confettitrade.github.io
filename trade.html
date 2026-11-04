@@ -2,7 +2,7 @@
 <html lang="en" data-theme="night">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz https://dln.debridge.finance; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.blockfront.network wss://rpc.blockfront.network https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz https://dln.debridge.finance; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — trade</title>
   <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no funding.">
@@ -538,6 +538,8 @@
       body.trade #posLines > * { margin: 10px 10px 0; }
       body.trade #posLines > :last-child { margin-bottom: 10px; }
       body.trade #posLines > .pos-card[data-id]:not(.ph-open) { display: none; }
+      /* (CF_PNL) an order on its way in, a refund and a revert are rows at the top (phOpenings), not cards here */
+      body.trade #posLines > .pos-card.is-filling, body.trade #posLines > .result-card.is-open-end { display: none; }
       body.trade #posLines > .pos-card[data-id].ph-open { scroll-margin-top: calc(env(safe-area-inset-top) + 56px); }
       /* with positions the chart gives up height, so the rows and the chart share the first screen */
       body.trade .trade-layout.has-pos .chart-box { height: clamp(200px, 32vh, 300px); }
@@ -687,7 +689,7 @@
       <!-- Your positions: one card each, CLOSE POSITION on every card -->
       <section class="trade-pos panel" id="posPanel" aria-label="Your positions">
         <div class="panel-head pos-head">
-          <span class="pos-title">Your positions<span class="count" id="posCount"></span></span>
+          <span class="pos-title">Your positions<span class="count" id="posCount"></span><span class="pnl-beat" id="pnlBeat" hidden aria-hidden="true"></span></span>
           <span class="dk-only dk-pos-sum" id="dkPosSum" hidden>Open <b id="dkPosN">0</b><span id="dkPosMoney" hidden><i>·</i>In trades <b id="dkPosMargin">—</b><i>·</i>P&amp;L <b id="dkPosPnl">—</b></span></span>
           <!-- the owner, 2026-10-25: "you should just give people the choice": cards or rows, remembered -->
           <span class="dk-only chip-row pos-view" id="posView" role="group" aria-label="Positions view">
@@ -698,6 +700,7 @@
         </div>
         <div class="ph-only ph-pos-head" id="phPosHead" hidden>
           <span class="ph-pos-sum" id="phPosSum">Your positions</span>
+          <span class="pnl-beat" id="phPnlBeat" hidden aria-hidden="true"></span>
           <button class="ph-closeall" id="phCloseAll" type="button" hidden>Close all</button>
         </div>
         <div class="ph-only ph-rows" id="phRows"></div>
@@ -1414,7 +1417,8 @@
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
-  <script src="trade.js?v=steps5" defer></script>
+  <script src="settle.js?v=pnl1" defer></script>
+  <script src="trade.js?v=pnl1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>

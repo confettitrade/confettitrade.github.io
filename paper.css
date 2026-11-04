@@ -2036,6 +2036,40 @@ main > .notice { margin-bottom: var(--gap); }
 .pc-act { display: flex; flex-direction: column; gap: 6px; }
 .pc-est { text-align: center; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-muted); }
 @media (max-width: 340px) { .pc-rows { grid-template-columns: minmax(0, 1fr); } }
+/* (CF_PNL) every figure on a position card in tabular digits: a tick never moves the line */
+.pc-pnl, .pc-v, .pc-est, .dk-num, .dk-liq-px, .dk-away { font-variant-numeric: tabular-nums; }
+/* An order on its way in is drawn as the position it becomes; CLOSE POSITION's place holds the fill countdown at the
+   button's own 52 px, so nothing on the card moves when the fill lands */
+.pos-card.is-filling .pc-pnl { opacity: 0.85; }
+.pc-fill { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 0 12px 3px; border: 1px solid var(--close); background: color-mix(in srgb, var(--close) 7%, var(--raised)); overflow: hidden; }
+.pc-fill.has-btn { justify-content: space-between; }
+.pc-fill-say { font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--close); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-fill-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--close) 16%, transparent); }
+.pc-fill-bar > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--close); transition: width 260ms linear; }
+.pc-fill.is-warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--raised)); }
+.pc-fill.is-warn .pc-fill-say { color: var(--warn); }
+.pc-fill.is-warn .pc-fill-bar > i { background: var(--warn); }
+.pc-fill.is-bad { border-color: var(--neg); background: color-mix(in srgb, var(--neg) 7%, var(--raised)); }
+.pc-fill.is-bad .pc-fill-say { color: var(--neg); }
+.pc-fill.is-bad .pc-fill-bar > i { background: var(--neg); }
+.pc-fill.is-done { border-color: var(--pos); background: color-mix(in srgb, var(--pos) 8%, var(--raised)); }
+.pc-fill.is-done .pc-fill-say { color: var(--pos); }
+.pc-fill.is-done .pc-fill-bar > i { background: var(--pos); }
+/* a P&L that just moved with the settlement price: a soft wash for 700 ms, the way it went */
+@keyframes pnl-tick-up { from { background-color: color-mix(in srgb, var(--pos) 26%, transparent); } to { background-color: transparent; } }
+@keyframes pnl-tick-down { from { background-color: color-mix(in srgb, var(--neg) 22%, transparent); } to { background-color: transparent; } }
+[data-tick="up"] { animation: pnl-tick-up 700ms ease-out; }
+[data-tick="down"] { animation: pnl-tick-down 700ms ease-out; }
+/* the line while a send is still on its way to the chain: a soft sweep, so Sending reads as working */
+@keyframes pnl-sending { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.pc-fill.is-sending .pc-fill-bar > i, .ph-row-prog.is-sending i { width: 34% !important; animation: pnl-sending 1.1s ease-in-out infinite; transition: none; }
+/* the live beat by Your positions: once a block, while the cards are held to the contract */
+.pnl-beat { display: inline-block; width: 7px; height: 7px; margin-left: 9px; border-radius: 50%; background: var(--pos); opacity: 0.5; vertical-align: middle; flex: none; }
+.pnl-beat[hidden] { display: none; }
+.pnl-beat.is-quiet { background: var(--ink-faint); opacity: 0.35; }
+@keyframes pnl-beat { from { opacity: 1; transform: scale(1.35); } to { opacity: 0.5; transform: none; } }
+.pnl-beat[data-beat] { animation: pnl-beat 650ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .pc-fill-bar > i { transition: none; } [data-tick] { animation: none; } .pnl-beat[data-beat] { animation: none; } .pc-fill.is-sending .pc-fill-bar > i, .ph-row-prog.is-sending i { animation: none; width: 0 !important; } }
 
 /* Results that stay where the position was: closed, liquidated, while you were away */
 .result-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--rule-strong); background: var(--raised); }
