@@ -7154,7 +7154,7 @@
         wallet.signer = s;
       }).catch(function () { wallet.signer = null; }).then(function () {
         renderWallet(); renderAction(); renderStatus(); renderPositions(); renderRefer();
-        if (wallet.chainId !== CHAIN_ID && !(br.busy || br.inflight)) toast('Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM: tap Switch to HyperEVM.', 'err');   /* not mid-bridge: the wallet is there on purpose */
+        if (wallet.chainId !== CHAIN_ID && !(br.busy || br.inflight) && lsGet(setupKey()) === '1') toast('Your wallet is on ' + chainName(wallet.chainId) + '. Confetti runs on HyperEVM: tap Switch to HyperEVM.', 'err');   /* not mid-bridge: the wallet is there on purpose */
         restorePendingOpens();
         /* read the last block seen before refreshAccount moves it on */
         scanAway(wallet.account);
@@ -10390,8 +10390,13 @@
      clears itself when the wallet shows it: there is no Next. Shown until the wallet's first trade, then never
      again for that wallet (LS.setup); a wallet with any trade in its history never sees it. The "? How to trade"
      tour no longer starts by itself; it replays from its button. */
-  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null };
+  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null, ethFirst: null };
   var SETUP_ORDER = ['connect', 'chain', 'hype', 'swap', 'deposit', 'trade'];
+  /* a wallet with nothing on HyperEVM brings its ETH over first, from the chain it is already on, and switches to
+     HyperEVM once, after the HYPE lands (the owner, 2026-11-04: "shouldnt it be bridge eth then connect to hyperevm?";
+     it was three switches: to HyperEVM, back to the ETH chain for the bridge, then to HyperEVM again) */
+  var SETUP_ORDER_ETH = ['connect', 'hype', 'chain', 'swap', 'deposit', 'trade'];
+  function setupOrder() { return setup.ethFirst && setup.ethFirst === wallet.account ? SETUP_ORDER_ETH : SETUP_ORDER; }   /* per wallet */
   var SETUP_TITLES = { connect: 'Connect your wallet', chain: 'Switch to HyperEVM', hype: 'Get HYPE on HyperEVM', swap: 'Swap HYPE for USDC', deposit: 'Deposit USDC', trade: 'Open your first trade', bridge: 'Your ETH is on its way' };
   var SETUP_WAIT_MS = 8000;   /* a slow history scan does not hold a new wallet back for ever */
 
@@ -10443,7 +10448,7 @@
     if (!wallet.account) return setup.away || !tour.autoTried ? null : 'connect';   /* the silent reconnect answers first */
     if (lsGet(setupKey()) === '1') return null;
     if (br.inflight || br.busy) return 'bridge';   /* the wallet is on the ETH side on purpose: hold here until the HYPE lands */
-    if (wallet.chainId !== CHAIN_ID) return 'chain';
+    if (wallet.chainId !== CHAIN_ID) return setupOffChain();
     if (!acct.loaded) return 'wait';
     if (setupTraded()) { lsSet(setupKey(), '1'); return null; }
     if ((hist.loading && !hist.done) || ui.hypeWei == null) {
@@ -10456,6 +10461,19 @@
     if (acct.walletUsdc >= min) return gasLow ? 'hype' : 'deposit';
     if (depSwapShow()) return 'swap';
     return 'hype';
+  }
+
+  /* The wallet is not on HyperEVM: nothing there to trade with and the bridge is on the page -> bring ETH first; else switch. */
+  function setupOffChain() {
+    if (!brOn()) return 'chain';
+    if (!acct.loaded || ui.hypeWei == null || (hist.loading && !hist.done)) {
+      if (!setup.waitSince) setup.waitSince = Date.now();
+      return Date.now() - setup.waitSince < SETUP_WAIT_MS ? 'wait' : 'chain';
+    }
+    var min = minMargin();
+    var empty = !setupTraded() && ui.hypeWei < HYPE_LOW_WEI && acct.available < min && acct.walletUsdc < min && !setupSwapCase();   /* HYPE here (just bridged, say): switch */
+    if (empty) setup.ethFirst = wallet.account;
+    return empty ? 'hype' : 'chain';
   }
 
   function setupRender() {
@@ -10478,7 +10496,7 @@
     var ph = $('setupPhantom');
     if (ph) { c.appendChild(ph); setup.ph = ph; }
     var list = el('ol', 'setup-list');
-    SETUP_ORDER.forEach(function (id) { var li = el('li', '', SETUP_TITLES[id]); li.setAttribute('data-step', id); list.appendChild(li); });
+    setupFillList(list);
     c.appendChild(list);
     c.hidden = true;
     document.body.appendChild(c);
@@ -10503,11 +10521,19 @@
     if (finished) toast('First trade in. The whole page is yours now.', null, null, 6000);
   }
 
+  function setupFillList(list) {
+    var ids = setupOrder();
+    if (list.getAttribute('data-order') === ids.join()) return;
+    list.setAttribute('data-order', ids.join()); list.textContent = '';
+    ids.forEach(function (id) { var li = el('li', '', SETUP_TITLES[id]); li.setAttribute('data-step', id); list.appendChild(li); });
+  }
+
   function setupShow(step) {
     setup.step = step; setup.scrolled = null;
     if (step !== 'wait') setup.waitSince = 0;
-    var n = SETUP_ORDER.indexOf(step === 'bridge' ? 'hype' : step);
-    setRole(setup.card, 'count', n < 0 ? 'Checking' : 'Step ' + (n + 1) + ' of ' + SETUP_ORDER.length);
+    var lst = setup.card.querySelector('.setup-list'); if (lst) setupFillList(lst);
+    var n = setupOrder().indexOf(step === 'bridge' ? 'hype' : step);
+    setRole(setup.card, 'count', n < 0 ? 'Checking' : 'Step ' + (n + 1) + ' of ' + setupOrder().length);
     setRole(setup.card, 'title', step === 'wait' ? 'Checking what you have' : SETUP_TITLES[step]);
     setupButtons(step);
     if (setup.ph) {
@@ -10520,7 +10546,7 @@
       li.classList.toggle('is-now', k === n);
     });
     setupAutoOpen();
-    if (step === 'hype') setupSwapShow(); else setupSwapHide();
+    if (step === 'hype') { setupSwapShow(); brFollowWallet(); } else setupSwapHide();
     setupPlace();
   }
 
@@ -10543,6 +10569,7 @@
     if (s === 'hype') {
       if (setupSwapCase()) return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet but no HYPE for gas. Every send on HyperEVM needs a little (about 0.01 HYPE). Swap a little of it for HYPE right here on Confetti\'s swap: 1 USDC covers many sends. Then deposit the rest.';
       if (depSwapSmall()) return 'Trades are in USDC. The HYPE here buys about <b>' + fmtUsd(swHypeWorth(ui.hypeWei)) + '</b>, under the ' + fmtUsdShort(minMargin()) + ' minimum for a trade: add a little more HYPE, or USDC.';
+      if (brOn() && wallet.chainId !== CHAIN_ID) return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Bring ETH from Arbitrum, Ethereum or Base first: your wallet stays on ' + (BR_CHAINS[wallet.chainId] ? BR_CHAINS[wallet.chainId].name : 'the ETH side') + ' to send it, and it lands on HyperEVM as HYPE in a minute or two. Then you switch to HyperEVM once' + (onrampOn() ? '. Or pay with Apple Pay' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
       if (brOn()) return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Bring ETH from Arbitrum, Ethereum or Base: it lands here as HYPE in a minute or two' + (onrampOn() ? '; or pay with Apple Pay' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
       return 'Trades are in USDC, and every send needs a little HYPE for gas. ' + have + ' Send HYPE or USDC to this wallet on HyperEVM' + (onrampOn() ? ', or pay with Apple Pay and HYPE arrives in a few minutes' : '') + '. Already holding USDC on Hyperliquid? Send it straight to your deposit address.';
     }
@@ -10550,7 +10577,7 @@
       var f = br.inflight || {}, where = BR_CHAINS[f.chain] ? BR_CHAINS[f.chain].name : 'the other chain';
       if (br.busy) return 'Confirm the transaction in your wallet on ' + where + '. Nothing moves until you do.';
       if (f.state === 'slow') return 'Taking longer than usual. deBridge still has the order; it fills or the ETH comes back to the wallet it left. Keep this page open, or check the order at app.debridge.finance with your wallet address.';
-      return 'Sent on ' + where + '. deBridge is filling the order: about <b>' + (f.out ? brFmtHype(f.out) : '—') + ' HYPE</b> lands in this wallet on HyperEVM in a minute or two. Switch back to HyperEVM whenever you like; the page keeps watching.';
+      return 'Sent on ' + where + '. deBridge is filling the order: about <b>' + (f.out ? brFmtHype(f.out) : '—') + ' HYPE</b> lands in this wallet on HyperEVM in a minute or two. Switch ' + (setupOrder() === SETUP_ORDER_ETH ? 'to' : 'back to') + ' HyperEVM whenever you like; the page keeps watching.';
     }
     if (s === 'swap') return 'Trades are in USDC, not HYPE. ' + have + ' Add USDC swaps your HYPE for USDC in one tap on HyperSwap and keeps 0.03 HYPE for gas.';
     if (s === 'deposit') return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet' + (acct.available > 0 ? ' and <b>' + fmtUsd(acct.available) + '</b> on Confetti' : '') + '. Deposit at least ' + fmtUsdShort(minMargin()) + ' onto the exchange. The first time is two confirms: approve USDC, then deposit.';
@@ -10584,7 +10611,7 @@
     } else if (step === 'hype') {
       var ramp = onrampOn();
       if (ramp) add('Pay with Apple Pay', 'btn-primary', function () { setup.opened = 'hype'; openDeposit(); setDepWhere('card'); });
-      add('I have USDC on Hyperliquid', ramp || setupSwapCase() ? '' : 'btn-primary', function () { setup.opened = 'hype'; openDeposit(); setDepWhere('hl'); });
+      add('I have USDC on Hyperliquid', ramp || setupSwapCase() || brOn() ? '' : 'btn-primary', function () {   /* the lit Bring ETH card is the main way */ setup.opened = 'hype'; openDeposit(); setDepWhere('hl'); });
     } else if (step === 'swap') {
       add('Swap HYPE for USDC', 'btn-primary', function () { setup.opened = step; openDeposit(); });
     } else if (step === 'deposit') {
@@ -10633,6 +10660,7 @@
     var r = t && t.getClientRects().length ? t.getBoundingClientRect() : null;
     if (r && (r.width < 1 || r.height < 1)) r = null;
     setup.card.hidden = false;
+    setupFit(0);
     var cw = setup.card.offsetWidth, ch = setup.card.offsetHeight;
     if (!r) {
       setup.ring.hidden = true;
@@ -10649,7 +10677,7 @@
     var box = { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad };
     setupDims(box);
     setup.ring.hidden = false;
-    setup.ring.setAttribute('data-n', 'Step ' + (SETUP_ORDER.indexOf(setup.step) + 1));
+    setup.ring.setAttribute('data-n', 'Step ' + (setupOrder().indexOf(setup.step === 'bridge' ? 'hype' : setup.step) + 1));
     setup.ring.classList.toggle('is-low', box.top < 26);
     setup.ring.style.left = Math.round(box.left) + 'px';
     setup.ring.style.top = Math.round(box.top) + 'px';
@@ -10657,6 +10685,10 @@
     setup.ring.style.height = Math.round(box.bottom - box.top) + 'px';
     var low = box.top < 26, lab = low ? 22 : 0;   /* the step label hangs below a ring at the top edge */
     var below = vh - (box.bottom + gap + lab), above = box.top - gap;
+    /* a lit box too tall to leave room for the card (Bring ETH on a phone): the card sheds the step list, then its
+       words, then the Phantom note, until it fits beside the box, so the box's own button is never under it */
+    var fits = function () { return below >= ch + 8 || above >= ch + 8 || box.left - gap >= cw + 12 || vw - box.right - gap >= cw + 12; };
+    for (var lv = 1; lv <= 3 && !fits(); lv++) { setupFit(lv); ch = setup.card.offsetHeight; }
     var top, left = null;
     if (below >= ch + 8) top = box.bottom + gap + lab;
     else if (above >= ch + 8) top = box.top - gap - ch;
@@ -10668,6 +10700,11 @@
     setup.card.style.top = Math.round(top) + 'px';
   }
 
+  function setupFit(lv) {
+    var c = setup.card; if (!c) return;
+    [c.querySelector('.setup-list'), c.querySelector('[data-role="text"]'), setup.ph].forEach(function (n, i) { if (n) n.style.display = lv > i ? 'none' : ''; });
+  }
+
   /* The strip at the top of Add USDC while a step runs there; the parts of the sheet not in play go faint. */
   function renderDepSetup(on) {
     var strip = $('depSetup'), dlg = $('depositModal');
@@ -10676,7 +10713,7 @@
     var now = on ? setup.step : '';
     strip.hidden = !on;
     if (on) {
-      setText('depSetupN', 'Step ' + (SETUP_ORDER.indexOf(setup.step) + 1) + ' of ' + SETUP_ORDER.length);
+      setText('depSetupN', 'Step ' + (setupOrder().indexOf(setup.step) + 1) + ' of ' + setupOrder().length);
       setText('depSetupTitle', SETUP_TITLES[setup.step]);
       setText('depSetupText', setupStripText());
     }
@@ -11067,6 +11104,13 @@
         });
       }).catch(function () { /* next tick */ });
     }, 5000);
+  }
+  /* the wallet already sits on Arbitrum, Ethereum or Base: send from there (no switch before the bridge) */
+  function brFollowWallet() {
+    if (br.busy || br.inflight || !BR_CHAINS[wallet.chainId] || br.chain === wallet.chainId) return;
+    br.chain = wallet.chainId;
+    var sel = $('brChain'); if (sel) sel.value = String(br.chain);
+    brQuoteNow();
   }
   function initBridge() {
     var card = $('bridgeCard'); if (!card) return;
