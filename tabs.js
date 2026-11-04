@@ -2117,7 +2117,7 @@
     }
 
     function refresh() {
-      var jobs = [readHouse().catch(function () { /* keep the last values */ }), loadBotOi(), scanMoves().catch(function () { /* retried on the next poll */ })];
+      var jobs = [readHouse().catch(function () { /* keep the last values */ }), loadBotOi(), ($('hsMoves') ? scanMoves() : Promise.resolve()).catch(function () { /* retried on the next poll */ })];
       if (h.keeper && Date.now() - h.keeperAt >= KEEPER_EVERY_MS) { h.keeperAt = Date.now(); jobs.push(h.keeper.refresh()); }
       return Promise.all(jobs).then(render);
     }
