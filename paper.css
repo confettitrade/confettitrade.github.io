@@ -1793,7 +1793,7 @@ body { font-weight: 400; -webkit-font-smoothing: antialiased; text-rendering: op
 .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; padding: 4px 12px 8px; }
 .status-grid .kv-val a { text-decoration-color: var(--rule); }
 .status-grid h4 { margin: 12px 0 2px; }
-.toasts { position: fixed; right: var(--gutter); bottom: var(--gutter); z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
+.toasts { position: fixed; right: var(--gutter); bottom: var(--gutter); z-index: 92;   /* above First steps (84-90): a message during the guide was blurred behind it */ display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
 .toast { pointer-events: auto; padding: 8px 12px; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); font-size: var(--text-sm); line-height: 1.4; box-shadow: 4px 4px 0 var(--sunken); overflow-wrap: anywhere; }
 .toast-ok { border-color: var(--pos); }
 .toast-err { border-color: var(--neg); }
@@ -2168,6 +2168,7 @@ main > .notice { margin-bottom: var(--gap); }
 .setup-ring[hidden] { display: none; }
 .setup-card { position: fixed; z-index: 90; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 12px 14px; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 6px 6px 0 var(--sunken); }
 .setup-card[hidden] { display: none; }
+.setup-note { display: block; margin-bottom: 8px; padding: 6px 8px; border-left: 3px solid var(--accent); background: var(--sunken); color: var(--ink); overflow-wrap: anywhere; }
 .setup-count { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .setup-title { margin: 2px 0 4px; font-size: var(--text-lg); font-weight: 700; }
 .setup-text { font-size: var(--text-sm); line-height: 1.45; color: var(--ink-muted); }

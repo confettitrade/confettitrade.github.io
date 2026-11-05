@@ -7084,8 +7084,43 @@
     });
   }
 
+  /* (2026-11-05, the owner: "phantom still isnt working for desktop confetti") What a refused connect means, in the
+     wallet's own terms, shown as a message and inside First steps' card, with the wallet's own words at the end so the
+     next report carries them. Phantom answers -32603 without opening anything when its page script fails (before
+     2026-11-05 03:21 UTC: the page's script policy blocked its eval; a tab opened before then still has the old policy
+     until it reloads) or when its record for this site is stuck. */
+  function connectWalletName(eth) {
+    var hit = walletList().filter(function (d) { return d.provider === eth; })[0];
+    var n = hit && hit.info && hit.info.name ? String(hit.info.name) : (eth && eth.isPhantom ? 'Phantom' : eth && eth.isMetaMask ? 'MetaMask' : 'Your wallet');
+    return n.replace(/[<>&"]/g, '').slice(0, 40) || 'Your wallet';
+  }
+  function connectErrCode(e) {
+    var code = null;
+    walkError(e, function (x) { if (x && (x.code === -32603 || x.code === -32002 || x.code === 4100)) { code = x.code; return true; } return false; });
+    return code;
+  }
+  function connectFailText(e, eth) {
+    var name = connectWalletName(eth), code = connectErrCode(e);
+    var said = String((e && e.message) || '').replace(/[<>&"]/g, '').slice(0, 80);
+    var tail = said ? ' (' + name + ' said: ' + said + (code != null ? ', ' + code : '') + ')' : '';
+    if (isUserRejection(e)) return 'You closed the request in ' + name + '. Tap Connect wallet to try again.';
+    if (code === -32002) return name + ' already has a connect request waiting. Open ' + name + ' and approve it there.';
+    if (code === 4100) return name + ' is locked or has not allowed this site yet. Open ' + name + ', unlock it, then tap Connect wallet again.';
+    if (code === -32603 && /phantom/i.test(name)) return 'Phantom did not open its connect window. Reload this page and try once more. Still nothing: in Phantom open Settings, Connected apps, remove confetti.trade, unlock Phantom and try again; or switch to another account in Phantom.' + tail;
+    if (code === -32603) return name + ' did not open its connect window. Reload this page, make sure ' + name + ' is unlocked, then try again.' + tail;
+    return name + ' did not connect: ' + describeError(e);
+  }
+  /* Phantom's first answer after its background has been asleep can be this same -32603: ask once more before saying anything */
+  function requestAccountsOnce(eth) {
+    return eth.request({ method: 'eth_requestAccounts' }).catch(function (e) {
+      if (connectErrCode(e) !== -32603) throw e;
+      return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return eth.request({ method: 'eth_requestAccounts' }); });
+    });
+  }
+
   function connect() {
     wallet.leftByUser = false;
+    setup.connectNote = null;
     return chooseWallet().then(function (eth) {
       if (eth) return connectWith(eth);
       if (!walletList().length && !window.ethereum) openWalletApps();
@@ -7093,11 +7128,12 @@
   }
 
   function connectWith(eth) {
-    var E = window.ethers;
+    var E = window.ethers, connected = false;
     wallet.eth = eth;
-    return eth.request({ method: 'eth_requestAccounts' }).then(function (accounts) {
+    return requestAccountsOnce(eth).then(function (accounts) {
       if (!accounts || !accounts.length) throw new Error('No account returned by the wallet.');
       wallet.account = E.getAddress(accounts[0]);
+      connected = true; setup.connectNote = null;
       return eth.request({ method: 'eth_chainId' });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
@@ -7113,8 +7149,13 @@
       if (st) { setup.autoSwitch = wallet.account; setupRender(); return; }
       return switchChain().then(function () { return onChainChanged(); }).catch(switchFailed);
     }).catch(function (e) {
-      toast(describeError(e), 'err');
+      if (!connected) {
+        var msg = connectFailText(e, eth); setup.connectNote = msg;
+        if (!(setup.on && setup.step === 'connect')) toast(msg, 'err', null, 15000);   /* First steps' card says it: a message would cover its button */
+      }
+      else toast(describeError(e), 'err');
       renderWallet(); renderAction();
+      try { setupRender(); } catch (x) { /* First steps never block the ticket */ }
     });
   }
 
@@ -10451,7 +10492,7 @@
      clears itself when the wallet shows it: there is no Next. Shown until the wallet's first trade, then never
      again for that wallet (LS.setup); a wallet with any trade in its history never sees it. The "? How to trade"
      tour no longer starts by itself; it replays from its button. */
-  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null, ethFirst: null, autoSwitch: null, aside: false };
+  var setup = { connectNote: null, on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null, ethFirst: null, autoSwitch: null, aside: false };
   var SETUP_ORDER = ['connect', 'chain', 'hype', 'swap', 'deposit', 'trade'];
   /* a wallet with nothing on HyperEVM brings its ETH over first, from the chain it is already on, and switches to
      HyperEVM once, after the HYPE lands (the owner, 2026-11-04: "shouldnt it be bridge eth then connect to hyperevm?";
@@ -10642,7 +10683,7 @@
     var s = setup.step, hype = ui.hypeWei == null ? null : Number(ui.hypeWei) / 1e18, usdc = acct.walletUsdc;
     var have = 'This wallet has <b>' + (hype == null ? '—' : hype.toFixed(hype >= 1 ? 2 : 4)) + ' HYPE</b> and <b>' + fmtUsd(usdc) + ' USDC</b> on HyperEVM.';
     if (s === 'wait') return 'Reading this wallet on HyperEVM: HYPE, USDC, your Confetti balance and any past trades. One moment.';
-    if (s === 'connect') return 'Confetti checks what your wallet has and shows you only the next thing to do: HyperEVM, HYPE for gas, USDC, a deposit, then your first trade.' + (wallet.eth || getInjected() ? ' Nothing is signed by connecting.' : ' No wallet in this browser: the button opens Confetti in your wallet app.');
+    if (s === 'connect') return (setup.connectNote ? '<span class="setup-note">' + setup.connectNote + '</span>' : '') + 'Confetti checks what your wallet has and shows you only the next thing to do: HyperEVM, HYPE for gas, USDC, a deposit, then your first trade.' + (wallet.eth || getInjected() ? ' Nothing is signed by connecting.' : ' No wallet in this browser: the button opens Confetti in your wallet app.');
     if (s === 'chain') return 'Your wallet is on <b>' + chainName(wallet.chainId) + '</b>. Confetti runs on HyperEVM (chain 999). One tap asks your wallet to switch, or to add HyperEVM first.';
     if (s === 'hype') {
       if (setupSwapCase()) return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet but no HYPE for gas. Every send on HyperEVM needs a little (about 0.01 HYPE). Swap a little of it for HYPE right here on Confetti\'s swap: 1 USDC covers many sends. Then deposit the rest.';
