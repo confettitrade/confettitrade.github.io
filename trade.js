@@ -7241,9 +7241,28 @@
     return Promise.resolve();
   }
 
+  /* (2026-11-05, the owner's screen recording: Connect ticked, then every "Switch to HyperEVM" tap answered 4100 "The
+     requested method and/or account has not been authorized by the user") The wallet no longer counts this site as
+     approved for the account it is on (Phantom checks its connected-apps record on every switch; an account change in
+     the wallet or a removed connection leaves the page holding an address the wallet will not act for). Ask the wallet
+     to approve the site again, then switch once more. */
   function switchChain() {
     var eth = wallet.eth || getInjected();
     if (!eth) return Promise.reject(new Error('No wallet.'));
+    return switchChainOnce(eth).catch(function (err) {
+      var code = null;
+      walkError(err, function (x) { if (x && x.code === 4100) { code = 4100; return true; } return false; });
+      if (code !== 4100) throw err;
+      return eth.request({ method: 'eth_requestAccounts' }).then(function (accounts) {
+        if (accounts && accounts.length) {
+          var next = window.ethers.getAddress(accounts[0]);
+          if (next !== wallet.account) { wallet.account = next; resetAccount(); }
+        }
+        return switchChainOnce(eth);
+      });
+    });
+  }
+  function switchChainOnce(eth) {
     return eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] }).catch(function (err) {
       var code = err && (err.code != null ? err.code : (err.data && err.data.originalError && err.data.originalError.code));
       var msg = String((err && err.message) || '');
@@ -7271,6 +7290,8 @@
 
   /* A switch the wallet refused or could not make: say so, with the network to add by hand. */
   function switchFailed(e) {
+    var c4100 = false; walkError(e, function (x) { if (x && x.code === 4100) { c4100 = true; return true; } return false; });
+    if (c4100) { toast('Your wallet says this site is not approved for the account it is on. Open your wallet, connect confetti.trade to this account (or switch back to the account you connected), then tap Switch to HyperEVM again.', 'err', null, 20000); return; }
     if (isUserRejection(e)) { toast('Your wallet stayed on ' + chainName(wallet.chainId) + '. Switch to HyperEVM to trade.', 'err'); return; }
     toast(describeError(e) + ' To add HyperEVM by hand: chain id 999, RPC ' + DEFAULT_RPC + ', currency HYPE, explorer ' + ((cfg && cfg.explorerUrl) || 'https://hyperevmscan.io') + '.', 'err', null, 20000);
   }
