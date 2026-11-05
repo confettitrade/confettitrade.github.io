@@ -2168,6 +2168,11 @@ main > .notice { margin-bottom: var(--gap); }
 .setup-ring[hidden] { display: none; }
 .setup-card { position: fixed; z-index: 90; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 12px 14px; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 6px 6px 0 var(--sunken); }
 .setup-card[hidden] { display: none; }
+/* (2026-11-05) the card's X, top right; the count line keeps clear of it */
+.setup-x { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; background: transparent; color: var(--ink-muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.setup-x:hover { color: var(--ink); border-color: var(--rule-strong); background: var(--sunken); }
+.setup-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--ink); }
+.setup-card .setup-count, .setup-card .setup-title { padding-right: 30px; }
 .setup-note { display: block; margin-bottom: 8px; padding: 6px 8px; border-left: 3px solid var(--accent); background: var(--sunken); color: var(--ink); overflow-wrap: anywhere; }
 .setup-count { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .setup-title { margin: 2px 0 4px; font-size: var(--text-lg); font-weight: 700; }
@@ -2207,6 +2212,8 @@ dialog[data-setup] .dep-dim { opacity: 0.35; pointer-events: none; filter: blur(
 @media (max-width: 640px) {
   .setup-card { width: calc(100vw - 24px); padding: 12px; }
   .setup-btns .btn { min-height: 44px; }
+  .setup-x { width: 44px; height: 44px; top: 0; right: 0; }
+  .setup-card .setup-count, .setup-card .setup-title { padding-right: 40px; }
 }
 
 

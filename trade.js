@@ -124,7 +124,9 @@
     amount: 'confetti.trade.amount', details: 'confetti.trade.details', tour: 'confetti.trade.tour.',
     noConfirm: 'confetti.trade.noconfirm', seen: 'confetti.trade.seen.',
     /* First steps (2026-11-02): '1' per wallet once its first trade is in */
-    setup: 'confetti.trade.setup.'
+    setup: 'confetti.trade.setup.',
+    /* (2026-11-05, the owner: "a way to close the window ... with the tutorial") '1' per wallet (or 'visitor') once its X is hit */
+    setupClosed: 'confetti.trade.setupClosed.'
   };
   var TZ_OFFSET_S = new Date().getTimezoneOffset() * 60;
   var ZERO = '0x0000000000000000000000000000000000000000';
@@ -10569,6 +10571,7 @@
 
   /* What this wallet needs next; null when the page is for trading; 'wait' while the wallet is being read. */
   function setupStepNow() {
+    if (setupIsClosed()) return null;   /* its X: closed for this wallet (the ? How to trade tour stays on the page) */
     if (DEMO && demoOpt('setup')) return demoOpt('setup');
     if (DEMO || tour.on || !window.ethers || !hasExchange()) return null;
     if (!wallet.account) return setup.away || !tour.autoTried ? null : 'connect';   /* the silent reconnect answers first */
@@ -10626,6 +10629,10 @@
     setup.ring = el('div', 'setup-ring'); setup.ring.hidden = true; document.body.appendChild(setup.ring);
     var c = el('div', 'setup-card');
     c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'First steps'); c.setAttribute('aria-live', 'polite');
+    var x = el('button', 'setup-x', '×');
+    x.type = 'button'; x.title = 'Close'; x.setAttribute('aria-label', 'Close First steps');
+    x.addEventListener('click', setupClose);
+    c.appendChild(x);
     [['count', 'setup-count'], ['title', 'setup-title'], ['text', 'setup-text']].forEach(function (r) { var n = el('div', r[1]); n.setAttribute('data-role', r[0]); c.appendChild(n); });
     c.appendChild(el('div', 'setup-btns'));
     var ph = $('setupPhantom');
@@ -10639,6 +10646,21 @@
     setup.timer = setInterval(setupPlace, 300);
     window.addEventListener('resize', setupPlace);
     window.addEventListener('scroll', setupPlace, true);
+    document.addEventListener('keydown', setupEsc);
+  }
+
+  /* The card's X (and Esc while no sheet is open): the guide steps away for this wallet and stays away on reload. */
+  function setupClosedKey() { return LS.setupClosed + (wallet.account ? wallet.account.toLowerCase() : 'visitor'); }
+  function setupIsClosed() { return setup.closed || lsGet(setupClosedKey()) === '1'; }
+  function setupClose() {
+    if (!setup.on) return;
+    setup.closed = true;   /* this visit, whatever wallet comes next */
+    lsSet(setupClosedKey(), '1');
+    setupEnd(false);
+    toast('First steps closed. The ? How to trade button walks you through the page any time.', null, null, 7000);
+  }
+  function setupEsc(ev) {
+    if (ev.key === 'Escape' && setup.on && setup.card && !setup.card.hidden && !document.querySelector('dialog[open]')) setupClose();
   }
 
   /* finished: the first trade is in (the whole page comes back for good) */
@@ -10648,6 +10670,7 @@
     if (setup.timer) { clearInterval(setup.timer); setup.timer = null; }
     window.removeEventListener('resize', setupPlace);
     window.removeEventListener('scroll', setupPlace, true);
+    document.removeEventListener('keydown', setupEsc);
     if (setup.ph) { setup.ph.hidden = true; document.body.appendChild(setup.ph); }
     setupSwapHide();
     (setup.dims || []).concat([setup.ring, setup.card]).forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
