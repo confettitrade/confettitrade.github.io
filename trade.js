@@ -7203,23 +7203,76 @@
     }, EXT_POLL_MS);
   }
 
+  /* One wallet's events at a time: after Switch wallet the new one's, and anything the old one still says is ignored. */
   function subscribeWallet(eth) {
-    if (wallet.subscribed || typeof eth.on !== 'function') return;
-    wallet.subscribed = true;
-    eth.on('accountsChanged', function (accounts) {
-      if (!accounts || !accounts.length) { disconnect(); return; }
+    if (wallet.subscribed === eth || typeof eth.on !== 'function') return;
+    var prev = wallet.subscribed, h0 = wallet.handlers;
+    if (prev && h0 && typeof prev.removeListener === 'function') {
+      try { prev.removeListener('accountsChanged', h0.acc); prev.removeListener('chainChanged', h0.chain); prev.removeListener('disconnect', h0.gone); } catch (e) { /* the guard below covers it */ }
+    }
+    wallet.subscribed = eth;
+    var h = wallet.handlers = {
+      acc: function (accounts) {
+        if (wallet.eth !== eth) return;
+        if (!accounts || !accounts.length) { disconnect(); return; }
+        var next = window.ethers.getAddress(accounts[0]);
+        if (next === wallet.account) return;
+        wallet.account = next;
+        resetAccount();
+        toast('Account changed to ' + shortAddr(next));
+        onChainChanged();
+      },
+      chain: function (hex) {
+        if (wallet.eth !== eth) return;
+        wallet.chainId = parseInt(hex, 16);
+        onChainChanged();
+      },
+      gone: function () { if (wallet.eth === eth) disconnect(); }
+    };
+    eth.on('accountsChanged', h.acc);
+    eth.on('chainChanged', h.chain);
+    eth.on('disconnect', h.gone);
+  }
+
+  /* The wallet's own name: its EIP-6963 announcement, else the flag it sets. */
+  function walletName(eth) {
+    eth = eth || wallet.eth; if (!eth) return 'Wallet';
+    var hit = walletList().filter(function (d) { return d.provider === eth; })[0];
+    if (hit && hit.info && hit.info.name) return String(hit.info.name).slice(0, 40);
+    return eth.isPhantom ? 'Phantom' : eth.isRabby ? 'Rabby' : eth.isCoinbaseWallet ? 'Coinbase Wallet' : (eth.isOkxWallet || eth.isOKExWallet) ? 'OKX Wallet' : eth.isMetaMask ? 'MetaMask' : 'Wallet';
+  }
+
+  /* (2026-11-05, the owner: "it neeeds to say what wallet you are connected to and an option to close window "just
+     looking." or switch wallet because im stuck on this screen now") Switch wallet: with two or more wallets in this
+     browser the picker comes back (the pick is remembered); with one, its own account list where it has one
+     (wallet_requestPermissions), else where to change the account. */
+  function switchWallet() {
+    var list = walletList(), old = wallet.eth;
+    setup.connectNote = null;
+    if (list.length >= 2 || !old) {
+      return chooseWallet().then(function (eth) {
+        if (!eth) return;
+        if (eth !== old) {
+          wallet.account = null; wallet.signer = null; wallet.provider = null; wallet.chainId = null;
+          resetAccount();
+        }
+        wallet.leftByUser = false;
+        return connectWith(eth);
+      });
+    }
+    return old.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] }).then(function () {
+      return old.request({ method: 'eth_accounts', params: [] });
+    }).then(function (accounts) {
+      if (!accounts || !accounts.length) return;
       var next = window.ethers.getAddress(accounts[0]);
-      if (next === wallet.account) return;
-      wallet.account = next;
-      resetAccount();
-      toast('Account changed to ' + shortAddr(next));
-      onChainChanged();
+      if (next === wallet.account) { toast('Still ' + shortAddr(next) + '. To use another one, pick it in ' + walletName(old) + '.', null, null, 8000); return; }
+      wallet.account = next; resetAccount();
+      toast('Switched to ' + shortAddr(next));
+      return onChainChanged();
+    }).catch(function (e) {
+      if (isUserRejection(e)) return;
+      toast('Pick another account in ' + walletName(old) + ' itself: the page follows the account it shows.', null, null, 9000);
     });
-    eth.on('chainChanged', function (hex) {
-      wallet.chainId = parseInt(hex, 16);
-      onChainChanged();
-    });
-    eth.on('disconnect', function () { disconnect(); });
   }
 
   function onChainChanged() {
@@ -9302,6 +9355,8 @@
     });
     var amOut = $('amDisconnect');
     if (amOut) amOut.addEventListener('click', function () { closeDialog('acctModal'); disconnect(); });
+    var amSw = $('amSwitch');
+    if (amSw) amSw.addEventListener('click', function () { closeDialog('acctModal'); switchWallet(); });
     var sForm = $('sessionForm');
     if (sForm) {
       sForm.addEventListener('submit', function (ev) {
@@ -10526,6 +10581,18 @@
   var SETUP_WAIT_MS = 8000;   /* a slow history scan does not hold a new wallet back for ever */
 
   function setupKey() { return LS.setup + (wallet.account ? wallet.account.toLowerCase() : 'visitor'); }
+  /* which wallet the guide is reading: name and address, with Switch wallet */
+  function setupWho() {
+    var w = setup.card && setup.card.querySelector('[data-role="who"]'); if (!w) return;
+    w.hidden = !wallet.account;
+    if (!wallet.account) return;
+    var name = walletName(), addr = shortAddr(wallet.account), t = name + ' · ' + addr;
+    var s = w.querySelector('.setup-who-txt');
+    if (s && s.getAttribute('data-t') !== t) {   /* the address never breaks: a narrow card wraps after the name */
+      s.setAttribute('data-t', t); s.title = wallet.account; s.textContent = name + ' · ';
+      s.appendChild(el('span', 'setup-who-addr', addr));
+    }
+  }
   function setupTraded() {
     return !!(acct.positions.length || acct.marginInUse > 0 || acct.pending > 0 || hist.rows.length || pendingOpenList().length);
   }
@@ -10633,6 +10700,11 @@
     x.type = 'button'; x.title = 'Close'; x.setAttribute('aria-label', 'Close First steps');
     x.addEventListener('click', setupClose);
     c.appendChild(x);
+    var who = el('div', 'setup-who'); who.setAttribute('data-role', 'who'); who.hidden = true;
+    who.appendChild(el('span', 'setup-who-txt'));
+    var swb = el('button', 'btn btn-sm btn-ghost', 'Switch wallet'); swb.type = 'button'; swb.addEventListener('click', function () { switchWallet(); });
+    who.appendChild(swb);
+    c.appendChild(who);
     [['count', 'setup-count'], ['title', 'setup-title'], ['text', 'setup-text']].forEach(function (r) { var n = el('div', r[1]); n.setAttribute('data-role', r[0]); c.appendChild(n); });
     c.appendChild(el('div', 'setup-btns'));
     var ph = $('setupPhantom');
@@ -10699,6 +10771,7 @@
     setRole(setup.card, 'count', n < 0 ? 'Checking' : 'Step ' + (n + 1) + ' of ' + setupOrder().length);
     setRole(setup.card, 'title', step === 'wait' ? 'Checking what you have' : SETUP_TITLES[step]);
     setupButtons(step);
+    setupWho();
     if (setup.ph) {
       setup.ph.hidden = step === 'wait';
       var det = setup.ph.querySelector('details');
@@ -10782,6 +10855,7 @@
     } else if (step === 'trade') {
       add('Practice first', 'btn-sm', function () { location.href = PRACTICE_URL; });   /* a demo trade, open to close, pretend money */
     }
+    if (step !== 'connect') { row.appendChild(el('span', 'grow')); add('Just looking', 'btn-ghost btn-sm', setupClose); }   /* the X's way out, in words, on every step */
     row.hidden = !row.childNodes.length;
   }
 
@@ -10812,6 +10886,7 @@
     if (!setup.on || !setup.card) return;
     setupAutoOpen();
     if (setup.step === 'hype') setupSwapShow();   /* the wallet's USDC may land after the step shows: the lent card follows */
+    setupWho();
     var dlg = document.querySelector('dialog[open]');
     var inDep = !!(dlg && dlg.id === 'depositModal' && (setup.step === 'swap' || setup.step === 'deposit' || setup.step === 'hype'));
     renderDepSetup(inDep);

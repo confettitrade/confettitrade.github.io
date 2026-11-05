@@ -2172,7 +2172,13 @@ main > .notice { margin-bottom: var(--gap); }
 .setup-x { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; background: transparent; color: var(--ink-muted); font-size: 22px; line-height: 1; cursor: pointer; }
 .setup-x:hover { color: var(--ink); border-color: var(--rule-strong); background: var(--sunken); }
 .setup-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--ink); }
-.setup-card .setup-count, .setup-card .setup-title { padding-right: 30px; }
+.setup-card .setup-who, .setup-card .setup-count, .setup-card .setup-title { padding-right: 30px; }
+/* which wallet the guide reads, with Switch wallet (2026-11-05); clear of the X like the count line */
+.setup-who { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid var(--rule); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-muted); }
+.setup-who[hidden] { display: none; }
+.setup-who-txt { min-width: 0; line-height: 1.35; }
+.setup-who-addr { white-space: nowrap; }
+.setup-who .btn { flex: 0 0 auto; min-height: 30px; }
 .setup-note { display: block; margin-bottom: 8px; padding: 6px 8px; border-left: 3px solid var(--accent); background: var(--sunken); color: var(--ink); overflow-wrap: anywhere; }
 .setup-count { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .setup-title { margin: 2px 0 4px; font-size: var(--text-lg); font-weight: 700; }
@@ -2213,7 +2219,7 @@ dialog[data-setup] .dep-dim { opacity: 0.35; pointer-events: none; filter: blur(
   .setup-card { width: calc(100vw - 24px); padding: 12px; }
   .setup-btns .btn { min-height: 44px; }
   .setup-x { width: 44px; height: 44px; top: 0; right: 0; }
-  .setup-card .setup-count, .setup-card .setup-title { padding-right: 40px; }
+  .setup-card .setup-who, .setup-card .setup-count, .setup-card .setup-title { padding-right: 40px; }
 }
 
 
