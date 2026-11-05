@@ -10696,10 +10696,15 @@
     setup.ring = el('div', 'setup-ring'); setup.ring.hidden = true; document.body.appendChild(setup.ring);
     var c = el('div', 'setup-card');
     c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'First steps'); c.setAttribute('aria-live', 'polite');
-    var x = el('button', 'setup-x', '×');
-    x.type = 'button'; x.title = 'Close'; x.setAttribute('aria-label', 'Close First steps');
+    /* (the owner, 2026-11-05: "put the x to close the tutorial window heavily visible in the blurred area of the site")
+       the X is a big solid button of its own in a blurred corner (setupPlaceX), no longer a faint mark in the card */
+    var x = el('button', 'setup-x');
+    x.type = 'button'; x.title = 'Close (Esc)'; x.setAttribute('aria-label', 'Close First steps');
+    x.innerHTML = '<span class="setup-x-mark" aria-hidden="true"></span><span class="setup-x-label">Close</span>';
+    x.hidden = true;
     x.addEventListener('click', setupClose);
-    c.appendChild(x);
+    document.body.appendChild(x);
+    setup.x = x;
     var who = el('div', 'setup-who'); who.setAttribute('data-role', 'who'); who.hidden = true;
     who.appendChild(el('span', 'setup-who-txt'));
     var swb = el('button', 'btn btn-sm btn-ghost', 'Switch wallet'); swb.type = 'button'; swb.addEventListener('click', function () { switchWallet(); });
@@ -10721,7 +10726,7 @@
     document.addEventListener('keydown', setupEsc);
   }
 
-  /* The card's X (and Esc while no sheet is open): the guide steps away for this wallet and stays away on reload. */
+  /* The X (and Esc while no sheet is open): the guide steps away for this wallet and stays away on reload. */
   function setupClosedKey() { return LS.setupClosed + (wallet.account ? wallet.account.toLowerCase() : 'visitor'); }
   function setupIsClosed() { return setup.closed || lsGet(setupClosedKey()) === '1'; }
   function setupClose() {
@@ -10745,10 +10750,27 @@
     document.removeEventListener('keydown', setupEsc);
     if (setup.ph) { setup.ph.hidden = true; document.body.appendChild(setup.ph); }
     setupSwapHide();
-    (setup.dims || []).concat([setup.ring, setup.card]).forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
-    setup.dims = null; setup.ring = null; setup.card = null;
+    (setup.dims || []).concat([setup.ring, setup.card, setup.x]).forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+    setup.dims = null; setup.ring = null; setup.card = null; setup.x = null;
     renderDepSetup(false);
     if (finished) toast('First trade in. The whole page is yours now.', null, null, 6000);
+  }
+
+  /* The X sits in a blurred corner: the first corner clear of the lit box (with its step label) and the card. */
+  function setupPlaceX(box) {
+    var x = setup.x; if (!x) return;
+    x.hidden = false;
+    var vw = window.innerWidth, vh = window.innerHeight, m = vw <= 640 ? 10 : 18;
+    var w = x.offsetWidth, h = x.offsetHeight;
+    var cr = setup.card && !setup.card.hidden ? setup.card.getBoundingClientRect() : null;
+    function hits(l, t, r) { return r && l < r.right + 8 && l + w > r.left - 8 && t < r.bottom + 8 && t + h > r.top - 8; }
+    var spots = [[vw - w - m, m], [vw - w - m, vh - h - m], [m, m], [m, vh - h - m]];
+    var pick = spots[0];
+    for (var i = 0; i < spots.length; i++) {
+      if (!hits(spots[i][0], spots[i][1], box) && !hits(spots[i][0], spots[i][1], cr)) { pick = spots[i]; break; }
+    }
+    x.style.left = Math.round(pick[0]) + 'px';
+    x.style.top = Math.round(pick[1]) + 'px';
   }
 
   function setupFillList(list) {
@@ -10890,7 +10912,7 @@
     var dlg = document.querySelector('dialog[open]');
     var inDep = !!(dlg && dlg.id === 'depositModal' && (setup.step === 'swap' || setup.step === 'deposit' || setup.step === 'hype'));
     renderDepSetup(inDep);
-    if (dlg) { setup.card.hidden = true; setup.ring.hidden = true; setupDims(null); return; }   /* a sheet or picker is up: it carries the step */
+    if (dlg) { setup.card.hidden = true; setup.ring.hidden = true; if (setup.x) setup.x.hidden = true; setupDims(null); return; }   /* a sheet or picker is up: it carries the step */
     setRole(setup.card, 'text', '');
     setup.card.querySelector('[data-role="text"]').innerHTML = setupText();
     var vw = window.innerWidth, vh = window.innerHeight;
@@ -10905,6 +10927,7 @@
       setupDims(null);
       setup.card.style.left = Math.max(12, Math.round((vw - cw) / 2)) + 'px';
       setup.card.style.top = Math.max(12, Math.round((vh - ch) / 2)) + 'px';
+      setupPlaceX(null);
       return;
     }
     if (setup.scrolled !== setup.step && (r.top < 48 || r.bottom > vh - 8) && t.scrollIntoView) {
@@ -10936,6 +10959,7 @@
     if (left == null) left = clamp(Math.round((box.left + box.right) / 2 - cw / 2), 12, Math.max(12, vw - cw - 12));
     setup.card.style.left = Math.round(left) + 'px';
     setup.card.style.top = Math.round(top) + 'px';
+    setupPlaceX({ left: box.left - 4, top: box.top - (low ? 0 : 22), right: box.right + 4, bottom: box.bottom + (low ? 22 : 4) });
   }
 
   function setupFit(lv) {

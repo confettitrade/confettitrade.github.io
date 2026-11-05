@@ -2168,12 +2168,18 @@ main > .notice { margin-bottom: var(--gap); }
 .setup-ring[hidden] { display: none; }
 .setup-card { position: fixed; z-index: 90; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 12px 14px; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 6px 6px 0 var(--sunken); }
 .setup-card[hidden] { display: none; }
-/* (2026-11-05) the card's X, top right; the count line keeps clear of it */
-.setup-x { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; background: transparent; color: var(--ink-muted); font-size: 22px; line-height: 1; cursor: pointer; }
-.setup-x:hover { color: var(--ink); border-color: var(--rule-strong); background: var(--sunken); }
-.setup-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--ink); }
-.setup-card .setup-who, .setup-card .setup-count, .setup-card .setup-title { padding-right: 30px; }
-/* which wallet the guide reads, with Switch wallet (2026-11-05); clear of the X like the count line */
+/* (2026-11-05, the owner: "heavily visible in the blurred area") the X: a big solid button in a blurred corner, out of the card */
+.setup-x { position: fixed; z-index: 91; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 72px; height: 72px; padding: 0; border: 2px solid var(--page); background: var(--ink); color: var(--page); box-shadow: 0 0 0 3px var(--ink), 6px 6px 0 3px var(--accent); cursor: pointer; transition: transform 90ms ease, background 90ms ease; }
+.setup-x[hidden] { display: none; }
+.setup-x-mark { position: relative; width: 30px; height: 30px; }
+.setup-x-mark::before, .setup-x-mark::after { content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 5px; margin: -2.5px 0 0 -18px; background: currentColor; }
+.setup-x-mark::before { transform: rotate(45deg); }
+.setup-x-mark::after { transform: rotate(-45deg); }
+.setup-x-label { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1; }
+.setup-x:hover { background: var(--accent); transform: translate(-1px, -1px); }
+.setup-x:active { transform: translate(2px, 2px); box-shadow: 0 0 0 3px var(--ink), 2px 2px 0 3px var(--accent); }
+.setup-x:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+/* which wallet the guide reads, with Switch wallet (2026-11-05) */
 .setup-who { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid var(--rule); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-muted); }
 .setup-who[hidden] { display: none; }
 .setup-who-txt { min-width: 0; line-height: 1.35; }
@@ -2214,12 +2220,13 @@ main > .notice { margin-bottom: var(--gap); }
 dialog[data-setup] .dep-dim { opacity: 0.35; pointer-events: none; filter: blur(1px); }
 /* Add USDC's Apple Pay panel kept showing under the deposit form: .panel-body's display beat its hidden attribute (seen 2026-11-02 while lighting the deposit step) */
 #depFromCard[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { .setup-ring { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .setup-ring, .setup-x { transition: none; } }
 @media (max-width: 640px) {
   .setup-card { width: calc(100vw - 24px); padding: 12px; }
   .setup-btns .btn { min-height: 44px; }
-  .setup-x { width: 44px; height: 44px; top: 0; right: 0; }
-  .setup-card .setup-who, .setup-card .setup-count, .setup-card .setup-title { padding-right: 40px; }
+  .setup-x { width: 60px; height: 60px; }
+  .setup-x-mark { width: 26px; height: 26px; }
+  .setup-x-mark::before, .setup-x-mark::after { width: 30px; height: 4px; margin: -2px 0 0 -15px; }
 }
 
 
