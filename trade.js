@@ -7085,6 +7085,7 @@
   }
 
   function connect() {
+    wallet.leftByUser = false;
     return chooseWallet().then(function (eth) {
       if (eth) return connectWith(eth);
       if (!walletList().length && !window.ethereum) openWalletApps();
@@ -7125,6 +7126,31 @@
         return onChainChanged();
       });
     }).catch(function () { /* stay disconnected */ }).then(function () { tour.autoTried = true; setupRender(); });
+  }
+
+  /* (2026-11-04, the owner: MetaMask connected but First steps stayed on "Connect your wallet") A wallet approved from
+     its own window, not this page's button, tells the page nothing until a reload. While no wallet is connected, ask
+     every 3 s whether this site is now authorised and pick the account up as the silent reconnect does. Not after the
+     page's own Disconnect: that stays until the next Connect. */
+  var EXT_POLL_MS = 3000, extPoll = null, extBusy = false;
+  function watchExternalConnect() {
+    if (extPoll) return;
+    extPoll = setInterval(function () {
+      if (wallet.account || wallet.leftByUser || extBusy || document.hidden) return;
+      var eth = getInjected(), E = window.ethers;
+      if (!eth || !E) return;
+      extBusy = true;
+      eth.request({ method: 'eth_accounts' }).then(function (accounts) {
+        if (wallet.account || wallet.leftByUser || !accounts || !accounts.length) return;
+        wallet.eth = eth;
+        wallet.account = E.getAddress(accounts[0]);
+        return eth.request({ method: 'eth_chainId' }).then(function (hex) {
+          wallet.chainId = parseInt(hex, 16);
+          subscribeWallet(eth);
+          return onChainChanged();
+        });
+      }).catch(function () { /* still disconnected */ }).then(function () { extBusy = false; });
+    }, EXT_POLL_MS);
   }
 
   function subscribeWallet(eth) {
@@ -7217,6 +7243,7 @@
 
   function disconnect() {
     wallet.account = null; wallet.signer = null; wallet.provider = null; wallet.chainId = null;
+    wallet.leftByUser = true;   /* the external-connect watch leaves the page disconnected until the next Connect */
     resetAccount();
     renderWallet(); renderAction(); renderStatus();
     toast('Disconnected from this page. Your wallet may still list the site as connected.');
@@ -11524,6 +11551,7 @@
         setInterval(syncHeads, 1000);
         setInterval(function () { if (!document.hidden) loadInstruments(); }, INSTRUMENTS_EVERY_MS);
         setTimeout(tryAutoConnect, 50);
+        setTimeout(watchExternalConnect, EXT_POLL_MS);
       });
     }
     /* the first-trade tour: once the silent reconnect has had its chance, for a visitor or a
