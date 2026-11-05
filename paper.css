@@ -3718,6 +3718,12 @@ dialog[data-setup] .dep-dim { opacity: 0.35; pointer-events: none; filter: blur(
 .ticket-demo:hover { color: var(--ink); }
 .ticket-demo[hidden] { display: none; }
 .dep-swap { display: flex; flex-direction: column; gap: 8px; }
+.dep-swap .label { margin: 4px 0 -2px; }
+/* Bring ETH: the wallet's ETH on the sending chain and a Max (2026-11-05) */
+.br-bal { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; margin-top: 6px; }
+.br-bal .hint { margin: 0; }
+.br-bal .btn { flex: 0 0 auto; }
+.br-bal .btn[hidden] { display: none; }
 .dep-swap[hidden] { display: none; }
 .empty-demo { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .empty-demo[hidden] { display: none; }

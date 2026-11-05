@@ -7181,6 +7181,7 @@
 
   function onChainChanged() {
     var E = window.ethers;
+    if (typeof brRefreshBal === 'function') try { brRefreshBal(); } catch (e) { /* the bridge card never blocks */ }
     if (wallet.eth && wallet.account) {
       wallet.provider = new E.BrowserProvider(wallet.eth);
       return wallet.provider.getSigner().then(function (s) {
@@ -9001,9 +9002,36 @@
      wallet with under the minimum trade in USDC and some HYPE sees what the whole stack buys, less 0.03 HYPE
      kept for gas (the approve, the deposit, a trade or two), and one button that swaps it on the V3 pool: the
      Swap card's own quote, tolerance and send (swV3Quote / swMinOut / swSend). After the swap the sheet
-     fills the amount with the new USDC, so the next tap is the deposit. A custom amount is the card's job. */
+     fills the amount with the new USDC, so the next tap is the deposit. (2026-11-05, the owner: "you only allow the
+     user to use the max amount they can from their wallet. it needs to be a fill in amount", then "it just has to be
+     that max can be a choice but people fill in the amount") The amount is a box the trader fills in; Max fills the
+     most this wallet can swap (0.03 HYPE stays for gas). */
   var DEP_SWAP_RESERVE_WEI = 30000000000000000n;
-  var depSwap = { quote: null, busy: false, seq: 0, hypeWei: null };
+  var depSwap = { quote: null, busy: false, seq: 0, hypeWei: null, amtKey: null, timer: null };
+  /* a wei amount as a number for an input box, cut (never rounded up) to 6 decimals */
+  function weiDown(wei) {
+    var s = window.ethers.formatUnits(wei, 18), i = s.indexOf('.');
+    return i < 0 ? s : s.slice(0, i + 7).replace(/\.?0+$/, '');
+  }
+  function depSwapMaxWei() { return ui.hypeWei != null && ui.hypeWei > DEP_SWAP_RESERVE_WEI ? ui.hypeWei - DEP_SWAP_RESERVE_WEI : 0n; }
+  /* what the box asks for: the amount filled in, or why there is no swap yet */
+  function depSwapWanted() {
+    var inp = $('depSwapAmt'), max = depSwapMaxWei();
+    var raw = inp ? String(inp.value || '').trim() : '';
+    if (!raw || !(Number(raw) > 0)) return { wei: 0n, why: 'Type how much HYPE to swap, or tap Max for the most (0.03 HYPE stays for gas).' };
+    var wei;
+    try { wei = window.ethers.parseUnits(raw, 18); } catch (e) { return { wei: 0n, why: 'Type the amount as a number, like 0.5.' }; }
+    if (wei > max) return { wei: 0n, why: 'This wallet can swap up to ' + weiDown(max) + ' HYPE: 0.03 HYPE stays for gas.' };
+    return { wei: wei };
+  }
+  function depSwapSay(amountIn, out) {
+    var buys = Number(window.ethers.formatUnits(swNet(out), 6));
+    var keep = ui.hypeWei != null && ui.hypeWei > amountIn ? ui.hypeWei - amountIn : 0n;
+    var under = buys + acct.walletUsdc < minMargin();
+    return swFmt(amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap' + (swFeeBips() ? ', Confetti fee ' + (swFeeBips() / 100) + '% included' : '') + '; '
+      + swFmt(keep, 18) + ' HYPE stays in the wallet' + (keep <= DEP_SWAP_RESERVE_WEI + DEP_SWAP_RESERVE_WEI / 10n ? ' for gas.' : '.')
+      + (under ? ' That is under the ' + fmtUsdShort(minMargin()) + ' minimum for a trade: swap a little more, or add USDC too.' : ' One confirm in your wallet, then deposit it.');
+  }
   function depSwapShow() {
     if (!(wallet.account && (!DEMO || demoOpt('swap') === '1') && window.ethers && swReady() && swRoute('HYPE', 'USDC') && ui.hypeWei != null && acct.walletUsdc < minMargin())) return false;
     var worth = swHypeWorth(ui.hypeWei);
@@ -9024,28 +9052,23 @@
     var box = $('depSwap'); if (!box) return;
     var show = depSwapShow();
     box.hidden = !show;
-    if (!show) { depSwap.quote = null; depSwap.hypeWei = null; return; }
-    if (depSwap.busy || (depSwap.hypeWei === ui.hypeWei && depSwap.quote && Date.now() - (depSwap.quote.at || 0) < SW_QUOTE_FRESH_MS)) { depSwapRenderGo(); return; }   // same stack, a quote still fresh
-    var T = swTokens(), route = swRoute('HYPE', 'USDC'), amountIn = ui.hypeWei - DEP_SWAP_RESERVE_WEI;
-    depSwap.hypeWei = ui.hypeWei; depSwap.quote = null; depSwapRenderGo();
+    if (!show) { depSwap.quote = null; depSwap.hypeWei = null; depSwap.amtKey = null; return; }
+    var want = depSwapWanted(), amountIn = want.wei, key = String(amountIn);
+    if (depSwap.busy || (depSwap.hypeWei === ui.hypeWei && depSwap.amtKey === key && (want.why || (depSwap.quote && Date.now() - (depSwap.quote.at || 0) < SW_QUOTE_FRESH_MS)))) { depSwapRenderGo(); return; }   // same stack and amount, a quote still fresh
+    var T = swTokens(), route = swRoute('HYPE', 'USDC');
+    depSwap.hypeWei = ui.hypeWei; depSwap.amtKey = key; depSwap.quote = null; depSwapRenderGo();
     setText('depSwapText', 'Trades are in USDC, not HYPE. This wallet has ' + (Number(ui.hypeWei) / 1e18).toFixed(2) + ' HYPE and '
       + (acct.walletUsdc >= 0.01 ? fmtUsd(acct.walletUsdc) + ' USDC, under the ' + fmtUsdShort(minMargin()) + ' minimum.' : 'no USDC.'));
+    if (want.why) { setText('depSwapHint', want.why); return; }
     setText('depSwapHint', 'Getting a quote…');
     var seq = ++depSwap.seq;
     swV3Quote(route, T.HYPE.addr, amountIn).then(function (r) {
       if (seq !== depSwap.seq) return;
       var minOut = r.out > 0n ? swMinOut(r.out, 1, r.impact) : null;
-      if (minOut == null) { setText('depSwapHint', 'That much moves the pool too far for one tap. Use the Swap card with a smaller amount.'); depSwapRenderGo(); return; }
+      if (minOut == null) { setText('depSwapHint', 'That much moves the pool too far for one swap. Try a smaller amount.'); depSwapRenderGo(); return; }
       swNoteHypeUsd(amountIn, r.out);
-      var buys = Number(window.ethers.formatUnits(swNet(r.out), 6));
-      if (buys + acct.walletUsdc < minMargin()) {
-        /* the gate uses the same price, so this is rare: a stack that just dipped under the minimum */
-        depSwap.quote = null;
-        setText('depSwapHint', 'That buys about ' + fmtUsd(buys) + ': under the ' + fmtUsdShort(minMargin()) + ' minimum for a trade. Add USDC, or a little more HYPE.');
-        depSwapRenderGo(); renderAction(); return;
-      }
       depSwap.quote = { route: route, amountIn: amountIn, out: r.out, minOut: minOut, impact: r.impact, at: Date.now(), slip: 1 };
-      setText('depSwapHint', swFmt(amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap' + (swFeeBips() ? ', Confetti fee ' + (swFeeBips() / 100) + '% included' : '') + '; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
+      setText('depSwapHint', depSwapSay(amountIn, r.out));
       depSwapRenderGo();
     }).catch(function () {
       if (seq !== depSwap.seq) return;
@@ -9069,8 +9092,7 @@
       if (fq.fresh) {
         /* the fresh quote goes on the button first; a worse one waits for a second tap on the new number */
         depSwap.quote = fq; swNoteHypeUsd(fq.amountIn, fq.out);
-        var buys = Number(window.ethers.formatUnits(swNet(fq.out), 6));
-        setText('depSwapHint', swFmt(fq.amountIn, 18) + ' HYPE buys about ' + fmtUsd(buys) + ' on HyperSwap' + (swFeeBips() ? ', Confetti fee ' + (swFeeBips() / 100) + '% included' : '') + '; 0.03 HYPE stays for gas. One confirm in your wallet, then deposit it.');
+        setText('depSwapHint', depSwapSay(fq.amountIn, fq.out));
         if (fq.worse) { depSwap.busy = false; depSwapRenderGo(); setText('depSwapHint', 'The price moved: the button shows the new amount. Tap it again to swap at that.'); throw SW_STOP; }
       }
       q = fq; desc = 'Swap ' + swFmt(q.amountIn, 18) + ' HYPE for USDC';
@@ -9078,7 +9100,8 @@
       return swSend(q, T.HYPE, T.USDC, desc);
     }).then(function (rc) {
       toast(desc + ': done.', 'ok', txLink(rc.hash));
-      depSwap.quote = null; depSwap.hypeWei = null;
+      depSwap.quote = null; depSwap.hypeWei = null; depSwap.amtKey = null;
+      var dsa = $('depSwapAmt'); if (dsa) dsa.value = '';
       return swAfterLanded(prevHype);
     }).then(function () {
       var inp = $('depositAmount'), hint = $('depositHint');
@@ -9166,6 +9189,10 @@
       });
       $('depositAmount').addEventListener('input', function () { $('depositHint').classList.remove('is-err'); renderDepositSubmit(); });
       var dsg = $('depSwapGo'); if (dsg) dsg.addEventListener('click', depSwapGo);
+      var dsa = $('depSwapAmt');
+      if (dsa) dsa.addEventListener('input', function () { clearTimeout(depSwap.timer); depSwap.timer = setTimeout(renderDepSwap, 400); });
+      var dsm = $('depSwapMax');
+      if (dsm) dsm.addEventListener('click', function () { var i = $('depSwapAmt'), m = depSwapMaxWei(); if (i) i.value = m > 0n ? weiDown(m) : ''; renderDepSwap(); });
       var where = $('depWhere');
       if (where) where.addEventListener('click', function (ev) {
         var b = ev.target && ev.target.closest ? ev.target.closest('[data-where]') : null;
@@ -10630,7 +10657,7 @@
       if (f.state === 'slow') return 'Taking longer than usual. deBridge still has the order; it fills or the ETH comes back to the wallet it left. Keep this page open, or check the order at app.debridge.finance with your wallet address.';
       return 'Sent on ' + where + '. deBridge is filling the order: about <b>' + (f.out ? brFmtHype(f.out) : '—') + ' HYPE</b> lands in this wallet on HyperEVM in a minute or two. Switch ' + (setupOrder() === SETUP_ORDER_ETH ? 'to' : 'back to') + ' HyperEVM whenever you like; the page keeps watching.';
     }
-    if (s === 'swap') return 'Trades are in USDC, not HYPE. ' + have + ' Add USDC swaps your HYPE for USDC in one tap on HyperSwap and keeps 0.03 HYPE for gas.';
+    if (s === 'swap') return 'Trades are in USDC, not HYPE. ' + have + ' Add USDC swaps HYPE for USDC on HyperSwap: type how much, or tap Max for the most (0.03 HYPE stays for gas).';
     if (s === 'deposit') return 'You have <b>' + fmtUsd(usdc) + ' USDC</b> in this wallet' + (acct.available > 0 ? ' and <b>' + fmtUsd(acct.available) + '</b> on Confetti' : '') + '. Deposit at least ' + fmtUsdShort(minMargin()) + ' onto the exchange. The first time is two confirms: approve USDC, then deposit.';
     if (s === 'trade') {
       if (isSheetMode() && !ui.sheet) return 'Your balance is <b>' + fmtUsd(acct.available) + '</b>. Tap BUY / LONG if you think the price goes up, SELL / SHORT if it goes down, then pick an amount and leverage.';
@@ -10641,7 +10668,7 @@
   /* the line inside Add USDC while a step runs there */
   function setupStripText() {
     var s = setup.step;
-    if (s === 'swap') return 'One tap swaps your HYPE for USDC on HyperSwap; 0.03 HYPE stays for gas. One confirm in your wallet, then the sheet fills the amount for the deposit.';
+    if (s === 'swap') return 'Swap HYPE for USDC on HyperSwap: type how much, or tap Max for the most (0.03 HYPE stays for gas). One confirm in your wallet, then the sheet fills the amount for the deposit.';
     if (s === 'deposit') return 'Enter an amount (Max is fine) and tap Deposit. The first time is two confirms in your wallet: approve exactly that much USDC, then deposit it.';
     if (s === 'hype') return 'Apple Pay sends HYPE to this wallet in a few minutes; the sheet then turns it into USDC in one tap. Or send USDC from Hyperliquid to your deposit address.';
     return '';
@@ -11022,7 +11049,44 @@
   var BR_CHAINS = { 42161: { name: 'Arbitrum', hex: '0xa4b1' }, 1: { name: 'Ethereum', hex: '0x1' }, 8453: { name: 'Base', hex: '0x2105' } };
   var BR_DST = 100000022;          // HyperEVM inside deBridge
   var BR_QUOTE_FRESH_MS = 20000;
-  var br = { chain: 42161, quote: null, busy: false, seq: 0, timer: null, inflight: null, poll: null, status: '' };
+  var br = { chain: 42161, quote: null, busy: false, seq: 0, timer: null, inflight: null, poll: null, status: '', balWei: null };
+  /* (2026-11-05, the owner: "it needs to be a fill in amount", "max can be a choice but people fill in the amount")
+     the box takes any amount the trader types; when the wallet sits on the
+     chain it sends from, the card shows its ETH there and a Max that leaves the network fee: 0.003 ETH on Ethereum,
+     0.0003 on Arbitrum and Base */
+  function brGasKeep(chain) { return chain === 1 ? 3000000000000000n : 300000000000000n; }
+  function brRefreshBal() {
+    var eth = wallet.eth, a = wallet.account, c = br.chain;
+    if (!eth || !a || wallet.chainId !== c) { br.balWei = null; brRenderBal(); return; }
+    eth.request({ method: 'eth_getBalance', params: [a, 'latest'] }).then(function (hex) {
+      if (wallet.account !== a || br.chain !== c || wallet.chainId !== c) return;
+      br.balWei = BigInt(hex); brRenderBal(); brRenderGo();
+    }).catch(function () { /* the wallet would not say: no Max, the box still works */ });
+  }
+  function brRenderBal() {
+    var t = $('brBal'), m = $('brMax'); if (!t || !m) return;
+    var on = br.balWei != null;
+    t.textContent = on ? 'In your wallet on ' + BR_CHAINS[br.chain].name + ': ' + brFmtEth(br.balWei) + ' ETH' : '';
+    m.hidden = !on || br.balWei <= brGasKeep(br.chain);
+  }
+  /* Max: the most this wallet can send with deBridge's fee and the network fee covered: a first guess, one quote, then
+     the guess moved by what that quote's total missed the room by (deBridge's fee here is a fixed amount on top, so
+     one correction lands; a fiftieth of the miss and a hair stay back for a fee that moves) */
+  function brMax() {
+    if (br.balWei == null || br.busy || br.inflight) return;
+    var room = br.balWei - brGasKeep(br.chain), inp = $('brPay');
+    if (room <= 0n || !inp) return;
+    var guess = room * 96n / 100n, seq = ++br.seq;
+    br.quote = null; brRenderGo();
+    setText('brQuote', 'Working out the most you can send…');
+    brQuote(guess, wallet.account).then(function (q) {
+      if (seq !== br.seq) return;
+      var miss = room - q.value, amt = guess + miss - (miss < 0n ? -miss : miss) / 50n - 1000000000000n;
+      if (amt <= 0n) { setText('brQuote', 'Not enough ETH here to cover the fees.'); return; }
+      inp.value = weiDown(amt);
+      brQuoteNow();
+    }).catch(function () { if (seq === br.seq) setText('brQuote', 'No quote right now: try again in a moment.'); });
+  }
 
   function feeCfg() {
     var f = (cfg && cfg.fees) || {};
@@ -11084,13 +11148,15 @@
   }
   function brRenderGo() {
     var b = $('brGo'); if (!b) return;
+    var short = !!(br.quote && br.balWei != null && br.quote.value > br.balWei);   /* more than the wallet holds, with the fee */
     var label = !wallet.account ? 'Connect wallet'
       : br.busy ? (br.status || 'Check your wallet…')
       : br.inflight ? 'On its way…'
       : !br.quote ? 'Bring ETH'
+      : short ? 'Not enough ETH on ' + BR_CHAINS[br.chain].name
       : 'Bring ' + brFmtEth(br.quote.amountWei) + ' ETH';
     b.textContent = label;
-    b.disabled = !!(wallet.account && (br.busy || br.inflight || !br.quote));
+    b.disabled = !!(wallet.account && (br.busy || br.inflight || !br.quote || short));
   }
   function brSwitchTo(id) {
     var eth = wallet.eth; if (!eth) return Promise.reject(new Error('No wallet.'));
@@ -11162,12 +11228,14 @@
     if (br.busy || br.inflight || !BR_CHAINS[wallet.chainId] || br.chain === wallet.chainId) return;
     br.chain = wallet.chainId;
     var sel = $('brChain'); if (sel) sel.value = String(br.chain);
+    brRefreshBal();
     brQuoteNow();
   }
   function initBridge() {
     var card = $('bridgeCard'); if (!card) return;
     var sel = $('brChain');
-    if (sel) sel.addEventListener('change', function () { br.chain = Number(sel.value) || 42161; brQuoteNow(); });
+    if (sel) sel.addEventListener('change', function () { br.chain = Number(sel.value) || 42161; brRefreshBal(); brQuoteNow(); });
+    var mx = $('brMax'); if (mx) mx.addEventListener('click', brMax);
     $('brPay').addEventListener('input', function () { clearTimeout(br.timer); br.timer = setTimeout(brQuoteNow, 400); });
     $('brGo').addEventListener('click', brGo);
     brRenderTerms(null); brRenderGo();
@@ -11490,6 +11558,7 @@
        or leaves between connects used to go unnoticed: the banner stayed, Max filled the old number) */
     if ((dm && dm.open) || depSwapShow() || depSwapSmall() || (setup.on && (setup.step === 'hype' || setup.step === 'bridge'))) { refreshWalletUsdc(); if (typeof swRefreshBalances === 'function') swRefreshBalances(); }
     if (keeper && Date.now() - keeperAt >= KEEPER_EVERY_MS) { keeperAt = Date.now(); keeper.refresh().then(renderStatus); }
+    if (brOn() && wallet.account && !br.busy) brRefreshBal();   /* the Bring ETH card's balance line and Max */
   }
 
   function onVisibility() {

@@ -13,14 +13,14 @@
   <link rel="manifest" href="site.webmanifest">
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
-  <link rel="stylesheet" href="paper.css?v=steps1">
+  <link rel="stylesheet" href="paper.css?v=amt1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
   </script>
   <style>
-    /* Page-specific rules only. Tokens and components come from paper.css?v=steps1. */
+    /* Page-specific rules only. Tokens and components come from paper.css?v=amt1. */
     .trade-main { padding-top: var(--gap); padding-bottom: 32px; }
 
     /* The lowered-leverage box over OPEN (fitLeverage / renderLevFit): what changed, why, and YES */
@@ -993,6 +993,7 @@
               <input class="input" id="brPay" type="number" min="0" step="any" inputmode="decimal" placeholder="0.0" aria-label="ETH to send">
               <span class="unit">ETH</span>
             </div>
+          <div class="br-bal"><span class="hint" id="brBal" aria-live="polite"></span><button class="btn btn-sm" type="button" id="brMax" hidden>Max</button></div>
           </div>
           <div class="field">
             <div class="field-head"><span class="label">You get</span><span class="field-bal">on HyperEVM, in this wallet</span></div>
@@ -1217,6 +1218,12 @@
       <div class="panel-body stack" id="depFromWallet">
         <div class="notice dep-swap" id="depSwap" hidden>
           <div id="depSwapText">Trades are in USDC, not HYPE.</div>
+          <label class="label" for="depSwapAmt">HYPE to swap</label>
+          <div class="input-group">
+            <input class="input" id="depSwapAmt" type="number" min="0" step="any" inputmode="decimal" placeholder="0.0">
+            <span class="unit">HYPE</span>
+          </div>
+          <div class="quick"><button class="btn" type="button" id="depSwapMax">Max</button></div>
           <button class="btn btn-primary btn-block" type="button" id="depSwapGo" disabled>Swap HYPE for USDC</button>
           <div class="hint" id="depSwapHint" aria-live="polite"></div>
         </div>
@@ -1418,7 +1425,7 @@
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
   <script src="settle.js?v=pnl1" defer></script>
-  <script src="trade.js?v=walk1" defer></script>
+  <script src="trade.js?v=amt1" defer></script>
   <script src="points.js?v=phone2" defer></script>
 </body>
 </html>
