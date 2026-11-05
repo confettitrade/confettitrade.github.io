@@ -835,10 +835,10 @@
   function connectWith(eth) {
     var E = window.ethers;
     wallet.eth = eth;
-    return eth.request({ method: 'eth_requestAccounts' }).then(function (accounts) {
+    return eth.request({ method: 'eth_requestAccounts', params: [] }).then(function (accounts) {
       if (!accounts || !accounts.length) throw new Error('No account returned by the wallet.');
       wallet.account = E.getAddress(accounts[0]);
-      return eth.request({ method: 'eth_chainId' });
+      return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
       subscribeWallet(eth);
@@ -855,11 +855,11 @@
     var E = window.ethers;
     var eth = getInjected();
     if (!eth || !E) return;
-    eth.request({ method: 'eth_accounts' }).then(function (accounts) {
+    eth.request({ method: 'eth_accounts', params: [] }).then(function (accounts) {
       if (!accounts || !accounts.length) return;
       wallet.eth = eth;
       wallet.account = E.getAddress(accounts[0]);
-      return eth.request({ method: 'eth_chainId' }).then(function (hex) {
+      return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) {
         wallet.chainId = parseInt(hex, 16);
         subscribeWallet(eth);
         return onWallet();
@@ -907,7 +907,7 @@
         }]
       });
     }).then(function () {
-      return eth.request({ method: 'eth_chainId' });
+      return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
       if (wallet.chainId !== CHAIN_ID) throw new Error('Wallet is still on chain ' + wallet.chainId + '.');

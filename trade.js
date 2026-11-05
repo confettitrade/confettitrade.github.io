@@ -7114,9 +7114,9 @@
   }
   /* Phantom's first answer after its background has been asleep can be this same -32603: ask once more before saying anything */
   function requestAccountsOnce(eth) {
-    return eth.request({ method: 'eth_requestAccounts' }).catch(function (e) {
+    return eth.request({ method: 'eth_requestAccounts', params: [] }).catch(function (e) {
       if (connectErrCode(e) !== -32603) throw e;
-      return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return eth.request({ method: 'eth_requestAccounts' }); });
+      return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return eth.request({ method: 'eth_requestAccounts', params: [] }); });
     });
   }
 
@@ -7136,7 +7136,7 @@
       if (!accounts || !accounts.length) throw new Error('No account returned by the wallet.');
       wallet.account = E.getAddress(accounts[0]);
       connected = true; setup.connectNote = null;
-      return eth.request({ method: 'eth_chainId' });
+      return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
       subscribeWallet(eth);
@@ -7166,11 +7166,11 @@
     var E = window.ethers;
     var eth = getInjected();
     if (!eth || !E) { tour.autoTried = true; setupRender(); return; }
-    eth.request({ method: 'eth_accounts' }).then(function (accounts) {
+    eth.request({ method: 'eth_accounts', params: [] }).then(function (accounts) {
       if (!accounts || !accounts.length) return;
       wallet.eth = eth;
       wallet.account = E.getAddress(accounts[0]);
-      return eth.request({ method: 'eth_chainId' }).then(function (hex) {
+      return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) {
         wallet.chainId = parseInt(hex, 16);
         subscribeWallet(eth);
         return onChainChanged();
@@ -7190,11 +7190,11 @@
       var eth = getInjected(), E = window.ethers;
       if (!eth || !E) return;
       extBusy = true;
-      eth.request({ method: 'eth_accounts' }).then(function (accounts) {
+      eth.request({ method: 'eth_accounts', params: [] }).then(function (accounts) {
         if (wallet.account || wallet.leftByUser || !accounts || !accounts.length) return;
         wallet.eth = eth;
         wallet.account = E.getAddress(accounts[0]);
-        return eth.request({ method: 'eth_chainId' }).then(function (hex) {
+        return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) {
           wallet.chainId = parseInt(hex, 16);
           subscribeWallet(eth);
           return onChainChanged();
@@ -7255,7 +7255,7 @@
       var code = null;
       walkError(err, function (x) { if (x && x.code === 4100) { code = 4100; return true; } return false; });
       if (code !== 4100) throw err;
-      return eth.request({ method: 'eth_requestAccounts' }).then(function (accounts) {
+      return eth.request({ method: 'eth_requestAccounts', params: [] }).then(function (accounts) {
         if (accounts && accounts.length) {
           var next = window.ethers.getAddress(accounts[0]);
           if (next !== wallet.account) { wallet.account = next; resetAccount(); }
@@ -7283,7 +7283,7 @@
         }]
       });
     }).then(function () {
-      return eth.request({ method: 'eth_chainId' });
+      return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
       if (wallet.chainId !== CHAIN_ID) throw new Error('Your wallet is still on ' + chainName(wallet.chainId) + '.');
@@ -11247,7 +11247,7 @@
     var eth = wallet.eth; if (!eth) return Promise.reject(new Error('No wallet.'));
     if (wallet.chainId === id) return Promise.resolve();
     return eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: BR_CHAINS[id].hex }] }).then(function () {
-      return eth.request({ method: 'eth_chainId' });
+      return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) { wallet.chainId = parseInt(hex, 16); if (wallet.chainId !== id) throw new Error('The wallet is still on ' + chainName(wallet.chainId) + '.'); });
   }
   function brGo() {

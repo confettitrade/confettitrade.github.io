@@ -686,7 +686,7 @@
   function pollAccount() {
     var eth = injected();
     if (!eth || typeof eth.request !== 'function') return;
-    eth.request({ method: 'eth_accounts' }).then(function (acc) {
+    eth.request({ method: 'eth_accounts', params: [] }).then(function (acc) {
       setMe(acc && acc[0] ? acc[0] : '');
     }).catch(function () { /* stay as is */ });
   }
@@ -901,7 +901,7 @@
         chainId: CHAIN_HEX, chainName: c.chainName || 'HyperEVM', rpcUrls: ['https://rpc.hyperliquid.xyz/evm'], /* the official RPC in the wallet prompt */
         nativeCurrency: c.nativeCurrency || { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
         blockExplorerUrls: c.explorerUrl ? [c.explorerUrl] : [] }] });
-    }).then(function () { return eth.request({ method: 'eth_chainId' }); }).then(function (hex) {
+    }).then(function () { return eth.request({ method: 'eth_chainId', params: [] }); }).then(function (hex) {
       if (parseInt(hex, 16) !== 999) throw new Error('Switch the wallet to HyperEVM (999) first.');
     });
   }
@@ -919,10 +919,10 @@
     var eth = injected();
     if (!eth || typeof eth.request !== 'function') return Promise.reject(new Error('No wallet found. Open this page in a wallet browser or install a wallet extension.'));
     var from;
-    return eth.request({ method: 'eth_requestAccounts' }).then(function (acc) {
+    return eth.request({ method: 'eth_requestAccounts', params: [] }).then(function (acc) {
       if (!acc || !acc[0]) throw new Error('No account returned by the wallet.');
       from = acc[0];
-      return eth.request({ method: 'eth_chainId' });
+      return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) {
       if (parseInt(hex, 16) !== 999) return switchChainStandalone(eth);
     }).then(function () { return { request: function (r) { return eth.request(r); }, from: from }; });
