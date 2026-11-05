@@ -7104,7 +7104,14 @@
       subscribeWallet(eth);
       return onChainChanged();
     }).then(function () {
-      if (wallet.chainId !== CHAIN_ID) return switchChain().then(function () { return onChainChanged(); }).catch(switchFailed);
+      if (wallet.chainId === CHAIN_ID) return;
+      /* While First steps runs for this wallet it picks the moment to switch: a wallet with nothing on HyperEVM brings
+         its ETH over first from the chain it is on, so Connect must not pull it to HyperEVM (the 2026-11-05 walk: it
+         did, and Bring ETH then had to switch it back); a wallet that does need the switch gets the same prompt the
+         moment the guide says so (setupShow) */
+      var st = null; try { st = setupStepNow(); } catch (e) { /* no guide */ }
+      if (st) { setup.autoSwitch = wallet.account; setupRender(); return; }
+      return switchChain().then(function () { return onChainChanged(); }).catch(switchFailed);
     }).catch(function (e) {
       toast(describeError(e), 'err');
       renderWallet(); renderAction();
@@ -10417,7 +10424,7 @@
      clears itself when the wallet shows it: there is no Next. Shown until the wallet's first trade, then never
      again for that wallet (LS.setup); a wallet with any trade in its history never sees it. The "? How to trade"
      tour no longer starts by itself; it replays from its button. */
-  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null, ethFirst: null };
+  var setup = { on: false, step: null, dims: null, ring: null, card: null, ph: null, timer: null, scrolled: null, opened: null, away: false, waitSince: 0, phSet: false, swapHome: null, ethFirst: null, autoSwitch: null, aside: false };
   var SETUP_ORDER = ['connect', 'chain', 'hype', 'swap', 'deposit', 'trade'];
   /* a wallet with nothing on HyperEVM brings its ETH over first, from the chain it is already on, and switches to
      HyperEVM once, after the HYPE lands (the owner, 2026-11-04: "shouldnt it be bridge eth then connect to hyperevm?";
@@ -10429,8 +10436,11 @@
 
   function setupKey() { return LS.setup + (wallet.account ? wallet.account.toLowerCase() : 'visitor'); }
   function setupTraded() {
-    return !!(acct.positions.length || acct.marginInUse > 0 || acct.pending > 0 || hist.rows.length || pendingOpenList().length || (typeof quick === 'object' && quick && quick.list && quick.list.length));
+    return !!(acct.positions.length || acct.marginInUse > 0 || acct.pending > 0 || hist.rows.length || pendingOpenList().length);
   }
+  /* a first trade tapped and on its way: not done yet (the 2026-11-05 walk: a first open the chain refused had
+     already marked the guide finished, so it never came back) */
+  function setupInFlight() { return !!(typeof quick === 'object' && quick && quick.list && quick.list.length); }
   /* Phantom: the connected provider says so, the remembered pick does, or (a visitor) Phantom is the wallet in this browser. */
   function setupIsPhantom() {
     try {
@@ -10478,6 +10488,7 @@
     if (wallet.chainId !== CHAIN_ID) return setupOffChain();
     if (!acct.loaded) return 'wait';
     if (setupTraded()) { lsSet(setupKey(), '1'); return null; }
+    if (setupInFlight()) return 'aside';
     if ((hist.loading && !hist.done) || ui.hypeWei == null) {
       if (!setup.waitSince) setup.waitSince = Date.now();
       if (Date.now() - setup.waitSince < SETUP_WAIT_MS) return 'wait';
@@ -10506,7 +10517,15 @@
   function setupRender() {
     var step;
     try { step = setupStepNow(); } catch (e) { step = null; }
-    if (!step) { if (setup.on) setupEnd(setup.step === 'trade' && !!wallet.account && lsGet(setupKey()) === '1'); return; }
+    /* the first trade is on its way: the guide steps out of the way, and comes back at step 6 if it does not go in */
+    if (step === 'aside') { if (setup.on) { setup.aside = true; setupEnd(false); } return; }
+    if (!step) {
+      if (setup.on) setupEnd(setup.step === 'trade' && !!wallet.account && lsGet(setupKey()) === '1');
+      else if (setup.aside && wallet.account && lsGet(setupKey()) === '1') toast('First trade in. The whole page is yours now.', null, null, 6000);
+      setup.aside = false;
+      return;
+    }
+    setup.aside = false;
     if (!setup.on) setupBuild();
     if (step !== setup.step) setupShow(step);
     else setupPlace();
@@ -10558,6 +10577,11 @@
   function setupShow(step) {
     setup.step = step; setup.scrolled = null;
     if (step !== 'wait') setup.waitSince = 0;
+    if (setup.autoSwitch && step !== 'wait') {   /* just connected off HyperEVM: the switch prompt Connect used to send */
+      var autoGo = step === 'chain' && setup.autoSwitch === wallet.account;
+      setup.autoSwitch = null;
+      if (autoGo) switchChain().then(function () { return onChainChanged(); }).catch(switchFailed);
+    }
     var lst = setup.card.querySelector('.setup-list'); if (lst) setupFillList(lst);
     var n = setupOrder().indexOf(step === 'bridge' ? 'hype' : step);
     setRole(setup.card, 'count', n < 0 ? 'Checking' : 'Step ' + (n + 1) + ' of ' + setupOrder().length);
@@ -11121,6 +11145,7 @@
           if (/^(Fulfilled|SentUnlock|ClaimedUnlock)$/.test(st)) {
             br.inflight = null; clearInterval(br.poll); br.poll = null;
             toast('Landed: about ' + brFmtHype(f.out) + ' HYPE is in this wallet on HyperEVM.', 'ok');
+            refreshWalletUsdc();   /* the guide reads this wallet's HYPE (the walk: it showed 0 HYPE, "bring ETH", after landing) */
             setText('brHint', 'Landed. Switch back to HyperEVM to go on.');
             brRenderGo(); renderAction();
           } else if (/Cancel/.test(st)) {
@@ -11463,7 +11488,7 @@
     if (dm && dm.open) refreshProxy();
     /* the wallet's own HYPE and USDC, while the page is offering to swap them or the sheet is open (HYPE that arrives
        or leaves between connects used to go unnoticed: the banner stayed, Max filled the old number) */
-    if ((dm && dm.open) || depSwapShow() || depSwapSmall()) { refreshWalletUsdc(); if (typeof swRefreshBalances === 'function') swRefreshBalances(); }
+    if ((dm && dm.open) || depSwapShow() || depSwapSmall() || (setup.on && (setup.step === 'hype' || setup.step === 'bridge'))) { refreshWalletUsdc(); if (typeof swRefreshBalances === 'function') swRefreshBalances(); }
     if (keeper && Date.now() - keeperAt >= KEEPER_EVERY_MS) { keeperAt = Date.now(); keeper.refresh().then(renderStatus); }
   }
 
