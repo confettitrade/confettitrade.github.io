@@ -7120,6 +7120,29 @@
     });
   }
 
+  /* (2026-11-06, the owner: "when i go to connect my metamask wallet, it will only connect to account 1 and not my
+     acccount 3") eth_requestAccounts answers with the accounts MetaMask already allowed for this site and asks nothing,
+     so once account 1 was allowed, Connect never showed MetaMask's account list again. A Connect or Switch wallet tap on
+     MetaMask asks for that list (wallet_requestPermissions), then reads what was ticked: the first is the account open
+     in MetaMask, and switching accounts in MetaMask moves the page (accountsChanged). Other wallets keep the plain
+     request, so Phantom's connect path stays as it is. */
+  function isMetaMaskWallet(eth) {
+    var hit = walletList().filter(function (d) { return d.provider === eth; })[0];
+    var rdns = hit && hit.info && hit.info.rdns ? String(hit.info.rdns) : '';
+    if (rdns) return /^io\.metamask/.test(rdns);
+    return !!(eth && eth.isMetaMask && !eth.isPhantom && !eth.isRabby && !eth.isBraveWallet && !eth.isCoinbaseWallet &&
+      !eth.isOkxWallet && !eth.isOKExWallet && !eth.isTrust && !eth.isTrustWallet);
+  }
+  function pickAccounts(eth) {
+    if (!isMetaMaskWallet(eth)) return requestAccountsOnce(eth);
+    return eth.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] }).then(function () {
+      return eth.request({ method: 'eth_accounts', params: [] });
+    }, function (e) {
+      if (isUserRejection(e) || connectErrCode(e) === -32002) throw e;
+      return requestAccountsOnce(eth);   /* a MetaMask without the account list */
+    });
+  }
+
   function connect() {
     wallet.leftByUser = false;
     setup.connectNote = null;
@@ -7132,10 +7155,13 @@
   function connectWith(eth) {
     var E = window.ethers, connected = false;
     wallet.eth = eth;
-    return requestAccountsOnce(eth).then(function (accounts) {
+    return pickAccounts(eth).then(function (accounts) {
       if (!accounts || !accounts.length) throw new Error('No account returned by the wallet.');
-      wallet.account = E.getAddress(accounts[0]);
+      var next = E.getAddress(accounts[0]);
+      if (wallet.account && next !== wallet.account) resetAccount();
+      wallet.account = next;
       connected = true; setup.connectNote = null;
+      if (accounts.length > 1 && isMetaMaskWallet(eth)) toast('Using ' + shortAddr(next) + ', the account open in MetaMask. Switch accounts in MetaMask and the page follows.', null, null, 9000);
       return eth.request({ method: 'eth_chainId', params: [] });
     }).then(function (hex) {
       wallet.chainId = parseInt(hex, 16);
