@@ -2214,6 +2214,44 @@
     return { px: NaN, fresh: false };
   }
 
+  /* (est1) A LIVE ESTIMATE between settlement prints (the owner, 2026-11-06: "the pnl cards seem to be going slow",
+     "Yes, add estimate"). The settlement price is the oracle print, which moves every 3 s on a busy coin and only every
+     10-30 s on a quiet one, while the chart moves every tick, so a card that holds the exact figure reads as stuck. Between
+     prints a card now shows "≈" and the P&L at the print scaled by the market mid's move since that print
+     (est = print x mid now / mid at the print), recomputed with settle.js like the exact figure; the moment the next print
+     lands the "≈" goes and the exact figure is back. It keeps the print-to-mid gap (basis), so it is off only by how much
+     the oracle's next print differs from the mid's move: usually a few bps, which at high leverage is a real share of the
+     margin; the title always carries the exact figure at the last print. */
+  var EST_MID_FRESH_MS = 5000;
+  var midAtPrint = {};   /* instrument id -> the market mid when its settlement price last changed (null: none fresh) */
+
+  function notePrintMid(id) {
+    var inst = state.byInstId[id];
+    var m = inst && inst.market;
+    var mid = m && state.mids[m.coin];
+    midAtPrint[id] = (mid > 0 && state.midsAt && Date.now() - state.midsAt < EST_MID_FRESH_MS) ? mid : null;
+  }
+
+  function liveEstimate(pos, exact) {
+    if (DEMO || !exact || exact.delayed || exact.liquidated || !isFinite(exact.pnl)) return null;
+    var S = window.ConfettiSettle;
+    var inst = state.byInstId[pos.instrumentId];
+    if (!S || !inst || inst.retired || !pos.raw || !inst.raw) return null;
+    var m = positionMarket(pos);
+    var px18 = house.oraclePx18ById[pos.instrumentId];
+    var base = midAtPrint[pos.instrumentId];
+    var mid = m && state.mids[m.coin];
+    if (!(base > 0) || !(mid > 0) || px18 == null || !(px18 > 0n)) return null;
+    if (!state.midsAt || Date.now() - state.midsAt > EST_MID_FRESH_MS) return null;
+    var ratio = mid / base;
+    if (!isFinite(ratio) || Math.abs(ratio - 1) < 1e-9) return null;   /* nothing moved since the print: the exact figure */
+    var est18 = px18 * BigInt(Math.round(ratio * 1e9)) / 1000000000n;
+    var now = house.chainTs != null ? house.chainTs : Math.floor(Date.now() / 1000);
+    var queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
+    var v = S.value(pos.raw, inst.raw, est18, BigInt(Math.floor(now)), queueEmpty);
+    return { pnl: S.usd(v.pnl), payout: S.usd(v.payout), liquidated: v.liquidated, px: S.px(est18) };
+  }
+
   /* A position whose price is not fresh: its card shows "price delayed" in place of P&L, Now and the distance. */
   function priceDelayed(p) {
     var inst = state.byInstId[p.instrumentId];
@@ -4098,13 +4136,19 @@
   function fillPhRow(row, it, nearest, many) {
     var p = it.p, m = positionMarket(p), sz = m ? m.szDecimals : null;
     var est = it.est, delayed = !!(est && est.delayed), known = !delayed && isFinite(it.px);
-    var cls = est && est.pnl > 0 ? ' pos' : est && est.pnl < 0 ? ' neg' : '';
-    var pnlText = delayed ? 'price delayed' : known ? fmtUsd(est.pnl, true) : '—';
+    var live = known ? liveEstimate(p, est) : null;   /* (est1) between prints: the live estimate, marked "≈" */
+    var shown = live || est;
+    var cls = shown && shown.pnl > 0 ? ' pos' : shown && shown.pnl < 0 ? ' neg' : '';
+    var pnlText = delayed ? 'price delayed' : known ? (live ? '≈ ' : '') + fmtUsd(shown.pnl, true) : '—';
     var pnlNode = row.querySelector('[data-role="pnl"]');
-    if (pnlNode && pnlNode.textContent !== pnlText) tickPnl(pnlNode, p, est);
+    if (pnlNode && pnlNode.textContent !== pnlText) tickPnl(pnlNode, p, shown);
     var n = setRole(row, 'pnl', pnlText);
-    if (n) n.className = 'ph-pnl-n' + (known ? cls : '');
-    var pc = setRole(row, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
+    if (n) {
+      n.className = 'ph-pnl-n' + (known ? cls : '');
+      var tt = live ? 'Live estimate at the market price now; the settlement price moves only when the oracle prints. At the last print it is exactly ' + fmtUsd(est.pnl, true) + '.' : '';
+      if (n.title !== tt) n.title = tt;
+    }
+    var pc = setRole(row, 'pct', known ? fmtPct1(shown.pnl / p.margin) : '');
     if (pc) pc.className = 'ph-pct' + (known ? cls : '');
     var busy = phBusy(it.pid);
     var goEl = row.querySelector('[data-role="go"]'); if (goEl) goEl.hidden = busy;
@@ -4921,6 +4965,7 @@
     var at = seenAt || Date.now();
     if (oracle.at[id] && at < oracle.at[id] && house.oraclePx18ById[id] != null) return false;   /* an older look */
     var moved = house.oraclePx18ById[id] !== px18;
+    if (moved || midAtPrint[id] == null) notePrintMid(id);   /* (est1) the live estimate's starting point */
     house.oraclePx18ById[id] = px18;
     house.oraclePxById[id] = px18ToNum(px18);
     house.oraclePxAt[id] = Date.now();
@@ -5938,24 +5983,28 @@
     var m = positionMarket(p);
     var sz = m ? m.szDecimals : null;
     var est = positionEstimate(p);
+    var live = liveEstimate(p, est);   /* (est1) null: show the exact figure */
     var px = est.px > 0 ? est.px : closePriceFor(p);
     var delayed = !!est.delayed;
     var known = !delayed && isFinite(px);
     /* desktop (>= 901): the table row splits the P&L into $ and % and the liquidation into price,
        bar and distance, each in its own cell; the card keeps the one string */
     var dk = card.classList.contains('dk-row');
-    var sign = est.pnl > 0 ? ' pos' : est.pnl < 0 ? ' neg' : '';
+    var shown = live && known ? live : est;
+    var sign = shown.pnl > 0 ? ' pos' : shown.pnl < 0 ? ' neg' : '';
     var pnl = card.querySelector('[data-role="pnl"]');
     if (pnl) {
-      var t = delayed ? 'price delayed' : !known ? '—' : dk ? fmtUsd(est.pnl, true) : fmtUsd(est.pnl, true) + ' (' + fmtPct1(est.pnl / p.margin) + ')';
-      if (pnl.textContent !== t) { tickPnl(pnl, p, est); pnl.textContent = t; }
+      var lead = shown === live ? '≈ ' : '';
+      var t = delayed ? 'price delayed' : !known ? '—' : dk ? lead + fmtUsd(shown.pnl, true) : lead + fmtUsd(shown.pnl, true) + ' (' + fmtPct1(shown.pnl / p.margin) + ')';
+      if (pnl.textContent !== t) { tickPnl(pnl, p, shown); pnl.textContent = t; }
       pnl.className = (dk ? 'dk-cell dk-num dk-pnl' : 'pc-pnl') + (delayed ? ' is-delayed' : sign);
       pnl.title = delayed ? 'Waiting for a fresh price; the numbers come back as soon as one arrives.' : !known ? ''
         : est.liquidated ? 'The settlement price has reached the liquidation price: the ' + fmtUsd(p.margin) + ' put in is lost and nothing comes back.'
-        : 'Exactly what the exchange settles this position to at the settlement price ' + fmtPrice(px, sz) + (p.checkedAt ? ', checked against the contract at block ' + p.checkedAt : '') + '. If you close now: ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') + '.';
+        : (shown === live ? 'Live estimate at the market price now (' + fmtPrice(live.px, sz) + '): the settlement price moves only when the oracle prints, and this is where it is heading. At the last print it is exactly ' + fmtUsd(est.pnl, true) + '. ' : '')
+        + 'Exactly what the exchange settles this position to at the settlement price ' + fmtPrice(px, sz) + (p.checkedAt ? ', checked against the contract at block ' + p.checkedAt : '') + '. If you close now: ' + fmtUsd(est.payout) + ' back' + (est.pnl > 0 && est.fee ? ', after a ' + fmtUsd(est.fee) + ' fee' : '') + (est.borrow > 0 ? ', borrow ' + fmtUsd(est.borrow) : '') + '.';
     }
     if (dk) {
-      var pct = setRole(card, 'pct', known ? fmtPct1(est.pnl / p.margin) : '');
+      var pct = setRole(card, 'pct', known ? fmtPct1(shown.pnl / p.margin) : '');
       if (pct) pct.className = 'dk-cell dk-num dk-pct' + sign;
     }
     var nowEl = setRole(card, 'now', delayed ? 'delayed' : isFinite(px) ? fmtPrice(px, sz) : '—');
