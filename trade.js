@@ -7306,7 +7306,10 @@
     if (typeof brRefreshBal === 'function') try { brRefreshBal(); } catch (e) { /* the bridge card never blocks */ }
     if (wallet.eth && wallet.account) {
       wallet.provider = new E.BrowserProvider(wallet.eth);
-      return wallet.provider.getSigner().then(function (s) {
+      /* (2026-11-06, the owner's MetaMask popup: "Account 1" asking to send while the page sat on another account; "cant
+         even confirmn") getSigner() with no address signs as the wallet's first account, whichever that is at the time.
+         The signer is the account the page shows, so every send names it as "from" and the wallet asks for that one. */
+      return Promise.resolve(new E.JsonRpcSigner(wallet.provider, wallet.account)).then(function (s) {
         wallet.signer = s;
       }).catch(function () { wallet.signer = null; }).then(function () {
         renderWallet(); renderAction(); renderStatus(); renderPositions(); renderRefer();
@@ -11387,10 +11390,13 @@
     }).then(function (fq) {
       q = fq; br.quote = fq; brRenderTerms(fq);
       if (!fq.tx || !fq.tx.data) throw new Error('deBridge gave no transaction for this amount.');
+      br.status = 'Checking the account…'; brRenderGo();
+      return brCheckFrom(fq);
+    }).then(function (from) {
       br.status = 'Confirm in your wallet…'; brRenderGo();
-      setText('brHint', 'Your wallet shows one transaction on ' + BR_CHAINS[br.chain].name + ' for ' + brFmtEth(fq.value) + ' ETH. Nothing is sent until you confirm.');
+      setText('brHint', 'Your wallet shows one transaction on ' + BR_CHAINS[br.chain].name + ' from ' + shortAddr(from) + ' for ' + brFmtEth(q.value) + ' ETH. Nothing is sent until you confirm.');
       var prov = new E.BrowserProvider(wallet.eth);
-      return prov.getSigner().then(function (s) { return s.sendTransaction({ to: fq.tx.to, data: fq.tx.data, value: fq.value }); });
+      return new E.JsonRpcSigner(prov, from).sendTransaction({ to: q.tx.to, data: q.tx.data, value: q.value });
     }).then(function (tx) {
       hash = tx.hash;
       br.inflight = { hash: hash, chain: br.chain, orderId: q.orderId || null, since: Date.now(), out: q.out, state: 'sent' };
@@ -11404,6 +11410,30 @@
       br.busy = false; br.status = ''; brRenderGo();
       setText('brHint', 'Not sent: ' + (e && (e.shortMessage || e.message) ? (e.shortMessage || e.message) : 'the wallet said no.'));
       if (br.quote === q0) br.quote.at = 0;
+    });
+  }
+  /* (2026-11-06, the owner's MetaMask popup: "Account 1", 0.0993 ETH to deBridge, a red network fee and "Review alert";
+     "cant even confirmn") Before the wallet opens: the account the page shows must be one the wallet lets this site
+     use, and it must hold the ETH plus the network fee the wallet holds back (about one and a half times today's fee). Either one
+     missing is said here in plain words, with the account and the numbers, instead of a popup that cannot confirm. */
+  function brCheckFrom(fq) {
+    var eth = wallet.eth, a = wallet.account, name = BR_CHAINS[br.chain].name, wn = walletName(eth);
+    return eth.request({ method: 'eth_accounts', params: [] }).then(function (list) {
+      var ok = (list || []).some(function (x) { return String(x).toLowerCase() === a.toLowerCase(); });
+      if (!ok) throw new Error(wn + ' is not letting this site use ' + shortAddr(a) + '. Open ' + wn + ', pick that account, connect it to confetti.trade, then tap Bring ETH again.');
+      return Promise.all([
+        eth.request({ method: 'eth_getBalance', params: [a, 'latest'] }),
+        eth.request({ method: 'eth_gasPrice', params: [] }).catch(function () { return '0x0'; }),
+        eth.request({ method: 'eth_estimateGas', params: [{ from: a, to: fq.tx.to, data: fq.tx.data, value: '0x' + fq.value.toString(16) }] }).catch(function () { return null; })
+      ]);
+    }).then(function (r) {
+      var bal = BigInt(r[0]), gas = (r[2] ? BigInt(r[2]) : 300000n) * BigInt(r[1]) * 3n / 2n;
+      br.balWei = bal; brRenderBal();
+      if (bal < fq.value + gas) {
+        throw new Error(shortAddr(a) + ' has ' + brFmtEth(bal) + ' ETH on ' + name + '; this needs ' + brFmtEth(fq.value) + ' ETH plus up to ' +
+          brFmtEth(gas) + ' for the network fee. Send less (Max works it out), or open ' + wn + ' and switch to the account that holds the ETH: the page follows.');
+      }
+      return a;
     });
   }
   /* Follow the order: the tx gives the order id, the order gives its state; done when the HYPE is out. */

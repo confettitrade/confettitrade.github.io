@@ -909,7 +909,8 @@
     var done = function () { renderWallet(); if (page && page.onAccount) page.onAccount(); };
     if (wallet.eth && wallet.account) {
       wallet.provider = new window.ethers.BrowserProvider(wallet.eth);
-      return wallet.provider.getSigner().then(function (s) { wallet.signer = s; }).catch(function () { wallet.signer = null; }).then(done);
+      /* the signer is the account the page shows, never just the wallet's first one (2026-11-06, see trade.js) */
+      return Promise.resolve(new window.ethers.JsonRpcSigner(wallet.provider, wallet.account)).then(function (s) { wallet.signer = s; }).catch(function () { wallet.signer = null; }).then(done);
     }
     done();
     return Promise.resolve();
