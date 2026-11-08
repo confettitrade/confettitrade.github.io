@@ -210,6 +210,6 @@
       "market",
       "volume"
     ],
-    "note": "the owner 2026-10-23 picked curve B (steep), scaled to FETTI's 215,233 supply: points from the boosted sources are multiplied by the curve (log-interpolated on staked FETTI) times the time held (+10% a week, up to x2); house bots, losses, liquidations and referral shares are not boosted."
+    "note": "curve B (steep, chosen 2026-10-23), scaled to FETTI's 215,233 supply: points from the boosted sources are multiplied by the curve (log-interpolated on staked FETTI) times the time held (+10% a week, up to x2); house bots, losses, liquidations and referral shares are not boosted."
   }
 }
