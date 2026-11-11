@@ -13200,7 +13200,7 @@
     var _select = selectMarket;
     selectMarket = function () {
       var u = location.href, st = history.state, r = _select.apply(this, arguments);
-      if (smShown() && location.href !== u) { try { history.replaceState(st, '', u); } catch (e) { /* the address stays */ } }
+      if (smShown() && (location.href !== u || history.state !== st)) { try { history.replaceState(st, '', u); } catch (e) { /* the address stays */ } }      /* Simple's depth mark too */
       return r;
     };
     /* a close's figures, kept the moment it is reported: the phone rows drop ui.phResult as soon as the position is gone */

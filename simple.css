@@ -223,8 +223,9 @@
   }
   dialog.sm-sheet[open] { display: flex; flex-direction: column; animation: sm-in 220ms ease-out; }
   dialog.sm-sheet.is-out { animation: sm-out 180ms ease-in forwards; }
-  /* closed: the slide away is no longer modal (simple.js) and takes no taps; its shade goes with it */
-  dialog.sm-sheet.is-out:not(:modal) { z-index: 45; pointer-events: none; animation: sm-out 180ms ease-in forwards, sm-shade 180ms ease-in forwards; }
+  /* closed: the slide away is no longer modal (simple.js marks it is-gone) and takes no taps; its shade goes with it */
+  dialog.sm-sheet.is-out.is-gone { z-index: 45; pointer-events: none; animation: sm-out 180ms ease-in forwards, sm-shade 180ms ease-in forwards; }
+  dialog.sm-sheet.is-gone * { pointer-events: none; }
   @keyframes sm-shade { from { box-shadow: 0 0 0 100vmax rgba(42, 37, 32, 0.45); } to { box-shadow: 0 0 0 100vmax rgba(42, 37, 32, 0); } }
   dialog.sm-sheet::backdrop { background: rgba(42, 37, 32, 0.45); }
   dialog.sm-sheet[open]::backdrop { animation: sm-fade 220ms ease-out; }
@@ -350,7 +351,7 @@
     .sm-seg button { font-size: 15px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    dialog.sm-sheet[open], dialog.sm-sheet.is-out, dialog.sm-sheet.is-out:not(:modal), dialog.sm-sheet[open]::backdrop, dialog.sm-sheet.is-out::backdrop, .sm-wait, .sm-wait > div, .sm-snack, .sm-tick-up, .sm-tick-dn { animation: none; }
+    dialog.sm-sheet[open], dialog.sm-sheet.is-out, dialog.sm-sheet.is-out.is-gone, dialog.sm-sheet[open]::backdrop, dialog.sm-sheet.is-out::backdrop, .sm-wait, .sm-wait > div, .sm-snack, .sm-tick-up, .sm-tick-dn { animation: none; }
     .sm-spin { animation-duration: 2400ms; }
     .sm-btn, .sm-dir, .sm-st .sm-m { transition: none; }
   }

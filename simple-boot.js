@@ -8,10 +8,12 @@
    "default" phones open in Simple unless the visitor chose Pro. ?mode=simple / ?mode=pro force it and are remembered. */
 (function () {
   'use strict';
-  var root = document.documentElement, MODE = 'confetti.trade.mode', FLAG = 'confetti.trade.simpleFlag';
+  var root = document.documentElement, MODE = 'confetti.trade.mode', FLAG = 'confetti.trade.simpleFlag2';
   /* What a first visit gets (no flag cached yet, no choice). 'simple' since config.json's ui.simplePhones became "default"
      (2026-11-11): a new visitor on a phone opens in Simple, in cream, from the first frame. Put it back to 'pro' on the day
-     that flag goes back to "optin" or "off". (simple.js caches the real flag on every visit; "off" always wins there.) */
+     that flag goes back to "optin" or "off". (simple.js caches the real flag on every visit; "off" always wins there.)
+     The cached flag's key is simpleFlag2: every earlier phone visitor has "optin" cached under simpleFlag, which would
+     keep them in Pro on their first visit after the switch. A saved choice (confetti.trade.mode, ?mode=pro) still wins. */
   var FIRST = 'simple';
   /* The address and the title as they came, before trade.js writes its coin into both: a shared trade.html#BTC opens BTC
      in Simple, and Simple's Home goes back to the page's own title. */

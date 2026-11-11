@@ -13,7 +13,7 @@
   'use strict';
 
   var api = null, E = null;
-  var MODE_KEY = 'confetti.trade.mode', FLAG_KEY = 'confetti.trade.simpleFlag', SEEN_KEY = 'confetti.trade.simpleSeen';
+  var MODE_KEY = 'confetti.trade.mode', FLAG_KEY = 'confetti.trade.simpleFlag2', SEEN_KEY = 'confetti.trade.simpleSeen';
   var ADD_KEY = 'confetti.simple.add.', AMT_KEY = 'confetti.simple.amount', SPARK_KEY = 'confetti.simple.line.';
   var ZERO = '0x0000000000000000000000000000000000000000';
   var NAMES = {
@@ -137,11 +137,21 @@
     proLink();
     if (on) {
       /* Simple takes the screen: at Home unless a place is on the back stack, and without what Pro was still saying */
-      if (!S.was) { if (H.depth === 0) S.place = 'home'; var ts = $('toasts'); if (ts) ts.textContent = ''; }
+      if (!S.was) { if (H.depth === 0) S.place = 'home'; var ts = $('toasts'); if (ts) ts.textContent = ''; restack(); }
       S.sig = ''; paint();
     }
     else if (S.was) { sheets.slice().forEach(sh => { sh.close(true, true); }); H.depth = 0; api.redraw(); }
-    S.was = on;
+    S.was = on; if (on) S.ever = true;
+  }
+  /* Simple comes on at depth 0 (Home): the entry the browser is on must say so. It can still carry an older depth: Simple
+     was on before (a phone turned past 640 px and back, Pro and back), or the page was reloaded on a coin. Coming back,
+     the browser is walked back to the entry Simple started from (that back is skipped when it arrives), so the next back
+     after a coin is the list and the one after it leaves; on a first start the entry is simply marked as depth 0. */
+  function restack() {
+    var st = history.state, at = st && typeof st.sm === 'number' ? st.sm : 0;
+    if (!(at > 0)) return;
+    if (S.ever) { H.skip++; try { history.go(-at); return; } catch (e) { H.skip--; } }
+    try { history.replaceState(null, ''); } catch (e) { /* the entry stays */ }
   }
   function setMode(mode, once) {
     S.mode = mode; S.param = null;
@@ -229,7 +239,7 @@
     var head = h('div', 'sm-sh-head', [title, x]), body = h('div', 'sm-sh-body'), foot = h('div', 'sm-sh-foot');
     add(d, [head, body, foot]);
     document.body.appendChild(d);
-    function shut() { clearTimeout(sh.outT); sh.outT = 0; d.classList.remove('is-out'); try { d.close(); } catch (e) { d.removeAttribute('open'); } }
+    function shut() { clearTimeout(sh.outT); sh.outT = 0; d.classList.remove('is-out', 'is-gone'); d.inert = false; try { d.close(); } catch (e) { d.removeAttribute('open'); } }
     var sh = {
       d: d, title: title, body: body, foot: foot, isOpen: false, onClose: null, outT: 0,
       open: function () {
@@ -248,7 +258,14 @@
         if (!fromPop) { hBack(); var p = S.ptr; if (p && Date.now() - p.t < 700) S.shut = { x: p.x, y: p.y, t: Date.now() }; }
         shut();
         if (!now && !reduced()) {
-          try { d.show(); d.classList.add('is-out'); sh.outT = setTimeout(shut, 180); } catch (e) { shut(); }
+          /* is-gone: no taps (a class, not :modal, which older Safari does not know); inert: nothing in it takes focus, and focus
+             stays on what it went back to when the sheet closed (the opener) */
+          var keep = document.activeElement;
+          try {
+            d.classList.add('is-out', 'is-gone'); d.inert = true; d.show();
+            if (keep && keep !== document.body && document.activeElement !== keep && document.contains(keep)) keep.focus({ preventScroll: true });
+            sh.outT = setTimeout(shut, 180);
+          } catch (e) { shut(); }
         }
         if (sh.onClose) sh.onClose();
         kick();
