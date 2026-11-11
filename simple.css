@@ -25,6 +25,8 @@
   html[data-mode="simple"] body.trade > .setup-dim,
   html[data-mode="simple"] body.trade > .setup-ring { display: none !important; }
   html[data-mode="simple"] body.trade { overflow: hidden; }
+  /* a Pro sheet opened from Simple (a trade's auto-close): its fields and buttons are 44 px tall like Simple's own */
+  html[data-mode="simple"] dialog.ph-sheet .input, html[data-mode="simple"] dialog.ph-sheet .ph-btn { min-height: 44px; }
   /* Pro's points toasts say things in Pro's words: not over Simple */
   html[data-mode="simple"] .pts-toasts { display: none !important; }
 
@@ -192,6 +194,27 @@
   .sm-tf button { flex: 1; height: 44px; border: 1px solid var(--sm-edge); font-size: 15px; font-weight: 500; color: var(--ink-muted); }
   .sm-tf button[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); background: var(--raised); }
   .sm-tf button:active { background: var(--sunken); }
+
+  /* a coin with trades open: the same chart at a set height (the page scrolls), the trades drawn on it, their cards under it */
+  .sm-chart.is-set { flex: none; height: clamp(140px, calc(100vh - 536px), 280px); height: clamp(140px, calc(100dvh - 536px), 280px); }      /* the first Close stays above Up / Down */
+  .sm-marks { position: absolute; inset: 10px 0; pointer-events: none; }
+  .sm-mk { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed currentColor; }
+  .sm-mk.is-liq { border-top-style: solid; }
+  .sm-mk.is-edge { border-top: 0; }
+  .sm-mk span { position: absolute; left: 6px; transform: translateY(-50%); max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; padding: 0 5px; border: 1px solid currentColor; background: var(--raised); font-size: 12px; font-weight: 600; line-height: 15px; white-space: nowrap; }
+  .sm-mk.is-entry { color: var(--ink); } .sm-mk.is-liq { color: var(--accent); }
+  .sm-mk.is-tp { color: var(--sm-pos-t); } .sm-mk.is-sl { color: var(--sm-neg-t); }
+  .sm-trades { margin-top: 20px; }
+  .sm-trades > .sm-pos:first-of-type { margin-top: 8px; }
+  .sm-pnlrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin-top: 6px; }
+  .sm-pnlrow .sm-pnl { margin: 0; font-size: 36px; min-height: 40px; }
+  .sm-pos > .sm-say { margin-top: 6px; }
+  .sm-pos > .sm-btn { margin-top: 12px; }
+  :where(.sm-root) .sm-kv.is-btn { width: 100%; min-height: 44px; text-align: left; }
+  .sm-kv.is-btn:active { background: var(--sunken); }
+  .sm-kv.is-btn[disabled] { opacity: 0.55; cursor: default; }
+  .sm-kv-v { display: inline-flex; align-items: center; gap: 8px; text-align: right; }
+  .sm-kv-v .sm-chev { font-style: normal; font-size: 20px; line-height: 1; color: var(--ink-faint); }
 
   /* the position card */
   .sm-pos { border: 2px solid var(--ink); background: var(--raised); padding: 14px 16px 8px; margin-top: 16px; }

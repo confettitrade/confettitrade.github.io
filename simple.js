@@ -226,7 +226,7 @@
   }
   function go(place, sym, pid) {
     if (S.place === 'home') { S.homeY = el.main.scrollTop; hPush(location.pathname + location.search + '#' + encodeURIComponent(sym || S.sym)); }
-    S.place = place; S.sym = sym || S.sym; S.pid = pid || null; S.sig = ''; S.since = Date.now();
+    S.place = place; S.sym = sym || S.sym; S.pid = pid || null; S.pickOnce = !!pid; S.sig = ''; S.since = Date.now();
     paint(); el.main.scrollTop = 0;
   }
 
@@ -524,8 +524,8 @@
     })();
   }
   function svg(c, box) { var n = document.createElementNS(NS, 'svg'); n.setAttribute('class', c); n.setAttribute('viewBox', box); n.setAttribute('preserveAspectRatio', 'none'); n.setAttribute('aria-hidden', 'true'); return n; }
-  function linePoints(pts, w, hh, pad) {
-    var lo = Math.min.apply(null, pts), hi = Math.max.apply(null, pts), span = hi - lo || hi || 1;
+  function linePoints(pts, w, hh, pad, lo0, hi0) {
+    var lo = lo0 != null ? lo0 : Math.min.apply(null, pts), hi = hi0 != null ? hi0 : Math.max.apply(null, pts), span = hi - lo || hi || 1;
     return pts.map((p, i) => (i * w / (pts.length - 1)).toFixed(1) + ',' + (pad + (hh - 2 * pad) * (1 - (p - lo) / span)).toFixed(1)).join(' ');
   }
   function spark(n, coin, move) {
@@ -1285,29 +1285,44 @@
     });
   }
 
-  /* ---- the coin: price, today's move, a clean line, two buttons; with a trade open on it, the trade instead: one card,
-     one Close. Every trade action is the Pro code's (api.open, api.close) ---- */
+  /* ---- the coin: price, today's move, the chart and its ranges, Up and Down. With trades open on it (or going in) the page
+     stays the same trading view: each trade is drawn on the chart the way Pro draws it (where it opened, where it closes
+     itself, its auto-close prices) and has its own card under the chart, with its own Close and auto-close. Up and Down stay,
+     for another trade on the coin. Every trade action is the Pro code's (api.open, api.close) ---- */
 
-  var COIN = { tf: '1D', err: '', closing: null };
+  var COIN = { tf: '1D', errs: {}, closing: null };
   function market(sym) { return api.markets().filter(m => m.sym === sym)[0] || null; }
   function sidePill(isLong, lev) { return h('span', 'sm-pill ' + (isLong ? 'is-up' : 'is-dn'), (isLong ? '▲ UP' : '▼ DOWN') + (lev ? ' ' + lev + '×' : '')); }
   function paintCoin() {
     var sym = S.sym, w = api.wallet(), a = api.account(), q = api.price(sym), m = market(sym);
     if (!q || !m) { back(); return; }
     var ps = w.account && a.loaded ? api.positions().filter(x => x.sym === sym) : [];
-    var os = w.account && !ps.length ? api.openings().filter(o => o.sym === sym) : [];
-    var pos = ps.filter(x => x.id === S.pid)[0] || ps[0] || null;
-    S.pid = pos ? pos.id : null;
-    var mode = pos ? 'pos' : os.length ? 'opening' : 'chart';
-    var sig = ['coin', sym, mode, S.pid, COIN.tf, ps.map(x => x.id).join(','), os.map(o => o.key).join(',')].join('|');
-    if (S.sig !== sig) { S.sig = sig; buildCoin(sym, mode, ps, os, pos); }
+    var os = w.account ? api.openings().filter(o => o.sym === sym) : [];
+    if (S.pid != null && !ps.some(x => x.id === S.pid)) S.pid = null;
+    var mode = ps.length || os.length ? 'trade' : 'chart';
+    var sig = ['coin', sym, mode, COIN.tf, ps.map(x => x.id).join(','), os.map(o => o.key).join(',')].join('|');
+    if (S.sig !== sig) { S.sig = sig; buildCoin(sym, mode, ps, os); }
     var move = q.prev > 0 && q.px > 0 ? q.px / q.prev - 1 : NaN, pt = price(q.px, q.sz);
     flash(R.px, q.px); txt(R.px, pt); cls(R.px, 'sm-price' + (pt.length > 9 ? ' is-long' : '')); R.px.style.color = q.at && Date.now() - q.at < 15000 ? '' : 'var(--ink-muted)';
     txt(R.chg, isFinite(move) ? arrow(move) + pct(move) + ' today' : ''); cls(R.chg, 'sm-chg ' + tone(move));
-    if (mode === 'chart') { drawChart(m, q); return; }
+    /* the trades on the chart: where each opened, where it closes itself, and its auto-close prices */
+    var marks = [], tag = ps.length > 1;
+    ps.forEach(x => {
+      var t = tag ? (x.isLong ? '▲' : '▼') + x.lev + '× ' : '';
+      if (x.entry > 0) marks.push({ px: x.entry, kind: 'entry', label: t + 'opened ' + price(x.entry, x.sz) });
+      if (x.endPx > 0) marks.push({ px: x.endPx, kind: 'liq', label: t + 'closes itself ' + price(x.endPx, x.sz) });
+      if (x.auto && x.auto.tp != null) marks.push({ px: x.auto.tp, kind: 'tp', label: t + 'take profit ' + price(x.auto.tp, x.sz) });
+      if (x.auto && x.auto.sl != null) marks.push({ px: x.auto.sl, kind: 'sl', label: t + 'stop ' + price(x.auto.sl, x.sz) });
+    });
+    drawChart(m, q, marks);
     os.forEach(o => {
       var c = R.cards['o' + o.key]; if (!c) return;
       txt(c.pnl, o.kind === 'end' ? 'Not opened' : 'Opening…'); txt(c.pct, o.tone ? plainStatus(o.say) : 'A few seconds'); cls(c.pct, 'sm-pnlp ' + (o.tone === 'bad' ? 'sm-dn' : 'sm-mute'));
+      /* an order that did not open: one press opens the sheet again for the same coin and side; one held up: one press finishes it */
+      var ob = o.btn, ended = o.kind === 'end' && !ob;
+      show(c.go, !!ob || ended);
+      txt(c.go, ended ? 'Try again' : ob ? (/back/.test(ob) ? ob : 'Finish opening now') : '');
+      c.go._act = () => { if (ended) openOrder(o.sym, o.isLong); else if (ob) api.openingAct(o.key); };
     });
     ps.forEach(x => {
       var c = R.cards['p' + see(x)]; if (!c) return;
@@ -1321,84 +1336,105 @@
         c.auto._k = key; c.auto.textContent = '';
         if (!au) txt(c.auto, 'Off'); else add(c.auto, au.length ? au.map((t, i) => { var n = h('span', null, (i ? '' : 'On · ') + t); n.style.whiteSpace = 'nowrap'; n.style.display = 'block'; return n; }) : 'On');
       }
-    });
-    /* the one action: Close (what it gives back, live), or the close on its way, said in place */
-    if (pos && R.close) {
-      var st = pos.status, mine = COIN.closing === pos.id, say = COIN.err, label, busy = false, act = null;
+      /* its one action: Close (what it gives back, live), or the close on its way, said in place */
+      var st = x.status, mine = COIN.closing === x.id, err = COIN.errs[x.id] || '', say = err, label, busy = false, act = null;
       if (st && st.final) { label = 'Closed'; busy = true; }
       else if (st && st.btn) {
         var again = /again/i.test(st.btn);
-        label = again ? 'Try closing again' : 'Finish closing now'; act = () => { api.closeAct(pos.id); };
+        label = again ? 'Try closing again' : 'Finish closing now'; act = () => { api.closeAct(x.id); };
         say = again ? 'It did not close. Your trade is still open.' : 'It is taking longer than usual. One tap finishes it.';
       } else if (st || mine) {
         var still = st && /^Still/.test(st.text);
         label = st && /^Confirm/.test(st.text) ? CONFIRM : still ? 'Still closing…' : st && /^Check|^Closed/.test(st.text) ? plainStatus(st.text) : 'Closing…'; busy = true;
         say = still ? 'Taking longer than usual. Your trade stays open until it closes.' : '';
       }
-      else label = 'Close · take about ' + (isFinite(pos.payout) && !pos.delayed ? usd(pos.payout) : usdS(pos.margin));
-      txt(R.close, label); cls(R.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); R.close.disabled = busy; R.close._act = act;
-      txt(R.say, say || ''); cls(R.say, 'sm-say' + (COIN.err && say === COIN.err ? ' is-bad' : ''));
-      R.auto.disabled = !!(st || mine);
-    } else if (R.close) {
-      var o = os[0], ob = o && o.btn, ended = !!o && o.kind === 'end' && !ob;
-      /* an order that did not open: one press opens the sheet again for the same coin and side */
-      txt(R.close, ended ? 'Try again' : ob ? (/back/.test(ob) ? ob : 'Finish opening now') : 'Opening…'); cls(R.close, 'sm-btn is-primary' + (ob || ended ? '' : ' is-busy')); R.close.disabled = !ob && !ended;
-      R.close._act = () => { if (ended) openOrder(o.sym, o.isLong); else if (ob) api.openingAct(o.key); };
-    }
-  }
-  function buildCoin(sym, mode, ps, os, pos) {
-    var main = el.main, cta = el.cta;
-    main.className = 'sm-main' + (mode === 'chart' ? ' is-fit' : ''); main.textContent = ''; cta.textContent = ''; cta.className = 'sm-cta' + (mode === 'chart' ? ' is-two' : '');
-    R.cards = {}; R.close = R.svg = null;
-    add(main, [h('div', 'sm-cname', nameOf(sym)), h('div', 'sm-cbar', [R.px = h('span', 'sm-price', ''), R.chg = h('span', 'sm-chg', '')])]);
-    if (mode === 'chart') {
-      R.svg = svg('', '0 0 100 100'); R.csay = h('div', 'sm-chart-say', '');
-      var tf = h('div', 'sm-tf');
-      Object.keys(TF).forEach(function (k) { var b = btn(null, k, () => { COIN.tf = k; redo(); }); b.setAttribute('aria-pressed', k === COIN.tf ? 'true' : 'false'); tf.appendChild(b); });
-      tf.appendChild(btn(null, 'Candles', () => { toPro(sym); }));
-      add(main, [h('div', 'sm-chart', [R.svg, R.csay]), tf]);
-      var up = btn('sm-dir is-up', ['▲ Up', h('i', null, 'price goes up')], () => { openOrder(sym, true); });
-      var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, 'price goes down')], () => { openOrder(sym, false); });
-      add(cta, [up, dn]); return;
-    }
-    function card(x, key, sel) {
-      var c = R.cards[key] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), auto: h('span', null, '—') };
-      c.n = h('div', 'sm-pos' + (sel ? '' : ' is-quiet'), [h('div', 'sm-pos-h', [h('span', null, [x.sym, sidePill(x.isLong, x.lev)]), h('span', 'sm-in', usdS(x.margin) + ' in')]), c.pnl, c.pct,
-        h('div', 'sm-kvs', [['You opened at', c.entry], ['Closes itself at', c.end], ['Auto-close', c.auto]].map(r => h('div', 'sm-kv', [h('span', null, r[0]), r[1]])))]);
-      main.appendChild(c.n); return c;
-    }
-    os.forEach((o, i) => { card(o, 'o' + o.key, !i); });
-    ps.forEach(x => {
-      var c = card(x, 'p' + x.id, pos && x.id === pos.id);
-      if (ps.length > 1) c.n.addEventListener('click', function () { if (S.pid !== x.id) { S.pid = x.id; COIN.err = ''; redo(); } });
+      else label = 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout) : usdS(x.margin));
+      txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy; c.close._act = act;
+      txt(c.say, say || ''); cls(c.say, 'sm-say' + (err && say === err ? ' is-bad' : '')); show(c.say, !!say);
+      c.set.disabled = !!(st || mine); txt(c.chev, c.set.disabled ? '' : '›');
     });
-    R.say = sayLine();
-    R.close = btn('sm-btn is-primary', '', () => { if (R.close._act) R.close._act(); else if (pos) closeGo(pos.id); });
-    R.auto = btn('sm-btn is-ghost', 'Set auto-close', () => { api.pro('position', pos.id); }); R.auto.disabled = !pos;
-    add(cta, [R.say, R.close, R.auto]);
+  }
+  function buildCoin(sym, mode, ps, os) {
+    var main = el.main, cta = el.cta, trade = mode === 'trade';
+    main.className = 'sm-main' + (trade ? ' is-trade' : ' is-fit'); main.textContent = ''; cta.textContent = ''; cta.className = 'sm-cta is-two';
+    R.cards = {};
+    add(main, [h('div', 'sm-cname', nameOf(sym)), h('div', 'sm-cbar', [R.px = h('span', 'sm-price', ''), R.chg = h('span', 'sm-chg', '')])]);
+    R.svg = svg('', '0 0 100 100'); R.csay = h('div', 'sm-chart-say', ''); R.marks = h('div', 'sm-marks'); R.marks.setAttribute('aria-hidden', 'true');
+    var tf = h('div', 'sm-tf');
+    Object.keys(TF).forEach(function (k) { var b = btn(null, k, () => { COIN.tf = k; redo(); }); b.setAttribute('aria-pressed', k === COIN.tf ? 'true' : 'false'); tf.appendChild(b); });
+    tf.appendChild(btn(null, 'Candles', () => { toPro(sym); }));
+    add(main, [h('div', 'sm-chart' + (trade ? ' is-set' : ''), [R.svg, R.marks, R.csay]), tf]);
+    var up = btn('sm-dir is-up', ['▲ Up', h('i', null, 'price goes up')], () => { openOrder(sym, true); });
+    var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, 'price goes down')], () => { openOrder(sym, false); });
+    add(cta, [up, dn]);
+    if (!trade) return;
+    function head(x) { return h('div', 'sm-pos-h', [h('span', null, [x.sym, sidePill(x.isLong, x.lev)]), h('span', 'sm-in', usdS(x.margin) + ' in')]); }
+    var box = h('div', 'sm-trades', h('div', 'sm-label', ps.length + os.length > 1 ? 'Your trades on ' + sym : 'Your trade on ' + sym));
+    os.forEach(o => {
+      var c = R.cards['o' + o.key] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', '') };
+      c.go = btn('sm-btn is-primary', '', () => { if (c.go._act) c.go._act(); }); c.go.hidden = true;
+      c.n = h('div', 'sm-pos', [head(o), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.go]);
+      box.appendChild(c.n);
+    });
+    ps.forEach(x => {
+      var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), auto: h('span', null, '—'), chev: h('i', 'sm-chev', '›'), say: sayLine() };
+      c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
+      c.set = btn('sm-kv is-btn', [h('span', null, 'Auto-close'), h('span', 'sm-kv-v', [c.auto, c.chev])], () => { api.pro('position', x.id); });
+      c.set.setAttribute('aria-label', 'Auto-close for this trade: set take profit and stop loss');
+      c.n = h('div', 'sm-pos', [head(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.say, c.close,
+        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set])]);
+      box.appendChild(c.n);
+    });
+    main.appendChild(box);
+    /* opened from that trade's row on Home: its card is brought into view */
+    var pick = S.pickOnce && S.pid != null && R.cards['p' + S.pid]; S.pickOnce = false;
+    if (pick && ps.length > 1 && ps[0].id !== S.pid) setTimeout(() => { if (pick.n.isConnected) pick.n.scrollIntoView({ block: 'nearest' }); }, 60);
   }
   function toPro(sym) { api.pro('candles', sym); setMode('pro', true); }  /* a look at the candles: the next visit opens in Simple again */
-  function drawChart(m, q) {
-    var s = getSeries(m.coin, COIN.tf), def = TF[COIN.tf];
+  /* The line, scaled to the range plus the trades' prices that sit near it (up to one and a half ranges beyond it): a price
+     further away is said at the chart's top or bottom edge with an arrow, so a far one never flattens the line. The labels
+     are HTML over the chart (the line's own box stretches), nudged apart when two prices sit close. */
+  function drawChart(m, q, marks) {
+    var s = getSeries(m.coin, COIN.tf);
     if (due(series[seriesKey(m.coin, COIN.tf)])) loadSeries(m.coin, COIN.tf).then(kick);      /* never while a failed load is waiting its turn */
     if (!s) { txt(R.csay, 'Loading the chart…'); return; }
-    var key = s.at + '|' + q.px + '|' + COIN.tf; if (R.svg._k === key) return;
-    R.svg._k = key; txt(R.csay, ''); R.svg.textContent = '';
+    marks = marks || [];
+    var hh = R.marks.clientHeight;
+    var key = s.at + '|' + q.px + '|' + COIN.tf + '|' + hh + '|' + marks.map(k => k.kind + k.px + k.label).join(','); if (R.svg._k === key) return;
+    R.svg._k = key; txt(R.csay, ''); R.svg.textContent = ''; R.marks.textContent = '';
     var pts = s.pts.slice(); if (q.px > 0) pts[pts.length - 1] = q.px;
-    var line = linePoints(pts, 100, 100, 4), col = pts[pts.length - 1] < pts[0] ? 'var(--neg)' : 'var(--pos)';
+    var lo = Math.min.apply(null, pts), hi = Math.max.apply(null, pts), span0 = hi - lo || hi * 0.002 || 1, room = span0 * 1.5, near = [], far = [];
+    marks.forEach(k => { if (!(k.px > 0)) return; if (k.px >= lo - room && k.px <= hi + room) near.push(k); else far.push(k); });
+    near.forEach(k => { lo = Math.min(lo, k.px); hi = Math.max(hi, k.px); });
+    var line = linePoints(pts, 100, 100, 4, lo, hi), col = pts[pts.length - 1] < pts[0] ? 'var(--neg)' : 'var(--pos)';
     var area = document.createElementNS(NS, 'polygon'); area.setAttribute('points', line + ' 100,100 0,100'); area.setAttribute('fill', col); area.setAttribute('opacity', '0.1');
     var l = document.createElementNS(NS, 'polyline'); l.setAttribute('points', line); l.setAttribute('stroke', col);
     R.svg.appendChild(area); R.svg.appendChild(l);
+    if (!marks.length) return;
+    var span = hi - lo || 1, yOf = p => 4 + 92 * (1 - (p - lo) / span);
+    var items = near.map(k => ({ k: k, y: yOf(k.px) })).concat(far.map(k => ({ k: k, y: k.px > hi ? 0 : 100, edge: k.px > hi ? 'top' : 'bot' })));
+    /* labels at least 18 px apart, in the order of their prices, kept inside the chart */
+    items.sort((x, y) => x.y - y.y);
+    var H = Math.max(1, hh), gap = 18, at = items.map(it => it.edge === 'top' ? 9 : it.edge === 'bot' ? H - 9 : Math.min(H - 9, Math.max(9, it.y / 100 * H)));
+    for (var i = 1; i < at.length; i++) if (at[i] - at[i - 1] < gap) at[i] = at[i - 1] + gap;
+    if (at.length && at[at.length - 1] > H - 9) { at[at.length - 1] = H - 9; for (var j = at.length - 2; j >= 0; j--) if (at[j + 1] - at[j] < gap) at[j] = at[j + 1] - gap; }
+    items.forEach((it, i) => {
+      var row = h('div', 'sm-mk is-' + it.k.kind + (it.edge ? ' is-edge' : ''));
+      row.style.top = it.y + '%';
+      var lab = h('span', null, it.edge ? it.k.label + (it.edge === 'top' ? ' ↑' : ' ↓') : it.k.label);
+      lab.style.top = Math.round(at[i] - it.y / 100 * H) + 'px';
+      row.appendChild(lab); R.marks.appendChild(row);
+    });
   }
   function closeGo(pid) {
     var s = api.session();
     if (COIN.closing || early()) return;
-    COIN.err = ''; COIN.closing = pid; S.claim = true; S.lastErr = null; kick();
+    COIN.errs[pid] = ''; COIN.closing = pid; S.claim = true; S.lastErr = null; kick();
     /* the wallet signs a close only when one-tap is not on: then it is asked onto HyperEVM first, and that wait ends by itself
        (after it, a late yes in the wallet only moves the wallet: the close is not sent behind the person's back) */
     (!api.demo && !s.live ? timed(api.toHyperEvm(), 30000, '') : Promise.resolve()).then(() => api.close(pid)).then(ok => {
-      if (!ok) COIN.err = lastErr() || 'It did not close, so your trade is still open. Try again.';
-    }, () => { COIN.err = STAYED + 'it did not close. Try again.'; }).then(() => { S.claim = false; COIN.closing = null; kick(); });
+      if (!ok) COIN.errs[pid] = lastErr() || 'It did not close, so your trade is still open. Try again.';
+    }, () => { COIN.errs[pid] = STAYED + 'it did not close. Try again.'; }).then(() => { S.claim = false; COIN.closing = null; kick(); });
   }
   /* a trade ended (closed, or it closed itself): the result takes the coin's place, or waits on Home as a card */
   function onResult(r) {
