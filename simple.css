@@ -293,6 +293,20 @@
   .sm-seg button { flex: 1; height: 44px; font-size: 16px; font-weight: 500; background: var(--page); }
   .sm-seg button + button { border-left: 1px solid var(--sm-edge); }
   .sm-seg button[aria-pressed="true"] { background: var(--ink); color: var(--page); }
+  /* boosts in two rows of three (five set boosts + Custom) */
+  .sm-seg.is-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .sm-seg.is-grid button + button { border-left: 0; }
+  .sm-seg.is-grid button { border-right: 1px solid var(--sm-edge); }
+  .sm-seg.is-grid button:nth-child(3n) { border-right: 0; }
+  .sm-seg.is-grid button:nth-child(n+4) { border-top: 1px solid var(--sm-edge); }
+  .sm-levc { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 16px; }
+  .sm-levc[hidden] { display: none; }
+  .sm-levc > span:first-child { color: var(--ink-muted); }
+  .sm-levc-in { display: inline-flex; align-items: center; border: 1px solid var(--sm-edge); background: var(--page); height: 44px; padding: 0 12px; }
+  .sm-levc-in input { width: 64px; border: 0; background: transparent; font: inherit; font-size: 18px; font-weight: 600; color: var(--ink); outline: none; }
+  .sm-levc-in b { font-weight: 600; }
+  .sm-levc i { font-style: normal; color: var(--ink-muted); font-size: 14px; margin-left: auto; }
+  .sm-now { font-family: var(--font-brand); font-weight: 700; font-size: 26px; line-height: 1.15; letter-spacing: 0.01em; margin: 18px 0 0; color: var(--ink); }
   .sm-seg button:active { filter: brightness(0.92); }
   .sm-seg button[disabled], .sm-opt[disabled], .sm-amt input[disabled], .sm-auto input[disabled], .sm-quiet[disabled] { opacity: 0.45; }
   .sm-risk { font-size: 15px; line-height: 1.4; color: var(--ink-muted); margin: 8px 0 0; min-height: 42px; }

@@ -440,7 +440,8 @@
       var row = btn('sm-row', [h('span', 'sm-tk', [h('b', null, m.sym), h('i', null, nameOf(m.sym))]), r.spk, h('span', 'sm-pr', [r.v, r.c])], () => { go('coin', m.sym); });
       list.appendChild(row);
     });
-    add(main, h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]));
+    var sec = h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]); sec.id = 'smCoins';
+    add(main, sec);
     if (st === 'visitor') {
       add(cta, btn('sm-btn is-primary', w.has ? 'Connect wallet' : 'Open in your wallet app', doConnect));
       if (!api.demo) { var d = h('a', 'sm-link', 'Just looking? Try it with pretend money'); d.href = 'trade.html?demo=1&mode=simple'; d.style.justifyContent = 'center'; add(cta, d); }
@@ -1175,10 +1176,21 @@
     var sh = ADD.sh, r = ADD.R, a = api.account();
     txt(sh.title, 'Added');
     r.bal = h('div', 'sm-big', '');
-    add(sh.body, [h('div', 'sm-ok', '✓'), h('div', 'sm-label', 'Your trading money'), r.bal, h('p', 'sm-mid', 'is ready. Pick a coin, pick up or down, and go.')]);
-    /* "first trade" only for someone who has not turned one-tap on yet */
-    add(sh.foot, [btn('sm-btn is-primary', a.inTrades > 0 ? 'Done' : api.session().live ? 'Pick a coin' : 'Make your first trade', () => { if (ADD.pend) dropPend(); ADD.sh.close(); }),
-      btn('sm-btn is-ghost', 'Add more', () => { if (ADD.pend) dropPend(); ADD.view = 'form'; paintAdd(); scheduleQuote(0); })]);
+    add(sh.body, [h('div', 'sm-ok', '✓'), h('div', 'sm-label', 'Your trading money'), r.bal, h('p', 'sm-now', 'NOW PICK A COIN TO TRADE')]);
+    add(sh.foot, [btn('sm-btn is-primary', 'Pick a coin', toCoins),
+      btn('sm-btn is-ghost', 'Add more', () => { clearTimeout(ADD.ctimer); if (ADD.pend) dropPend(); ADD.view = 'form'; paintAdd(); scheduleQuote(0); })]);
+    /* then it goes to the list of coins by itself (owner, 11/11), unless "Add more" was pressed first */
+    clearTimeout(ADD.ctimer); ADD.ctimer = setTimeout(() => { if (ADD.sh.isOpen && ADD.view === 'ready') toCoins(); }, 2600);
+  }
+  /* close the sheet and land on the coin list: from a coin page back to Home first, then the list scrolled into view */
+  function toCoins() {
+    clearTimeout(ADD.ctimer); if (ADD.pend) dropPend();
+    if (ADD.sh && ADD.sh.isOpen) ADD.sh.close();
+    var fromCoin = S.place !== 'home';
+    setTimeout(() => {
+      if (fromCoin && S.place !== 'home' && !sheets.length) back();
+      setTimeout(() => { var c = el.main.querySelector('#smCoins'); if (c && S.place === 'home') c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120);
+    }, fromCoin ? 60 : 0);
   }
   function fillReady() { txt(ADD.R.bal, usd(api.account().available)); }
   function buildFail() {
@@ -1418,11 +1430,13 @@
   /* ---- the sheet: dollars, Boost, both outcomes in dollars, one Open ---- */
 
   var ORD = { sh: null, sym: null, isLong: true, typed: '10', all: false, lev: 20, err: '', busy: false, auto: false, R: {} };
+  /* five set boosts per coin (the coin's top one last), plus Custom for any whole number from 1x to the top. On the 1000x
+     coins 250x and 500x are among the five (owner, 11/11) */
   function boosts(max) {
-    var s = [2, 5, 20, 100].filter(v => v < max);
+    var pool = max >= 1000 ? [20, 100, 250, 500] : max >= 250 ? [5, 20, 50, 100] : [2, 5, 10, 20];
+    var s = pool.filter(v => v < max);
     s.push(max);
-    [10, 50, 250, 500].forEach(v => { if (s.length < 5 && v < max) s.push(v); });
-    return s.sort((x, y) => x - y);
+    return s;
   }
   function ordAmount() { var n = Number(String(ORD.typed).replace(/[^0-9.]/g, '')); return isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0; }
   function openOrder(sym, isLong) {
@@ -1432,7 +1446,9 @@
     var sh = ORD.sh || (ORD.sh = makeSheet('Order')), r = ORD.R = {}, steps = boosts(m.maxLev), last = Number(lsGet(AMT_KEY)) || 10, lv = Number(lsGet('confetti.trade.lev.' + sym)) || 20;
     ORD.sym = sym; ORD.isLong = isLong; ORD.err = ''; ORD.busy = false; ORD.auto = false; ORD.all = false; S.claim = false;
     ORD.typed = String(a.loaded && a.available >= a.min && a.available < last ? Math.floor(a.available) : last);
-    ORD.lev = steps.indexOf(lv) >= 0 ? lv : steps.filter(v => v <= 20).pop() || steps[0];
+    ORD.max = m.maxLev; ORD.levBad = false;
+    ORD.lev = lv >= 1 && lv <= m.maxLev && Math.round(lv) === lv ? lv : steps.filter(v => v <= 20).pop() || steps[0];
+    ORD.custom = steps.indexOf(ORD.lev) < 0;
     sh.title.textContent = ''; add(sh.title, [sym, sidePill(isLong)]);
     sh.body.textContent = ''; sh.foot.textContent = '';
     r.amt = amtInput('smOrdAmount', 'Amount, in dollars', ORD.typed, v => { ORD.typed = v; ORD.all = false; ORD.err = ''; paintOrder(); });
@@ -1445,8 +1461,24 @@
       });
       b._v = v; r.chips.appendChild(b);
     });
-    r.seg = h('div', 'sm-seg'); r.seg.setAttribute('role', 'group'); r.seg.setAttribute('aria-label', 'Boost');
-    steps.forEach(function (v) { var b = btn(null, v + '×', () => { ORD.lev = v; ORD.err = ''; paintOrder(); }); b._v = v; r.seg.appendChild(b); });
+    r.seg = h('div', 'sm-seg is-grid'); r.seg.setAttribute('role', 'group'); r.seg.setAttribute('aria-label', 'Boost');
+    steps.forEach(function (v) { var b = btn(null, v + '×', () => { ORD.lev = v; ORD.custom = false; ORD.levBad = false; ORD.err = ''; paintOrder(); }); b._v = v; r.seg.appendChild(b); });
+    var cb = btn(null, 'Custom', () => {
+      ORD.custom = true; ORD.err = ''; if (steps.indexOf(ORD.lev) >= 0) { r.lev.value = ''; ORD.levBad = true; }
+      paintOrder(); setTimeout(() => { r.lev.focus(); }, 30);
+    });
+    cb._v = 'custom'; r.seg.appendChild(cb);
+    r.lev = h('input'); r.lev.id = 'smOrdLev'; r.lev.type = 'text'; r.lev.setAttribute('inputmode', 'numeric'); r.lev.setAttribute('enterkeyhint', 'done');
+    r.lev.setAttribute('autocomplete', 'off'); r.lev.placeholder = 'e.g. ' + Math.min(m.maxLev, 75); r.lev.value = ORD.custom ? String(ORD.lev) : '';
+    r.lev.addEventListener('input', () => {
+      var d = r.lev.value.replace(/[^0-9]/g, '').slice(0, 4); if (d !== r.lev.value) r.lev.value = d;
+      var n = Number(d); ORD.err = '';
+      if (d && n >= 1 && n <= m.maxLev) { ORD.lev = n; ORD.levBad = false; } else ORD.levBad = true;
+      paintOrder();
+    });
+    r.lev.addEventListener('keydown', ev => { if (ev.key === 'Enter') r.lev.blur(); });
+    var ll = h('label', 'sm-levc', [h('span', null, 'Your boost'), h('span', 'sm-levc-in', [r.lev, h('b', null, '×')]), h('i', null, '1× to ' + m.maxLev + '×')]); ll.htmlFor = 'smOrdLev';
+    r.levBox = ll;
     r.risk = h('p', 'sm-risk', ''); r.w = h('b', 'sm-up', ''); r.l = h('b', 'sm-dn', ''); r.wk = h('span'); r.lk = h('span');
     r.autoV = h('i', null, '');
     r.autoRow = btn('sm-opt', [h('span', null, 'Auto-close (take profit, stop loss)'), r.autoV], function () { ORD.auto = !ORD.auto; paintOrder(); if (ORD.auto) setTimeout(function () { r.autoBox.scrollIntoView({ block: 'nearest' }); }, 30); });
@@ -1454,7 +1486,7 @@
       i.addEventListener('input', () => { ORD.err = ''; paintOrder(); }); return i; }
     r.tp = pxIn('Take profit at'); r.sl = pxIn('Stop loss at');
     r.autoBox = h('div', 'sm-auto', [h('label', null, [h('span', null, 'Take profit at'), r.tp]), h('label', null, [h('span', null, 'Stop loss at'), r.sl]), h('p', 'sm-fine', 'Optional. It closes the trade for you while Confetti is open on this phone.')]);
-    add(sh.body, [lab, h('div', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Boost'), r.seg, r.risk,
+    add(sh.body, [lab, h('div', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Boost'), r.seg, r.levBox, r.risk,
       h('div', 'sm-out', [h('div', null, [r.wk, r.w]), h('div', null, [r.lk, r.l])]), r.autoRow, r.autoBox]);
     r.say = sayLine();
     r.go = btn('sm-btn', '', orderGo);
@@ -1475,7 +1507,12 @@
     }
     if (document.activeElement !== r.amt && r.amt.value !== ORD.typed) r.amt.value = ORD.typed;
     each(r.chips, b => { b.setAttribute('aria-pressed', (b._v === 'all' ? ORD.all : !ORD.all && amt === b._v) ? 'true' : 'false'); b.disabled = !!ORD.busy; });
-    each(r.seg, b => { b.setAttribute('aria-pressed', b._v === lev ? 'true' : 'false'); b.disabled = !!ORD.busy; });
+    each(r.seg, b => {
+      var on = b._v === 'custom' ? ORD.custom : !ORD.custom && b._v === lev;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.disabled = !!ORD.busy;
+      if (b._v === 'custom') txt(b, ORD.custom && !ORD.levBad ? lev + '×' : 'Custom');
+    });
+    show(r.levBox, ORD.custom); r.lev.disabled = !!ORD.busy;
     r.amt.disabled = r.autoRow.disabled = r.tp.disabled = r.sl.disabled = !!ORD.busy;
     txt(r.risk, lev + '× makes every 1% move worth ' + lev + '%. A ' + mv + '% ' + (up ? 'drop' : 'rise') + ' closes this trade and the ' + (amt > 0 ? usdS(amt) : 'money') + ' is gone.');
     txt(r.wk, sym + (up ? ' up 1%' : ' down 1%')); txt(r.w, isFinite(t.win1) ? usdP(t.win1) : '—');
@@ -1487,6 +1524,7 @@
     var err = ORD.err, why = '', needMoney = a.loaded && a.available < (t.min || 5), note = '';
     if (!ORD.busy) {
       if (t.block) why = plain(t.block);
+      else if (ORD.custom && ORD.levBad) why = 'Type a boost from 1× to ' + ORD.max + '×.';
       else if (needMoney) why = 'You need at least ' + usdS(t.min || 5) + ' to trade.';
       else if (!(amt > 0)) why = 'Type an amount.';
       else if (amt < t.min) why = 'The smallest trade is ' + usdS(t.min) + '.';
@@ -1516,7 +1554,7 @@
     (!api.demo && (!s.live || t.oneTap) ? timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.') : Promise.resolve()).then(() => {
       if (ORD.busy !== mine || !ORD.sh.isOpen) return;
       var why = api.open(o);
-      if (why) { ORD.busy = false; S.claim = false; ORD.err = plain(why); } else { ORD.sent = Date.now(); if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); }
+      if (why) { ORD.busy = false; S.claim = false; ORD.err = plain(why); } else { ORD.sent = Date.now(); if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); lsSet('confetti.trade.lev.' + o.sym, String(o.lev)); }
       if (ORD.sh.isOpen) paintOrder();
     }, e => { if (ORD.busy !== mine) return; ORD.busy = false; S.claim = false; ORD.err = errText(e); if (ORD.sh.isOpen) paintOrder(); });
   }
