@@ -2,7 +2,7 @@
 <html lang="en" data-theme="night">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.blockfront.network wss://rpc.blockfront.network https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz https://dln.debridge.finance; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.blockfront.network wss://rpc.blockfront.network https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz wss://api.hyperliquid.xyz https://dln.debridge.finance https://api.relay.link https://mainnet.base.org https://arb1.arbitrum.io https://ethereum-rpc.publicnode.com; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — trade</title>
   <meta name="description" content="Trade synthetic perpetuals on meme coins at up to 1000x against the Confetti house on HyperEVM. Direct wallet transactions, oracle-priced fills, no funding.">
@@ -15,6 +15,9 @@
   <meta property="og:site_name" content="Confetti">
   <link rel="stylesheet" href="paper.css?v=closex1">
   <link rel="stylesheet" href="points.css?v=phone2">
+  <!-- [simple] Confetti Simple, the phone view: the mode is decided before the first paint; the styles reach phones only -->
+  <link rel="stylesheet" href="simple.css?v=simple1" media="(max-width: 640px)">
+  <script src="simple-boot.js?v=simple1"></script>
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
@@ -582,6 +585,18 @@
   </style>
 </head>
 <body class="trade">
+
+  <!-- [simple] BEGIN: the Simple phone view. simple.js fills it; simple.css shows it only on phones in Simple mode -->
+  <div class="sm-root" id="smRoot" hidden>
+    <header class="sm-top" id="smTop"><span class="sm-logo">confetti<i>_</i></span></header>
+    <main class="sm-main" id="smMain">
+      <div class="sm-label">Your trading money</div>
+      <div class="sm-big">$&mdash;</div>
+      <div class="sm-sec"><div class="sm-label">Trade a coin</div><div class="sm-skel" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div></div>
+    </main>
+    <div class="sm-cta" id="smCta"></div>
+  </div>
+  <!-- [simple] END -->
 
   <header class="header container-fluid ph-head" id="siteHeader">
     <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
@@ -1430,7 +1445,8 @@
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
   <script src="settle.js?v=pnl1" defer></script>
-  <script src="trade.js?v=hover2" defer></script>
+  <script src="simple.js?v=simple1" async></script>
+  <script src="trade.js?v=simple1" defer></script>
   <script src="points.js?v=prm1" defer></script>
 </body>
 </html>

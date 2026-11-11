@@ -3183,7 +3183,7 @@
 
   /* No wallet in this browser (mostly a phone browser): links that open this page in a wallet app. */
   function openWalletApps() {
-    var page = (/^https:$/.test(location.protocol) ? location.origin + location.pathname : SITE_URL + 'trade.html') + (location.hash || '');
+    var page = (/^https:$/.test(location.protocol) ? location.origin + location.pathname : SITE_URL + 'trade.html') + (smShown() ? '?mode=simple' : '') + (location.hash || '');   /* [simple] hook: the wallet app opens the view this phone shows */
     var bare = page.replace(/^https:\/\//, '');
     var ph = $('waPhantom'), mm = $('waMetaMask'), cb = $('waCoinbase'), okx = $('waOkx');
     if (ph) ph.href = 'https://phantom.app/ul/browse/' + encodeURIComponent(page) + '?ref=' + encodeURIComponent(/^https:$/.test(location.protocol) ? location.origin : SITE_URL.replace(/\/$/, ''));
@@ -9181,6 +9181,7 @@
       ? fetch(o.signUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: url }) }).then(function (r) { return r.json(); }).then(function (j) { if (!j || !j.signature) throw new Error('no signature'); return url + '&signature=' + encodeURIComponent(j.signature); })
       : Promise.resolve(url);
     p.then(function (u) {
+      if (win) win.opener = null; sm.orOpened = true;   /* [simple] hook: the checkout's tab cannot reach this page, and Simple learns that it opened */
       if (win) win.location.href = u; else location.href = u;
       setText('orHint', 'MoonPay opened in a new tab. When it says the HYPE is sent, come back here: this sheet turns it into USDC in one tap.');
     }).catch(function () {
@@ -12992,6 +12993,289 @@
       toast('Could not load config.json: ' + (e && e.message ? e.message : e) + '. Serve the site over http and copy config.example.json to config.json.', 'err', null, 0);
     });
   }
+
+  /* ==== [simple] BEGIN: the seam to simple.js ========================================================================
+     Confetti Simple (the owner, 2026-11-11: "much simpler and easier to get going"): the phone view that lives in
+     simple.js / simple.css. This block is the whole of it in this file, but for two marked one-line hooks ("[simple] hook"
+     in openWalletApps and onrampGo). simple.js is loaded async and never holds this file up: whichever of the two arrives
+     second does the hand-over (start(), at the end of the block), once, with the narrow api below: readers of this page's
+     state, the very actions the Pro ticket and sheets run, and change events. Nothing else of the page can be reached
+     from outside. The wraps at the end call the function they wrap first and only add an event; a few step aside or add a
+     check while Simple is what the phone shows (smShown()). Without simple.js or simple.css, or with config
+     ui.simplePhones "off", the page runs exactly as before. */
+  var sm = { subs: {}, hooks: null, noSwitch: 0, want: null, results: {}, dep: null, orOpened: false, switchChain: null };
+  function smEmit(ev, a) { var l = sm.subs[ev]; if (l) l.forEach(function (f) { try { f(a); } catch (e) { /* Simple never breaks the page */ } }); }
+  function smShown() { return !!(sm.hooks && sm.hooks.shown && sm.hooks.shown()); }   /* Simple is what the phone shows now */
+  /* The ticket's own numbers and checks, asked for a trade Simple describes (the way limitProblem asks them). */
+  function smWith(o, fn) {
+    var m = o && state.bySym[o.sym];
+    if (!m) return null;
+    var keep = { market: state.market, side: form.side, margin: form.margin, lev: form.lev };
+    state.market = m; form.side = o.isLong ? 'long' : 'short'; form.margin = o.margin; form.lev = o.lev;
+    try { return fn(m); } finally { state.market = keep.market; form.side = keep.side; form.margin = keep.margin; form.lev = keep.lev; }
+  }
+  /* What the Pro ticket's button does (onAction), for the trade Simple's sheet shows: the same checks, then the same
+     submitOpen. Returns '' once the order is on its way, or the sentence that stopped it. The sheet itself showed both
+     outcomes in dollars, so the big-trade check is not asked a second time. */
+  function smOpen(o) {
+    var m = o && state.bySym[o.sym];
+    if (!m) return 'That coin is not on Confetti.';
+    if (state.busy || tk.phase === 'wallet' || tk.phase === 'req') return 'One moment: the last order is still going in.';
+    if (!window.ethers || !wallet.account || !hasExchange() || !acct.loaded) return 'Your account is still loading.';
+    /* checked with Simple's numbers first, the way the readers ask: a refusal leaves the Pro ticket exactly as it was */
+    var pre = smWith(o, function () { return marketBlock() || orderProblem(); });
+    if (pre) return pre;
+    if (state.market !== m) selectMarket(o.sym);
+    if (tk.phase) tkReset();
+    if (lim.type === 'limit' && lim.firing === null) setOrderType('market');
+    setSide(o.isLong ? 'long' : 'short');
+    form.margin = o.margin; form.maxed = !!o.maxed; form.touched = true; form.lev = o.lev; form.levCustom = false;
+    var why = marketBlock() || orderProblem();          /* before any render: renderAction's fitLeverage must not change what was shown */
+    if (why) return why;
+    lsSet(LS.lev + m.symbol, String(o.lev));
+    var mi = $('marginInput'); if (mi) mi.value = String(o.margin);
+    renderAmountChips(); renderLeverage(); renderForm(); renderAction();
+    ui.levFit = null;
+    sm.want = o.tp != null || o.sl != null ? { tp: o.tp != null ? o.tp : null, sl: o.sl != null ? o.sl : null, why: '' } : null;
+    var n0 = quick.list.length;
+    try { submitOpen(); } finally { sm.want = null; }
+    /* submitOpen can step back without a word (the ticket not ready): then nothing is on its way, and Simple's sheet must know */
+    if (!tk.phase && quick.list.length === n0) return 'That did not start. Press again.';
+    return '';
+  }
+  /* The Add USDC sheet's one-tap swap (depSwapGo) without its box: all the wallet's HYPE above the gas it keeps. */
+  function smSwapHype(capWei) {
+    var T = swTokens(), route = swRoute('HYPE', 'USDC'), top = depSwapMaxWei(), amountIn = capWei != null && capWei < top ? capWei : top, prev = ui.hypeWei;
+    if (!route || !swReady() || !(amountIn > 0n)) return Promise.reject(new Error('Nothing to convert.'));
+    return swV3Quote(route, T.HYPE.addr, amountIn).then(function (r) {
+      var minOut = r.out > 0n ? swMinOut(r.out, 1, r.impact) : null;
+      if (minOut == null) throw new Error('That is too much for one go right now. Try again in a minute.');
+      swNoteHypeUsd(amountIn, r.out);
+      return swSend({ route: route, amountIn: amountIn, out: r.out, minOut: minOut, impact: r.impact, at: Date.now(), slip: 1 }, T.HYPE, T.USDC, 'Swap ' + swFmt(amountIn, 18) + ' HYPE for USDC');
+    }).then(function () { return swAfterLanded(prev); });
+  }
+  var smApi = {
+    demo: DEMO, chainId: CHAIN_ID, usdc: USDC, exchange: CONTRACTS.exchange, swapKeepWei: DEP_SWAP_RESERVE_WEI,
+    on: function (ev, fn) { (sm.subs[ev] = sm.subs[ev] || []).push(fn); },
+    cfg: function () { return cfg || {}; },
+    isPhone: isPhone, onPhoneChange: onPhoneChange,
+    fmt: { usd: fmtUsd, usdShort: fmtUsdShort, price: fmtPrice, addr: shortAddr, move: fmtMove },
+    info: postInfo,
+    wallet: function () {
+      return { account: wallet.account, chainId: wallet.chainId, eth: wallet.eth, name: wallet.eth ? walletName(wallet.eth) : '', has: !!(wallet.eth || getInjected()), ready: !!window.ethers };
+    },
+    account: function () {
+      return { loaded: acct.loaded, available: acct.available, inTrades: acct.marginInUse + acct.pending, walletUsdc: acct.walletUsdc, allowance: acct.allowance, hypeWei: ui.hypeWei,
+        hypeUsd: sw.hypeUsd || NaN, busy: !!state.busy, word: state.busy ? sendWord() : '', dep: dep.step, depTwo: dep.two, min: minMargin() };
+    },
+    markets: function () {
+      var firsts = ['BTC', 'ETH', 'SOL'];
+      function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
+      return state.markets.filter(marketOnChain).sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); }).map(function (m) {
+        return { sym: m.symbol, coin: m.coin, sz: m.szDecimals, maxLev: maxLev(m), tag: marketTagText(m), per: coinsPerUnit(m.symbol) };
+      });
+    },
+    price: function (sym) {
+      var m = state.bySym[sym]; if (!m) return null;
+      var c = state.ctx[m.coin];
+      return { px: state.mids[m.coin], prev: c ? c.prevDayPx : NaN, sz: m.szDecimals, at: state.midsAt };
+    },
+    /* a would-be trade in the ticket's own numbers: the price it opens near, what a 1% move pays, the move that ends it */
+    trade: function (o) {
+      return smWith(o, function (m) {
+        var px = openPriceFor(m), isLong = form.side === 'long', mp = m.inst ? house.maxPos[m.inst.id] : null;
+        var win = px > 0 && form.margin > 0 ? estimateClose(pretendPos(px, form.margin), m.inst, px * (isLong ? 1.01 : 0.99), true) : null;
+        var block = marketBlock();
+        return { px: px, sz: m.szDecimals, win1: win && !win.flat ? win.pnl : NaN, endPct: bustMovePct(form.lev), endPx: bustPriceNum(px, isLong, form.lev),
+          min: minMargin(), room: mp ? (isLong ? mp.long : mp.short) : null, block: block, problem: block ? '' : (orderProblem() || ''),
+          oneTap: ONE_TAP_FORCED && (DEMO || read.router) ? oneTapWhy(form.margin > 0 ? numToUsd6(form.margin) : null) : '' };
+      });
+    },
+    open: smOpen,
+    /* a take profit / stop loss for that trade, by the ticket's own rule: '' when fine, else the sentence that refuses it */
+    autoCheck: function (o, tp, sl) { return smWith(o, function (m) { var px = marketPrice(m); return tpslProblem(form.side === 'long', form.lev, px, px, tp, sl, m.szDecimals); }); },
+    ticket: function () { return { phase: tk.phase, msg: tk.msg || '', sym: tk.sym, posId: tk.posId }; },
+    ticketDone: function () { if (tk.phase && tk.phase !== 'wallet' && tk.phase !== 'req') tkReset(); },
+    positions: function () {
+      return phList().map(function (it) {
+        var p = it.p, m = positionMarket(p), e = it.est || {}, rule = tpsl.rules[it.pid], le = null;
+        try { le = liveEstimate(p, e); } catch (x) { le = null; }
+        return { id: it.pid, sym: m ? m.symbol : '', sz: m ? m.szDecimals : null, isLong: p.isLong, lev: p.leverage, margin: p.margin, entry: p.entry, px: it.px,
+          endPx: it.room.liq, away: it.room.away, near: it.room.cls, pnl: le ? le.pnl : e.pnl, payout: le ? le.payout : e.payout, delayed: !!e.delayed,
+          status: closeStatus(it.pid, p), auto: rule ? { tp: rule.tp, sl: rule.sl } : null, est: !!le };      /* est: pnl / payout are the live estimate (the card's ≈), not the figure at the last print */
+      });
+    },
+    openings: function () {
+      return phOpenings().map(function (o) {
+        var r = o.r, st = o.kind === 'end' ? { say: o.say, tone: 'bad' } : openingStatus(r, o.kind);
+        return { key: o.key, kind: o.kind, sym: reqSym(r), isLong: !!r.isLong, lev: r.leverage, margin: r.margin, say: st.say || '', tone: st.tone || '', btn: st.btn || '', note: st.note || '', share: st.share || 0 };
+      });
+    },
+    openingAct: function (key) { var r = pend.opens[String(key).slice(1)]; if (r) openReqAction(r); },
+    result: function (pid) { return sm.results[String(pid)] || ui.phResult[String(pid)] || null; },
+    close: function (pid) { var p = posById(pid); return p ? submitClose(p) : Promise.resolve(false); },
+    closeAct: function (pid) { var p = posById(pid); if (p) closeReqAction(p); },
+    share: function (pid) { var r = ui.recent.filter(function (x) { return x.key === 'c' + pid; })[0], b = r && (r.buttons || []).filter(function (x) { return x.label === 'Share'; })[0]; if (b) b.fn(); return !!b; },
+    session: function () { return { live: sessionLive(), feeWei: sess.feeWei, router: !!read.router }; },
+    fees: feeCfg,
+    /* Simple's Connect leaves the wallet on the chain its ETH is on: the one switch that Connect would ask is skipped, and
+       only that one (the mark dies with the press, or after a few seconds) */
+    connect: function () { sm.noSwitch = Date.now(); return Promise.resolve(connect()).then(function () { sm.noSwitch = 0; }, function () { sm.noSwitch = 0; }); },
+    switchWallet: switchWallet, disconnect: disconnect, walletApps: openWalletApps,
+    /* onto HyperEVM: the wallet itself is asked where it is (what the page remembers can be stale), moved if it is elsewhere,
+       asked again, and only then is the page's own record written */
+    toHyperEvm: function () {
+      var eth = wallet.eth || getInjected();
+      if (!eth) return Promise.reject(new Error('No wallet.'));
+      function read() { return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) { var was = wallet.chainId; wallet.chainId = parseInt(hex, 16); return was !== wallet.chainId || !wallet.signer; }); }
+      return read().then(function (moved) {
+        if (wallet.chainId === CHAIN_ID) return moved ? onChainChanged() : null;
+        sm.noSwitch = 0;
+        return sm.switchChain().then(read).then(function () {
+          if (wallet.chainId !== CHAIN_ID) throw new Error('The wallet stayed on another network.');
+          return onChainChanged();
+        });
+      });
+    },
+    /* Simple moved the wallet itself (to the chain the ETH is on): the page's record of the network is written from the wallet */
+    chainSeen: function () {
+      var eth = wallet.eth || getInjected();
+      if (!eth) return Promise.resolve();
+      return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) { wallet.chainId = parseInt(hex, 16); return onChainChanged(); });
+    },
+    /* the page's own off switch for anything that sends ('' when sending is allowed) */
+    gate: function () { return (cfg ? '' : 'config.json is not in yet.') || house.gate || (house.usdcBad ? 'This exchange does not settle in native USDC.' : '') || (hasExchange() ? '' : 'Trading is off on this copy of the site.'); },
+    refresh: function () { return Promise.all([refreshAccount(), refreshWalletUsdc(), refreshSession()]); },
+    /* the Pro deposit, answering whether it went in: true once submitDeposit said "Deposited" (its own word, seen by the toast
+       wrap below), false when it ended any other way */
+    deposit: function (amount) { var mark = sm.dep = { ok: false }; return Promise.resolve(submitDeposit(amount)).then(function () { if (sm.dep === mark) sm.dep = null; return mark.ok; }); },
+    swapHype: smSwapHype,
+    applePayOn: onrampOn,
+    /* the Pro checkout, answering whether MoonPay's tab got its address (onrampGo marks sm.orOpened: the one hook there) */
+    applePay: function (amount) {
+      onramp.amount = amount; sm.orOpened = false; onrampGo();
+      return new Promise(function (done) { (function wait(n) { if (!onramp.busy || !n) done(!!sm.orOpened); else setTimeout(function () { wait(n - 1); }, 200); })(150); });
+    },
+    pro: function (what, arg) {
+      if (what === 'withdraw') openWithdraw();
+      else if (what === 'addUsdc') sm.openDeposit();
+      else if (what === 'position') openPhPosSheet(arg, null);
+      else if (what === 'account') { renderAccount(); openPhSheet('phAcctSheet', null); }
+      else if (what === 'menu') openPhSheet('phMenuSheet', null);
+      else if (what === 'coin') selectMarket(arg);
+    },
+    redraw: function () {
+      try {
+        rethemeChart(); placeChartBar(); loadCandles(true);
+        /* the chart was laid out while Pro was out of sight (no width: its time scale sat clamped off the latest bars). Once it
+           has its width, back to the latest candles exactly where a fresh load puts them (no animation: an animated scroll
+           stops a hair short) */
+        (function back(n) {
+          requestAnimationFrame(function () {
+            try { var ts = chart.api.timeScale(); if (ts.width() > 0) ts.scrollToPosition(chartOptions().timeScale.rightOffset, false); else if (n) back(n - 1); } catch (e) { /* no chart on this page */ }
+          });
+        })(60);
+      } catch (e) { /* the chart never blocks the switch */ }
+      renderAccount(); renderPositions(); renderAction();
+    }
+  };
+  (function () {
+    function also(ev, fn) { return function () { var r = fn.apply(this, arguments); smEmit(ev, arguments[0]); return r; }; }
+    renderAccount = also('account', renderAccount);
+    renderPositions = also('positions', renderPositions);
+    updateCards = also('cards', updateCards);
+    renderWallet = also('wallet', renderWallet);
+    renderAction = also('action', renderAction);
+    renderTicketProgress = also('ticket', renderTicketProgress);
+    onPrices = also('prices', onPrices);
+    renderMarketMenuPrices = also('stats', renderMarketMenuPrices);
+    /* a close's figures, kept the moment it is reported: the phone rows drop ui.phResult as soon as the position is gone */
+    var _recent = addRecent;
+    addRecent = function (r) { if (r && r.pid != null && ui.phResult[String(r.pid)]) sm.results[String(r.pid)] = ui.phResult[String(r.pid)]; var out = _recent.apply(this, arguments); smEmit('result', r); return out; };
+    var _toast = toast;
+    /* while Simple is on screen it says things in its own place and words (sm.hooks.toast answers true); a null return is
+       what a missing #toasts host already gives every caller */
+    toast = function (text, kind) {
+      if (sm.dep && kind === 'ok' && /^Deposited /.test(String(text))) sm.dep.ok = true;      /* what api.deposit answers with */
+      if (smShown() && sm.hooks.toast && sm.hooks.toast(String(text), kind || '')) return null;
+      return _toast.apply(this, arguments);
+    };
+    /* Add USDC's phone entry points open Simple's Add money while Simple is this visitor's (sm.hooks.addMoney says) */
+    sm.openDeposit = openDeposit;
+    openDeposit = function () {
+      try { if (sm.hooks && sm.hooks.addMoney && sm.hooks.addMoney()) return; } catch (e) { /* Simple's sheet did not open: Pro's own does */ }
+      return sm.openDeposit.apply(this, arguments);
+    };
+    /* no First steps guide and no tour over Simple, and Simple's Connect leaves the wallet on the chain its ETH is on */
+    var _step = setupStepNow; setupStepNow = function () { return smShown() ? null : _step(); };
+    var _tour = maybeStartTour; maybeStartTour = function () { if (!smShown()) return _tour.apply(this, arguments); };
+    sm.switchChain = switchChain;
+    switchChain = function () {
+      var skip = sm.noSwitch && smShown() && Date.now() - sm.noSwitch < 8000;
+      sm.noSwitch = 0;
+      return skip ? Promise.resolve() : sm.switchChain.apply(this, arguments);
+    };
+    /* While Simple is on screen, every send the WALLET signs (the one-tap setup, an open or a close without one-tap, a deposit,
+       a withdrawal) first asks the wallet which network it is on, and stops unless it is HyperEVM: Simple's open and close do
+       not pass the ticket's own network check, and what the page remembers of the network can be stale. A session key's send
+       (from: the key) never reaches the wallet and is not asked.
+       And the wait on the wallet always ends: a wallet that has not answered a send after a minute (or that first question
+       after a quarter of one) fails it with a sentence, the way a "no" in the wallet does, so the ticket, the close and the
+       deposit come back to a button that works. It carries the wallet's own "no" code, so the Pro code stops there as it
+       does for a no (forced one-tap would otherwise go on and ask the wallet to sign the trade itself: a second request
+       to a wallet that is not answering); describeError gives its sentence instead of "You cancelled". A "yes" given
+       later still sends what the person confirmed in the wallet; the page then learns of it from the chain like any other
+       change. */
+    function smAnswer(p, ms, why) {
+      return new Promise(function (yes, no) {
+        var t = setTimeout(function () { var e = new Error(why); e.code = 'ACTION_REJECTED'; e.smQuiet = true; no(e); }, ms);
+        Promise.resolve(p).then(function (v) { clearTimeout(t); yes(v); }, function (e) { clearTimeout(t); no(e); });
+      });
+    }
+    var _describe = describeError;
+    describeError = function (err) { return err && err.smQuiet ? err.message : _describe.apply(this, arguments); };
+    var _sendTx = sendTx;
+    sendTx = function (desc, method, args, quiet, from) {
+      var self = this, all = Array.prototype.slice.call(arguments), eth = wallet.eth;
+      if (DEMO || !smShown() || !eth || (from && sess.key && String(from).toLowerCase() === sess.key.address.toLowerCase())) return _sendTx.apply(self, all);
+      /* the method as sendTx knows it (its checks before the send read its other parts), with the wallet's answer timed */
+      if (typeof method === 'function' && typeof Proxy === 'function') {
+        all[1] = new Proxy(method, { apply: function (fn, me, a) { return smAnswer(fn.apply(me, a), 60000, 'Your wallet did not answer. If it is still asking, say no there, then press again.'); } });
+      }
+      return smAnswer(eth.request({ method: 'eth_chainId', params: [] }), 15000, 'Your wallet did not answer. Press again.').then(function (hex) {
+        wallet.chainId = parseInt(hex, 16);
+        if (wallet.chainId !== CHAIN_ID) throw new Error('Switch the wallet to HyperEVM (999) first.');
+        return _sendTx.apply(self, all);
+      });
+    };
+    /* a take profit / stop loss typed in Simple's sheet rides with that one open (parked, then adopted, as the ticket's) */
+    var _want = tpslTicketWant; tpslTicketWant = function () { return sm.want || _want.apply(this, arguments); };
+    var _start = start;
+    start = function () {
+      _start();
+      /* simple.js is loaded async and never holds this file up: whichever of the two arrives second does the hand-over. If the
+         page finishes loading and simple.js has not come (or did not start), this page view is Pro and stays Pro. */
+      var took = false;
+      function off(name) { try { delete window[name]; } catch (e) { window[name] = undefined; } }
+      function toPro() {
+        document.documentElement.removeAttribute('data-mode');
+        var bar = document.querySelector('meta[name="theme-color"]'); if (bar) bar.setAttribute('content', cssVar('--page', '#0d1229'));
+      }
+      function hand(init) {
+        if (took) return;
+        took = true; off('ConfettiSimpleTake');
+        if (typeof init === 'function') { try { sm.hooks = init(smApi) || null; } catch (e) { console.error('simple.js did not start', e); } }
+        if (!sm.hooks) toPro();
+      }
+      var init = window.ConfettiSimpleInit;
+      off('ConfettiSimpleInit');
+      if (typeof init === 'function') { hand(init); return; }
+      window.ConfettiSimpleTake = hand;
+      var late = function () { setTimeout(function () { hand(null); }, 0); };
+      if (document.readyState === 'complete') late(); else window.addEventListener('load', late);
+    };
+  })();
+  /* ==== [simple] END ================================================================================================= */
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
