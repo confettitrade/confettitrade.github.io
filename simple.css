@@ -77,8 +77,7 @@
 
   /* ---- the shell ------------------------------------------------------------ */
   .sm-root {
-    display: none; position: fixed; inset: 0; z-index: 40; flex-direction: column;
-    height: 100vh; height: 100dvh;
+    display: none; position: fixed; inset: 0; z-index: 40; flex-direction: column;      /* inset alone: the visible height, also where 100dvh is unknown */
     background-color: var(--page);
     background-image: radial-gradient(var(--dot) 1px, transparent 1.3px); background-size: 14px 14px;
   }
@@ -101,9 +100,12 @@
   .sm-chip.is-off .sm-dot { background: var(--ink-faint); }
   .sm-chip b { font-weight: 600; }
 
-  .sm-main { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 20px var(--sm-pad) 24px; }
+  .sm-main { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 20px var(--sm-pad) 32px; }
+  .sm-root.no-cta .sm-main { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }      /* no bar: room above the home bar */
   .sm-main.is-fit { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 12px; }
-  .sm-cta { flex: none; padding: 12px var(--sm-pad) calc(12px + env(safe-area-inset-bottom)); display: grid; gap: 10px; }
+  .sm-cta { flex: none; position: relative; z-index: 1; padding: 12px var(--sm-pad) calc(12px + env(safe-area-inset-bottom)); display: grid; gap: 10px; background-color: var(--page); transition: box-shadow 150ms ease-out; }
+  /* more of the list below: the bar shows its edge */
+  .sm-root.is-more .sm-cta { box-shadow: 0 -1px 0 var(--rule), 0 -12px 16px -12px rgba(42, 37, 32, 0.28); }
   .sm-cta:empty { display: none; }
   .sm-cta.is-two { grid-template-columns: 1fr 1fr; }
 
@@ -152,7 +154,7 @@
   .sm-rows { margin-top: 4px; }
   .sm-row { display: flex; align-items: center; gap: 12px; width: 100%; height: 68px; border-bottom: 1px solid var(--rule); text-align: left; }
   .sm-row:active { background: var(--raised); }
-  .sm-row .sm-tk { flex: 0 0 104px; min-width: 0; }
+  .sm-row .sm-tk { flex: 0 0 108px; min-width: 0; }      /* the longest name (ConstitutionDAO) whole at 360 px */
   .sm-row .sm-tk b { display: block; font-size: 18px; font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sm-row .sm-tk i { display: block; font-style: normal; font-size: 14px; color: var(--ink-muted); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sm-spk { flex: 0 0 72px; width: 72px; height: 28px; }
@@ -221,6 +223,9 @@
   }
   dialog.sm-sheet[open] { display: flex; flex-direction: column; animation: sm-in 220ms ease-out; }
   dialog.sm-sheet.is-out { animation: sm-out 180ms ease-in forwards; }
+  /* closed: the slide away is no longer modal (simple.js) and takes no taps; its shade goes with it */
+  dialog.sm-sheet.is-out:not(:modal) { z-index: 45; pointer-events: none; animation: sm-out 180ms ease-in forwards, sm-shade 180ms ease-in forwards; }
+  @keyframes sm-shade { from { box-shadow: 0 0 0 100vmax rgba(42, 37, 32, 0.45); } to { box-shadow: 0 0 0 100vmax rgba(42, 37, 32, 0); } }
   dialog.sm-sheet::backdrop { background: rgba(42, 37, 32, 0.45); }
   dialog.sm-sheet[open]::backdrop { animation: sm-fade 220ms ease-out; }
   dialog.sm-sheet.is-out::backdrop { animation: sm-fade 180ms ease-in reverse forwards; }
@@ -341,12 +346,11 @@
     .sm-risk { min-height: 0; }
   }
   @media (max-width: 374px) {
-    .sm-row .sm-tk { flex-basis: 92px; }
     .sm-price { font-size: 36px; } .sm-price.is-long { font-size: 30px; }
     .sm-seg button { font-size: 15px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    dialog.sm-sheet[open], dialog.sm-sheet.is-out, dialog.sm-sheet[open]::backdrop, dialog.sm-sheet.is-out::backdrop, .sm-wait, .sm-wait > div, .sm-snack, .sm-tick-up, .sm-tick-dn { animation: none; }
+    dialog.sm-sheet[open], dialog.sm-sheet.is-out, dialog.sm-sheet.is-out:not(:modal), dialog.sm-sheet[open]::backdrop, dialog.sm-sheet.is-out::backdrop, .sm-wait, .sm-wait > div, .sm-snack, .sm-tick-up, .sm-tick-dn { animation: none; }
     .sm-spin { animation-duration: 2400ms; }
     .sm-btn, .sm-dir, .sm-st .sm-m { transition: none; }
   }

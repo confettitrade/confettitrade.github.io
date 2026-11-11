@@ -13003,7 +13003,7 @@
      from outside. The wraps at the end call the function they wrap first and only add an event; a few step aside or add a
      check while Simple is what the phone shows (smShown()). Without simple.js or simple.css, or with config
      ui.simplePhones "off", the page runs exactly as before. */
-  var sm = { subs: {}, hooks: null, noSwitch: 0, want: null, results: {}, dep: null, orOpened: false, switchChain: null };
+  var sm = { subs: {}, hooks: null, noSwitch: 0, want: null, results: {}, dep: null, orOpened: false, switchChain: null, look: false };
   function smEmit(ev, a) { var l = sm.subs[ev]; if (l) l.forEach(function (f) { try { f(a); } catch (e) { /* Simple never breaks the page */ } }); }
   function smShown() { return !!(sm.hooks && sm.hooks.shown && sm.hooks.shown()); }   /* Simple is what the phone shows now */
   /* The ticket's own numbers and checks, asked for a trade Simple describes (the way limitProblem asks them). */
@@ -13162,7 +13162,9 @@
       else if (what === 'position') openPhPosSheet(arg, null);
       else if (what === 'account') { renderAccount(); openPhSheet('phAcctSheet', null); }
       else if (what === 'menu') openPhSheet('phMenuSheet', null);
-      else if (what === 'coin') selectMarket(arg);
+      else if (what === 'coin') { sm.look = false; if (arg) selectMarket(arg); }
+      /* Simple's Candles: a look at this coin's chart in Pro. The First steps guide does not cover it for a visitor (sm.look) */
+      else if (what === 'candles') { sm.look = true; selectMarket(arg); }
     },
     redraw: function () {
       try {
@@ -13176,7 +13178,9 @@
           });
         })(60);
       } catch (e) { /* the chart never blocks the switch */ }
-      renderAccount(); renderPositions(); renderAction();
+      /* Pro's own title and address again (Simple wrote its screen's): the ticket's market */
+      if (state.market) { try { history.replaceState(history.state, '', '#' + encodeURIComponent(state.market.symbol)); } catch (e) { /* the address stays */ } }
+      renderMarketHeader(); renderAccount(); renderPositions(); renderAction();
     }
   };
   (function () {
@@ -13189,6 +13193,16 @@
     renderTicketProgress = also('ticket', renderTicketProgress);
     onPrices = also('prices', onPrices);
     renderMarketMenuPrices = also('stats', renderMarketMenuPrices);
+    /* while Simple is on screen the tab title and the address follow Simple's screen (simple.js writes them): the Pro
+       ticket's market, which keeps running out of sight, writes neither. redraw() gives them back to Pro. */
+    var _header = renderMarketHeader;
+    renderMarketHeader = function () { var t = document.title, r = _header.apply(this, arguments); if (smShown() && document.title !== t) document.title = t; return r; };
+    var _select = selectMarket;
+    selectMarket = function () {
+      var u = location.href, st = history.state, r = _select.apply(this, arguments);
+      if (smShown() && location.href !== u) { try { history.replaceState(st, '', u); } catch (e) { /* the address stays */ } }
+      return r;
+    };
     /* a close's figures, kept the moment it is reported: the phone rows drop ui.phResult as soon as the position is gone */
     var _recent = addRecent;
     addRecent = function (r) { if (r && r.pid != null && ui.phResult[String(r.pid)]) sm.results[String(r.pid)] = ui.phResult[String(r.pid)]; var out = _recent.apply(this, arguments); smEmit('result', r); return out; };
@@ -13207,7 +13221,7 @@
       return sm.openDeposit.apply(this, arguments);
     };
     /* no First steps guide and no tour over Simple, and Simple's Connect leaves the wallet on the chain its ETH is on */
-    var _step = setupStepNow; setupStepNow = function () { return smShown() ? null : _step(); };
+    var _step = setupStepNow; setupStepNow = function () { return smShown() || (sm.look && !wallet.account) ? null : _step(); };
     var _tour = maybeStartTour; maybeStartTour = function () { if (!smShown()) return _tour.apply(this, arguments); };
     sm.switchChain = switchChain;
     switchChain = function () {

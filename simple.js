@@ -165,12 +165,47 @@
 
   /* ---- back: the phone's back gesture walks Simple's places and sheets ---- */
 
-  function hPush() { H.depth++; try { history.pushState({ sm: H.depth }, ''); } catch (e) { /* no history here */ } }
+  /* Every step into a place or a sheet is one history entry carrying its depth ({ sm: n }); the entry of a coin carries that
+     coin in its address (#BTC). A back the page itself started (the ←, a sheet's ✕) is skipped when it arrives; a back the
+     person made walks Simple down to the depth of the entry the browser landed on, so two backs that met in flight, or a
+     forward, never leave Simple a step out of line with the browser. */
+  function hPush(url) { H.depth++; try { if (url) history.pushState({ sm: H.depth }, '', url); else history.pushState({ sm: H.depth }, ''); } catch (e) { /* no history here */ } }
   function hBack() { if (H.depth > 0) { H.depth--; H.skip++; try { history.back(); } catch (e) { H.skip--; } } }
-  function onPop() {
-    if (H.skip > 0) { H.skip--; return; }
-    if (!shown() || H.depth === 0) return;
-    H.depth--; back(true);
+  function onPop(ev) {
+    var at = ev && ev.state && typeof ev.state.sm === 'number' ? ev.state.sm : 0;
+    if (H.skip > 0) {
+      H.skip--;
+      /* the browser stopped deeper than Simple is (two backs were taken as one): one more back, also skipped */
+      if (!H.skip && shown() && at > H.depth) { H.skip++; try { history.go(H.depth - at); } catch (e) { H.skip--; } }
+      if (!H.skip) addr();
+      return;
+    }
+    if (!shown()) return;
+    if (at > H.depth) { H.skip++; try { history.go(H.depth - at); } catch (e) { H.skip--; } return; }      /* a forward: back to where Simple is */
+    while (H.depth > at) { H.depth--; back(true); }
+    addr();
+  }
+  /* The tab's title and the address say what is on screen: Home is the page's own title and no coin in the address; a coin
+     (and its result) is that coin, the way Pro writes it ("0.0684 DOGE — confetti_", #DOGE). A link copied here opens what
+     was on screen. Not while a back the page started is still on its way: the entry it leaves keeps its own address. */
+  var BOOT = window.ConfettiSimpleBoot || { hash: '', title: '' }, HOME_TITLE = BOOT.title || 'confetti_ — trade';
+  function addr() {
+    if (!shown() || H.skip) return;
+    var sym = S.place === 'home' ? '' : S.sym, q = sym && api.price(sym);
+    var t = sym ? (q && q.px > 0 ? api.fmt.price(q.px, q.sz) + ' ' : '') + sym + ' — confetti_' : HOME_TITLE;
+    if (document.title !== t) document.title = t;
+    var want = sym ? '#' + encodeURIComponent(sym) : '';
+    if (location.hash !== want) { try { history.replaceState(history.state, '', location.pathname + location.search + want); } catch (e) { /* the address stays */ } }
+  }
+  /* the coin the address named when the page came (trade.html#BTC): opened over Home, so back leads to the coins */
+  function bootCoin() {
+    var raw = String(BOOT.hash || '').replace(/^#/, ''), sym = '';
+    try { sym = decodeURIComponent(raw).toUpperCase(); } catch (e) { sym = ''; }
+    BOOT.hash = '';
+    if (!sym || /^POS=/.test(sym) || !market(sym)) return false;
+    try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) { /* the address stays */ }
+    go('coin', sym);
+    return true;
   }
   function back(fromPop) {
     if (sheets.length) { sheets[sheets.length - 1].close(fromPop); return; }
@@ -180,7 +215,7 @@
     paint(); el.main.scrollTop = S.homeY;
   }
   function go(place, sym, pid) {
-    if (S.place === 'home') { S.homeY = el.main.scrollTop; hPush(); }
+    if (S.place === 'home') { S.homeY = el.main.scrollTop; hPush(location.pathname + location.search + '#' + encodeURIComponent(sym || S.sym)); }
     S.place = place; S.sym = sym || S.sym; S.pid = pid || null; S.sig = ''; S.since = Date.now();
     paint(); el.main.scrollTop = 0;
   }
@@ -194,21 +229,29 @@
     var head = h('div', 'sm-sh-head', [title, x]), body = h('div', 'sm-sh-body'), foot = h('div', 'sm-sh-foot');
     add(d, [head, body, foot]);
     document.body.appendChild(d);
+    function shut() { clearTimeout(sh.outT); sh.outT = 0; d.classList.remove('is-out'); try { d.close(); } catch (e) { d.removeAttribute('open'); } }
     var sh = {
-      d: d, title: title, body: body, foot: foot, isOpen: false, onClose: null,
+      d: d, title: title, body: body, foot: foot, isOpen: false, onClose: null, outT: 0,
       open: function () {
         if (sh.isOpen) return;
-        sh.isOpen = true; S.since = Date.now(); d.classList.remove('is-out'); d.style.removeProperty('--sm-drag');
+        if (sh.outT || d.open) shut();      /* opened again while it was still sliding away */
+        sh.isOpen = true; S.since = Date.now(); d.style.removeProperty('--sm-drag');
         try { d.showModal(); } catch (e) { d.setAttribute('open', ''); }
         try { title.focus({ preventScroll: true }); } catch (e) { /* fine */ }
         sheets.push(sh); hPush(); body.scrollTop = 0; fitKeyboard();
       },
+      /* Closed is closed at once: the page takes the next tap (the ← right after ✕ was lost while the sheet was still modal
+         for its slide away), and what closing does runs now. The slide is only a picture: no longer modal, and no taps. */
       close: function (fromPop, now) {
         if (!sh.isOpen) return;
         sh.isOpen = false; sheets = sheets.filter(s => s !== sh);
-        if (!fromPop) hBack();
-        var end = function () { d.classList.remove('is-out'); try { d.close(); } catch (e) { d.removeAttribute('open'); } if (sh.onClose) sh.onClose(); kick(); };
-        if (now || reduced()) end(); else { d.classList.add('is-out'); setTimeout(end, 180); }
+        if (!fromPop) { hBack(); var p = S.ptr; if (p && Date.now() - p.t < 700) S.shut = { x: p.x, y: p.y, t: Date.now() }; }
+        shut();
+        if (!now && !reduced()) {
+          try { d.show(); d.classList.add('is-out'); sh.outT = setTimeout(shut, 180); } catch (e) { shut(); }
+        }
+        if (sh.onClose) sh.onClose();
+        kick();
       }
     };
     d.addEventListener('cancel', ev => { ev.preventDefault(); sh.close(); });
@@ -265,7 +308,8 @@
     if (!w.has) { api.walletApps(); return; }
     api.connect();
   }
-  function withdraw() { api.toHyperEvm().then(() => { api.pro('withdraw'); }, () => { snack(STAYED + 'nothing happened. Try Withdraw again.'); }); }
+  function withdraw() { if (api.demo) { api.pro('withdraw'); return; }      /* the demo has no wallet to move: its own sheet */
+    api.toHyperEvm().then(() => { api.pro('withdraw'); }, () => { snack(STAYED + 'nothing happened. Try Withdraw again.'); }); }
 
   /* ---- painting ---- */
 
@@ -280,8 +324,16 @@
     if (!shown()) return;
     paintTop();
     if (S.place === 'coin') paintCoin(); else if (S.place === 'done') paintDone(); else paintHome();
+    addr(); edge();
     if (ADD.sh && ADD.sh.isOpen) paintAdd();
     if (ORD.sh && ORD.sh.isOpen) paintOrder();
+  }
+  /* The list scrolls under the bottom bar, never behind it: while more is below, the bar has an edge (so a row cut at the
+     bar reads as "more below"); with no bar, the list keeps its own room above the iPhone's home bar (simple.css). */
+  function edge() {
+    var m = el.main, bare = !el.cta.firstChild, more = !bare && m.scrollHeight - m.clientHeight - m.scrollTop > 2;
+    if (el.root.classList.contains('is-more') !== more) el.root.classList.toggle('is-more', more);
+    if (el.root.classList.contains('no-cta') !== bare) el.root.classList.toggle('no-cta', bare);
   }
 
   function paintTop() {
@@ -316,7 +368,7 @@
     var sig = ['home', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
       mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0].join('|');
     if (S.sig !== sig) { S.sig = sig; buildHome(st, w, a, mk, ps, os, p); }
-    var bt = st === 'visitor' ? '$0.00' : a.loaded ? usd(a.available) : '$—';
+    var bt = st !== 'visitor' && a.loaded ? usd(a.available) : '$—';      /* no wallet yet: a dash, as on the desktop page, never "$0.00" */
     txt(R.bal, bt); cls(R.bal, 'sm-big' + (bt.length > 11 ? ' is-longer' : bt.length > 9 ? ' is-long' : ''));
     if (R.sub && st === 'money') txt(R.sub, a.inTrades > 0 ? usd(a.inTrades) + ' more is in your open trades.' : '');
     if (p && p.final && p.state === 'done' && !(ADD.sh && ADD.sh.isOpen) && Date.now() - (p.at || 0) > 60000) { dropPend(); return; }
@@ -478,7 +530,9 @@
       return n;
     }
     txt(sh.title, 'Menu'); sh.body.textContent = ''; sh.foot.textContent = '';
-    if (w.account) {
+    /* the demo's wallet is pretend: nothing to switch or disconnect (both left the demo stuck without one) */
+    if (w.account && api.demo) add(sh.body, h('div', 'sm-who', [h('b', null, 'Demo wallet'), h('i', null, 'Pretend money. Nothing here is real.')]));
+    else if (w.account) {
       add(sh.body, h('div', 'sm-who', [h('b', null, (w.name || 'Wallet') + ' connected'), h('i', null, w.account),
         h('div', 'sm-links', [btn('sm-link', 'Switch wallet', () => { sh.close(); S.tell = Date.now(); setTimeout(api.switchWallet, 200); }), btn('sm-link', 'Disconnect', () => { sh.close(); setTimeout(api.disconnect, 200); })])]));
     }
@@ -486,7 +540,7 @@
     if (!w.account) add(list, item(w.has ? 'Connect wallet' : 'Open in your wallet app', '', doConnect));
     if (w.account) add(list, item('Add money', '', () => { openAdd(); }));
     if (w.account && a.loaded && a.available > 0) add(list, item('Withdraw', 'to your wallet', withdraw));
-    add(list, item('Pro view', 'candles, limit orders, history, points', () => { setMode('pro'); }));
+    add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));      /* from a coin: Pro opens on that coin */
     if (!w.account && !api.demo) add(list, item('Try it with pretend money', '', null, 'trade.html?demo=1&mode=simple'));
     if (api.demo) add(list, item('Leave the demo', 'trade for real', null, 'trade.html?mode=simple'));
     add(sh.body, list);
@@ -678,7 +732,7 @@
     if (method() !== 'eth' || o.chain == null || !(o.usd >= MIN_ADD_USD) || !(o.ethPx > 0) || document.hidden || api.gate()) { ADD.q = null; ADD.qerr = ''; ADD.quoting = false; paintAdd(); if (document.hidden) scheduleQuote(5000); return; }
     ADD.quoting = true; paintAdd();
     var soon = false;
-    quoteRails(o).then(function (q) { if (seq === ADD.qseq) { ADD.q = q; ADD.q.forUsd = o.usd; ADD.qerr = ''; } }, function (e) { if (seq === ADD.qseq) { ADD.q = null; ADD.qerr = errText(e); soon = !!(e && e.again); } }).then(() => {
+    quoteRails(o).then(function (q) { if (seq === ADD.qseq) { ADD.q = q; ADD.q.forUsd = o.usd; ADD.qerr = ''; ADD.qsoon = false; } }, function (e) { if (seq === ADD.qseq) { ADD.q = null; ADD.qerr = errText(e); soon = ADD.qsoon = !!(e && e.again); } }).then(() => {
       if (seq !== ADD.qseq) return;
       ADD.quoting = false; paintAdd();
       ADD.qtimer = setTimeout(doQuote, soon ? 5000 : 25000);  /* quotes go stale: asked again while the sheet is open, and once more before sending */
@@ -807,7 +861,9 @@
           if (all) note = ms.apple ? 'No ETH in this wallet on Base, Arbitrum or Ethereum. Apple Pay works without any.' : 'Send ETH to this wallet on Base, switch wallet, or tap Other ways to add.';
           if (note && !r.seen) { r.seen = true; setTimeout(() => { if (r.other.scrollIntoView) r.other.scrollIntoView({ block: 'nearest' }); }, 80); }
         } else {
-          why = why || (amt > 0 && amt < MIN_ADD_USD ? 'The smallest amount is ' + usdS(MIN_ADD_USD) + '.' : amt > 0 ? ADD.qerr : '');
+          why = why || (amt > 0 && amt < MIN_ADD_USD ? 'The smallest amount is ' + usdS(MIN_ADD_USD) + '.' : amt > 0 && !ADD.qsoon ? ADD.qerr : '');
+          /* a price service that is busy is not the person's mistake: said quietly, and it is asked again by itself */
+          if (!why && amt >= MIN_ADD_USD && ADD.qsoon && ADD.qerr) note = 'Still getting a price. It is asked again by itself.';
           retry = amt >= MIN_ADD_USD && !!ADD.qerr && !ADD.err;       /* no price: the button asks again instead of sitting dead */
         }
       }
@@ -1292,7 +1348,7 @@
     R.auto = btn('sm-btn is-ghost', 'Set auto-close', () => { api.pro('position', pos.id); }); R.auto.disabled = !pos;
     add(cta, [R.say, R.close, R.auto]);
   }
-  function toPro(sym) { api.pro('coin', sym); setMode('pro', true); }  /* a look at the candles: the next visit opens in Simple again */
+  function toPro(sym) { api.pro('candles', sym); setMode('pro', true); }  /* a look at the candles: the next visit opens in Simple again */
   function drawChart(m, q) {
     var s = getSeries(m.coin, COIN.tf), def = TF[COIN.tf];
     if (due(series[seriesKey(m.coin, COIN.tf)])) loadSeries(m.coin, COIN.tf).then(kick);      /* never while a failed load is waiting its turn */
@@ -1505,14 +1561,23 @@
     api.on('result', onResult);
     api.onPhoneChange(applyMode);
     window.addEventListener('popstate', onPop);
+    /* a second tap on the spot that closed a sheet (a double tap on ✕ or outside it) is the same tap, not a press on the page */
+    document.addEventListener('pointerdown', ev => { S.ptr = { x: ev.clientX, y: ev.clientY, t: Date.now() }; }, true);
+    el.root.addEventListener('click', ev => {
+      var s = S.shut; if (!s) return;
+      S.shut = null;
+      if (Date.now() - s.t < 450 && Math.abs(ev.clientX - s.x) < 32 && Math.abs(ev.clientY - s.y) < 32) { ev.preventDefault(); ev.stopPropagation(); }
+    }, true);
     /* rows that scroll into view get their small lines then */
-    el.main.addEventListener('scroll', () => { clearTimeout(S.sct); S.sct = setTimeout(() => { if (shown() && S.place === 'home') kick(); }, 200); }, { passive: true });
+    el.main.addEventListener('scroll', () => { if (!S.edgeF) S.edgeF = requestAnimationFrame(() => { S.edgeF = 0; edge(); }); clearTimeout(S.sct); S.sct = setTimeout(() => { if (shown() && S.place === 'home') kick(); }, 200); }, { passive: true });
     window.addEventListener('resize', () => { kick(); fitKeyboard(); });
     if (window.visualViewport) { window.visualViewport.addEventListener('resize', fitKeyboard); window.visualViewport.addEventListener('scroll', fitKeyboard); }
     document.addEventListener('visibilitychange', function () { if (!document.hidden && ADD.pend && !ADD.pend.final) { if (ADD.pend.rail === 'apple') watchApple(); else track(); } });
     setInterval(() => { if (shown() && (ADD.pend || S.place !== 'home')) kick(); }, 1000);
     who = api.wallet().account || null; loadPend();
     applyMode();
+    if (shown()) bootCoin();
+    BOOT.hash = '';
     /* Pro's Add USDC entry points open Simple's Add money only while Simple is what the phone shows: with Pro on screen
        (a saved "pro", the First steps guide, a wide window) Pro keeps its own sheet */
     return { shown: shown, toast: onToast, addMoney: () => { if (!shown() || api.demo) return false; openAdd(); return true; } };

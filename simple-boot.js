@@ -9,11 +9,13 @@
 (function () {
   'use strict';
   var root = document.documentElement, MODE = 'confetti.trade.mode', FLAG = 'confetti.trade.simpleFlag';
-  /* What a first visit gets (no flag cached yet, no choice). 'pro': the page as it always was, right while config.json's
-     ui.simplePhones is absent, "optin" or "off". Set it to 'simple' on the day that flag becomes "default": a new visitor
-     then opens in Simple, in cream, from the first frame. (simple.js caches the real flag on every visit; "off" always
-     wins there.) */
-  var FIRST = 'pro';
+  /* What a first visit gets (no flag cached yet, no choice). 'simple' since config.json's ui.simplePhones became "default"
+     (2026-11-11): a new visitor on a phone opens in Simple, in cream, from the first frame. Put it back to 'pro' on the day
+     that flag goes back to "optin" or "off". (simple.js caches the real flag on every visit; "off" always wins there.) */
+  var FIRST = 'simple';
+  /* The address and the title as they came, before trade.js writes its coin into both: a shared trade.html#BTC opens BTC
+     in Simple, and Simple's Home goes back to the page's own title. */
+  window.ConfettiSimpleBoot = { hash: location.hash || '', title: document.title };
   function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked: the choice lasts this visit */ } }
   var phone = false;
