@@ -15,9 +15,9 @@
   <meta property="og:site_name" content="Confetti">
   <link rel="stylesheet" href="paper.css?v=closex1">
   <link rel="stylesheet" href="points.css?v=phone2">
-  <!-- [simple] Confetti Simple, the phone view: the mode is decided before the first paint; the styles reach phones only -->
-  <link rel="stylesheet" href="simple.css?v=simple4" media="(max-width: 640px)">
-  <script src="simple-boot.js?v=simple3"></script>
+  <!-- [simple] Confetti Simple: the mode is decided before the first paint; styles for both phone and desktop -->
+  <link rel="stylesheet" href="simple.css?v=simple5">
+  <script src="simple-boot.js?v=simple4"></script>
   <script>
     /* Night only. */
     document.documentElement.setAttribute('data-theme', 'night');
@@ -586,15 +586,32 @@
 </head>
 <body class="trade">
 
-  <!-- [simple] BEGIN: the Simple phone view. simple.js fills it; simple.css shows it only on phones in Simple mode -->
+  <!-- [simple] BEGIN: the Simple view. simple.js fills it; simple.css shows it -->
   <div class="sm-root" id="smRoot" hidden>
     <header class="sm-top" id="smTop"><span class="sm-logo">confetti<i>_</i></span></header>
+    <!-- phone: single-column scrolling main -->
     <main class="sm-main" id="smMain">
       <div class="sm-label">Your trading money</div>
       <div class="sm-big">$&mdash;</div>
       <div class="sm-sec"><div class="sm-label">Trade a coin</div><div class="sm-skel" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div></div>
     </main>
     <div class="sm-cta" id="smCta"></div>
+    <!-- desktop: three-column layout (built by simple.js) -->
+    <div class="sm-body" id="smBody">
+      <div class="sm-left" id="smLeft">
+        <div class="sm-left-head" id="smLeftHead"></div>
+        <div class="sm-left-scroll" id="smLeftScroll"></div>
+      </div>
+      <div class="sm-center" id="smCenter">
+        <div class="sm-center-inner" id="smCenterInner"></div>
+        <div class="sm-dirbar" id="smDirbar" hidden></div>
+      </div>
+      <div class="sm-right" id="smRight">
+        <div class="sm-panel-head" id="smPanelHead"><h2></h2><button class="sm-x" type="button" aria-label="Close">✕</button></div>
+        <div class="sm-panel-body" id="smPanelBody"></div>
+        <div class="sm-panel-foot" id="smPanelFoot"></div>
+      </div>
+    </div>
   </div>
   <!-- [simple] END -->
 
@@ -1445,8 +1462,8 @@
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
   <script src="settle.js?v=pnl1" defer></script>
-  <script src="simple.js?v=simple4" async></script>
-  <script src="trade.js?v=simple3" defer></script>
+  <script src="simple.js?v=simple5" async></script>
+  <script src="trade.js?v=simple4" defer></script>
   <script src="points.js?v=prm1" defer></script>
 </body>
 </html>

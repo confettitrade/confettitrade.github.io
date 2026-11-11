@@ -13,7 +13,7 @@
   'use strict';
 
   var api = null, E = null;
-  var MODE_KEY = 'confetti.trade.mode', FLAG_KEY = 'confetti.trade.simpleFlag2', SEEN_KEY = 'confetti.trade.simpleSeen';
+  var MODE_KEY = 'confetti.trade.mode', FLAG_KEY = 'confetti.trade.simpleFlag2', FLAG_DK_KEY = 'confetti.trade.simpleDesktopFlag', SEEN_KEY = 'confetti.trade.simpleSeen';
   var ADD_KEY = 'confetti.simple.add.', AMT_KEY = 'confetti.simple.amount', SPARK_KEY = 'confetti.simple.line.';
   var ZERO = '0x0000000000000000000000000000000000000000';
   var NAMES = {
@@ -112,19 +112,27 @@
 
   function param() { try { var p = new URLSearchParams(location.search).get('mode'); return p === 'simple' || p === 'pro' ? p : null; } catch (e) { return null; } }
   function flagOf() { var u = api.cfg().ui, f = u && u.simplePhones; return f === 'off' || f === 'default' ? f : 'optin'; }
+  function flagDkOf() { var u = api.cfg().ui, f = u && u.simpleDesktop; return f === 'off' || f === 'default' ? f : 'optin'; }
+  function isDesktop() { return window.innerWidth > 640; }
   /* "Asked for Simple": a saved "simple", or a "pro" that Simple's own menu wrote. Nothing else is asking: not ?mode=pro,
      not some other stored string. Only for someone who asked (or under "default") does Pro's Menu offer the way back. */
   function asked() { var c = lsGet(MODE_KEY); return S.param === 'simple' || c === 'simple' || (c === 'pro' && lsGet(SEEN_KEY) === '1') || S.mode === 'simple'; }
-  function enabled() { return S.flag === 'default' || (S.flag === 'optin' && asked()); }
-  function wantMode() {
-    if (S.flag === 'off') return 'pro';
-    var c = S.param || lsGet(MODE_KEY);
-    return c === 'simple' || c === 'pro' ? c : S.flag === 'default' ? 'simple' : 'pro';
+  function enabled() {
+    var flag = isDesktop() ? S.flagDk : S.flag;
+    return flag === 'default' || (flag === 'optin' && asked());
   }
-  /* Simple is what the phone shows: the mode, a phone's width, and the shell really on screen (applyMode keeps S.on) */
+  function wantMode() {
+    var flag = isDesktop() ? S.flagDk : S.flag;
+    if (flag === 'off') return 'pro';
+    var c = S.param || lsGet(MODE_KEY);
+    return c === 'simple' || c === 'pro' ? c : flag === 'default' ? 'simple' : 'pro';
+  }
+  /* Simple is what the screen shows: the mode, proper width, and the shell really on screen (applyMode keeps S.on) */
   function shown() { return !!S.on; }
   function applyMode() {
-    var root = document.documentElement, bar = document.querySelector('meta[name="theme-color"]'), on = S.mode === 'simple' && !!api && api.isPhone();
+    var root = document.documentElement, bar = document.querySelector('meta[name="theme-color"]');
+    var dk = isDesktop(), phoneOk = !dk && api.isPhone(), deskOk = dk;
+    var on = S.mode === 'simple' && !!api && (phoneOk || deskOk);
     if (on) {
       root.setAttribute('data-mode', 'simple');
       /* simple.css is what shows the shell. If it is not here, this page view runs as Pro: Pro's toasts, guide and sheets */
@@ -340,10 +348,17 @@
   function paint() {
     if (!shown()) return;
     paintTop();
-    if (S.place === 'coin') paintCoin(); else if (S.place === 'done') paintDone(); else paintHome();
-    addr(); edge();
-    if (ADD.sh && ADD.sh.isOpen) paintAdd();
-    if (ORD.sh && ORD.sh.isOpen) paintOrder();
+    if (isDesktop()) {
+      paintDesktopLeft();
+      paintDesktopCenter();
+      paintDesktopRight();
+    } else {
+      if (S.place === 'coin') paintCoin(); else if (S.place === 'done') paintDone(); else paintHome();
+      edge();
+      if (ADD.sh && ADD.sh.isOpen) paintAdd();
+      if (ORD.sh && ORD.sh.isOpen) paintOrder();
+    }
+    addr();
   }
   /* The list scrolls under the bottom bar, never behind it: while more is below, the bar has an edge (so a row cut at the
      bar reads as "more below"); with no bar, the list keeps its own room above the iPhone's home bar (simple.css). */
@@ -353,24 +368,372 @@
     if (el.root.classList.contains('no-cta') !== bare) el.root.classList.toggle('no-cta', bare);
   }
 
+  /* ---- Desktop: three-column layout ---- */
+  var DK = { panel: '', built: '', R: {} };
+
+  function paintDesktopLeft() {
+    var w = api.wallet(), a = api.account(), mk = api.markets();
+    var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? api.openings() : [];
+    var st = homeState(w, a), p = ADD.pend;
+    var sig = ['dkLeft', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
+      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0].join('|');
+
+    if (DK.leftSig !== sig) {
+      DK.leftSig = sig;
+      var head = el.leftHead, scroll = el.leftScroll;
+      head.textContent = ''; scroll.textContent = '';
+      DK.R.rows = {};
+
+      /* header: balance + actions */
+      add(head, h('div', 'sm-label', 'Your trading money'));
+      DK.R.bal = h('div', 'sm-big', '');
+      add(head, DK.R.bal);
+      if (st === 'visitor') add(head, h('p', 'sm-mid', 'Connect a wallet to trade.'));
+      else if (st === 'empty' && !p) add(head, h('p', 'sm-mid', 'Add money to start.'));
+      else if (st === 'money') {
+        if (a.inTrades > 0) add(head, DK.R.sub = h('p', 'sm-mid', ''));
+        add(head, h('div', 'sm-links', [btn('sm-link', 'Add money', () => { openAddDesktop(); }), a.available > 0 ? btn('sm-link', 'Withdraw', withdraw) : null]));
+      }
+
+      /* pending add note */
+      if (p) {
+        DK.R.pend = noteCard();
+        DK.R.pend.n.addEventListener('click', () => { openAddDesktop(); });
+        add(scroll, h('div', 'sm-sec', DK.R.pend.n));
+      }
+
+      /* result card */
+      if (S.res) {
+        var res = S.res, c = noteCard(), win = res.pnl > 0;
+        txt(c.b, res.liq ? res.sym + ' closed itself' : res.sym + ' closed: ' + usdP(res.pnl));
+        txt(c.i, res.liq ? 'The ' + usdS(res.lost) + ' you put in is gone.' : usd(res.paid) + ' is back in your trading money.');
+        c.icon.className = 'sm-pill ' + (win ? 'is-up' : 'is-dn'); c.icon.textContent = win ? '✓' : '×';
+        c.n.addEventListener('click', () => { S.done = res; S.res = null; S.sym = res.sym; S.place = 'done'; S.sig = ''; paint(); });
+        add(scroll, h('div', 'sm-sec', c.n));
+      }
+
+      /* open trades */
+      if (ps.length || os.length) {
+        var box = h('div', 'sm-rows');
+        os.forEach(o => { box.appendChild(tradeRow('o' + o.key, o, () => { selectCoin(o.sym); })); });
+        ps.forEach(x => { box.appendChild(tradeRow('p' + x.id, x, () => { selectCoin(x.sym, x.id); })); });
+        add(scroll, h('div', 'sm-sec', [h('div', 'sm-label', 'Your trades'), box]));
+      }
+
+      /* coin list */
+      var list = h('div', 'sm-rows');
+      mk.forEach(m => {
+        var r = DK.R.rows['m' + m.sym] = { v: h('b', null, '—'), c: h('i'), spk: svg('sm-spk', '0 0 72 28') };
+        var row = btn('sm-row' + (S.sym === m.sym ? ' is-sel' : ''), [h('span', 'sm-tk', [h('b', null, m.sym), h('i', null, nameOf(m.sym))]), r.spk, h('span', 'sm-pr', [r.v, r.c])], () => { selectCoin(m.sym); });
+        list.appendChild(row);
+      });
+      var sec = h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]);
+      add(scroll, sec);
+    }
+
+    /* update values */
+    var bt = st !== 'visitor' && a.loaded ? usd(a.available) : '$—';
+    txt(DK.R.bal, bt); cls(DK.R.bal, 'sm-big' + (bt.length > 11 ? ' is-longer' : bt.length > 9 ? ' is-long' : ''));
+    if (DK.R.sub && st === 'money') txt(DK.R.sub, a.inTrades > 0 ? usd(a.inTrades) + ' more is in your open trades.' : '');
+    if (p && p.final && p.state === 'done' && !DK.panel && Date.now() - (p.at || 0) > 60000) { dropPend(); return; }
+    if (DK.R.pend && p) fillPend(p);
+
+    /* update trade rows */
+    var ps2 = w.account && a.loaded ? api.positions() : [], os2 = w.account ? api.openings() : [];
+    ps2.forEach(x => {
+      var r = DK.R.rows['p' + see(x)]; if (!r) return;
+      var st2 = x.status;
+      txt(r.sub, st2 ? plainStatus(st2.text) : usdS(x.margin) + ' in');
+      txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
+      txt(r.c, x.delayed || !isFinite(x.pnl) ? 'price delayed' : pct(x.pnl / x.margin)); cls(r.c, tone(x.pnl));
+    });
+    os2.forEach(o => { var r = DK.R.rows['o' + o.key]; if (r) { txt(r.sub, plainStatus(o.say)); cls(r.sub, o.tone === 'bad' ? 'sm-dn' : ''); } });
+
+    /* update coin rows */
+    var mk2 = api.markets();
+    mk2.forEach(m => {
+      var r = DK.R.rows['m' + m.sym], q = api.price(m.sym); if (!r || !q) return;
+      var move = q.prev > 0 && q.px > 0 ? q.px / q.prev - 1 : NaN;
+      flash(r.v, q.px); txt(r.v, price(q.px, q.sz)); r.v.style.color = q.at && Date.now() - q.at < 15000 ? '' : 'var(--ink-muted)';
+      txt(r.c, isFinite(move) ? arrow(move) + pct(move) : ''); cls(r.c, tone(move));
+      spark(r.spk, m.coin, move);
+    });
+    loadSparks(mk2);
+  }
+
+  function selectCoin(sym, pid) {
+    S.sym = sym; S.pid = pid || null; S.place = 'coin'; S.sig = ''; paint();
+  }
+
+  function paintDesktopCenter() {
+    var inner = el.centerInner, dirbar = el.dirbar;
+    if (!S.sym) {
+      /* no coin selected: welcome message */
+      var sig = 'center-welcome';
+      if (DK.centerSig !== sig) {
+        DK.centerSig = sig;
+        inner.textContent = '';
+        dirbar.hidden = true;
+        add(inner, [h('div', 'sm-label', 'Select a coin'), h('p', 'sm-mid', 'Pick a coin from the list on the left to see the price and trade.')]);
+      }
+      return;
+    }
+
+    var m = market(S.sym), q = api.price(S.sym), w = api.wallet(), a = api.account();
+    var ps = w.account && a.loaded ? api.positions().filter(x => x.sym === S.sym) : [];
+    var os = w.account ? api.openings().filter(o => o.sym === S.sym) : [];
+
+    var sig = ['center', S.sym, S.pid, q && q.px, ps.map(x => x.id + x.pnl).join(','), os.map(o => o.key).join(','), COIN.tf, S.place].join('|');
+    if (DK.centerSig !== sig) {
+      DK.centerSig = sig;
+      inner.textContent = '';
+      DK.CR = {};
+
+      add(inner, h('div', 'sm-cname', nameOf(S.sym)));
+      var cbar = h('div', 'sm-cbar');
+      DK.CR.px = h('span', 'sm-price', '—');
+      DK.CR.chg = h('span', 'sm-chg', '');
+      add(cbar, [DK.CR.px, DK.CR.chg]);
+      add(inner, cbar);
+
+      /* chart */
+      var chart = h('div', 'sm-chart' + (ps.length ? ' is-set' : ''));
+      DK.CR.svg = svg(null, '0 0 100 100'); DK.CR.svg.setAttribute('preserveAspectRatio', 'none');
+      DK.CR.marks = h('div', 'sm-marks');
+      DK.CR.csay = h('div', 'sm-chart-say', '');
+      add(chart, [DK.CR.svg, DK.CR.marks, DK.CR.csay]);
+      add(inner, chart);
+
+      /* timeframe buttons */
+      DK.CR.tf = h('div', 'sm-tf');
+      ['1H', '1D', '1W', '1M', 'Candles'].forEach(t => {
+        var b = btn(null, t, () => {
+          if (t === 'Candles') { api.pro('candles', S.sym); setMode('pro'); return; }
+          COIN.tf = t; S.sig = ''; paint();
+        });
+        DK.CR.tf.appendChild(b);
+      });
+      add(inner, DK.CR.tf);
+
+      /* positions */
+      if (ps.length || os.length) {
+        var trades = h('div', 'sm-trades');
+        os.forEach(o => { trades.appendChild(buildPosCardDesktop(o, true)); });
+        ps.forEach(x => { trades.appendChild(buildPosCardDesktop(x, false)); });
+        add(inner, [h('div', 'sm-label', 'Your trades on ' + S.sym), trades]);
+      }
+
+      /* Up/Down bar */
+      dirbar.hidden = false;
+      dirbar.textContent = '';
+      add(dirbar, [
+        btn('sm-dir is-up', ['▲ UP', h('i', null, 'price goes up')], () => { openOrderDesktop(S.sym, true); }),
+        btn('sm-dir is-dn', ['▼ DOWN', h('i', null, 'price goes down')], () => { openOrderDesktop(S.sym, false); })
+      ]);
+    }
+
+    /* update values */
+    if (q && m) {
+      var px = q.px, prev = q.prev, move = prev > 0 && px > 0 ? px / prev - 1 : NaN;
+      txt(DK.CR.px, price(px, q.sz)); cls(DK.CR.px, 'sm-price' + (String(price(px, q.sz)).length > 10 ? ' is-long' : ''));
+      txt(DK.CR.chg, isFinite(move) ? arrow(move) + pct(move) + ' today' : ''); cls(DK.CR.chg, 'sm-chg ' + tone(move));
+      drawChart(m, q, ps.length ? chartMarks(ps[0]) : []);
+    }
+
+    /* update tf buttons */
+    each(DK.CR.tf, b => { b.setAttribute('aria-pressed', b.textContent === COIN.tf ? 'true' : 'false'); });
+  }
+
+  function buildPosCardDesktop(x, isOpening) {
+    var card = h('div', 'sm-pos' + (isOpening ? ' is-quiet' : ''));
+    var hdr = h('div', 'sm-pos-h', [h('span', null, [sidePill(x.isLong), h('span', 'sm-in', usdS(x.margin) + ' × ' + x.lev)])]);
+    add(card, hdr);
+    if (!isOpening) {
+      var pnl = h('div', 'sm-pnl ' + tone(x.pnl), (x.est ? '≈ ' : '') + usdP(x.pnl));
+      add(card, pnl);
+      add(card, btn('sm-btn is-primary', 'Close · take about ' + usd(x.payout), () => { closeGo(x.id); }));
+    } else {
+      add(card, h('p', 'sm-say', plainStatus(x.say)));
+    }
+    return card;
+  }
+
+  function paintDesktopRight() {
+    if (!DK.panel) {
+      el.root.classList.remove('has-panel');
+      return;
+    }
+    el.root.classList.add('has-panel');
+    if (DK.panel === 'order') paintDesktopOrder();
+    else if (DK.panel === 'add') paintDesktopAdd();
+  }
+
+  function openOrderDesktop(sym, isLong) {
+    var w = api.wallet();
+    if (!w.account) { doConnect(); return; }
+    DK.panel = 'order'; DK.orderSym = sym; DK.orderLong = isLong;
+    DK.orderTyped = '10'; DK.orderAll = false; DK.orderErr = '';
+    var m = market(sym), steps = boosts(m ? m.maxLev : 20);
+    DK.orderLev = steps.filter(v => v <= 20).pop() || steps[0];
+    DK.orderCustom = false; DK.orderAuto = false;
+    S.sig = ''; paint();
+  }
+
+  function openAddDesktop() {
+    var w = api.wallet(), p = ADD.pend;
+    if (!w.account) { doConnect(); return; }
+    if (api.demo) { api.pro('addUsdc'); return; }
+    if (api.gate() && !p) { snack(OFF); return; }
+    DK.panel = 'add';
+    if (p && !p.final && p.state === 'arrived') ADD.fin = ADD.fin || finOf(p);
+    if (!ADD.busy) ADD.view = ADD.fin ? 'finish' : p ? (p.final ? (p.state === 'done' ? 'ready' : 'fail') : p.rail === 'apple' ? 'apple' : 'moving') : 'form';
+    ADD.err = ''; ADD.built = '';
+    api.refresh().catch(noop); readBalances(); scheduleQuote(0);
+    S.sig = ''; paint();
+  }
+
+  function closePanel() {
+    DK.panel = '';
+    el.root.classList.remove('has-panel');
+    ADD.busy = ''; clearTimeout(ADD.qtimer); clearTimeout(ADD.btimer);
+    if (ADD.run) endRun(null);
+    S.sig = ''; paint();
+  }
+
+  function paintDesktopOrder() {
+    var head = el.panelHead, body = el.panelBody, foot = el.panelFoot;
+    var sym = DK.orderSym, up = DK.orderLong, m = market(sym);
+    if (!m) { closePanel(); return; }
+
+    var sig = 'order|' + sym + '|' + up + '|' + DK.orderTyped + '|' + DK.orderLev;
+    if (DK.orderSig !== sig) {
+      DK.orderSig = sig;
+      head.querySelector('h2').textContent = '';
+      add(head.querySelector('h2'), [sym + ' ', sidePill(up)]);
+      head.querySelector('.sm-x').onclick = closePanel;
+      body.textContent = ''; foot.textContent = '';
+
+      /* build order form */
+      var amt = ordAmount();
+      DK.OR = {};
+      DK.OR.amt = amtInput('smDkOrdAmount', 'Amount', DK.orderTyped, v => { DK.orderTyped = v; DK.orderAll = false; DK.orderErr = ''; paint(); });
+      var lab = h('label', 'sm-label', 'Amount'); lab.htmlFor = 'smDkOrdAmount';
+      var chips = h('div', 'sm-chips');
+      [5, 10, 25, 'all'].forEach(v => {
+        var b = btn(null, v === 'all' ? 'All' : '$' + v, () => {
+          var bal = api.account().available;
+          DK.orderAll = v === 'all'; DK.orderTyped = String(v === 'all' ? Math.floor(bal * 100) / 100 : v);
+          DK.OR.amt.value = DK.orderTyped; DK.orderErr = ''; paint();
+        });
+        b._v = v; chips.appendChild(b);
+      });
+      DK.OR.chips = chips;
+
+      /* boost selector */
+      var steps = boosts(m.maxLev);
+      var seg = h('div', 'sm-seg is-grid');
+      steps.forEach(v => {
+        var b = btn(null, v + '×', () => { DK.orderLev = v; DK.orderCustom = false; paint(); });
+        b._v = v; seg.appendChild(b);
+      });
+      seg.appendChild(btn(null, 'Custom', () => { DK.orderCustom = true; paint(); }));
+      DK.OR.seg = seg;
+
+      /* outcome display */
+      DK.OR.risk = h('p', 'sm-risk', '');
+      DK.OR.w = h('b', 'sm-up', ''); DK.OR.l = h('b', 'sm-dn', '');
+      DK.OR.wk = h('span'); DK.OR.lk = h('span');
+
+      add(body, [lab, h('div', 'sm-amt is-mid', [h('span', null, '$'), DK.OR.amt]), chips,
+        h('div', 'sm-label', 'Boost'), seg, DK.OR.risk,
+        h('div', 'sm-out', [h('div', null, [DK.OR.wk, DK.OR.w]), h('div', null, [DK.OR.lk, DK.OR.l])])]);
+
+      DK.OR.say = sayLine();
+      DK.OR.go = btn('sm-btn', '', () => { desktopOrderGo(); });
+      add(foot, [DK.OR.say, DK.OR.go]);
+    }
+
+    /* update values */
+    var amt2 = parseFloat(String(DK.orderTyped).replace(/[^0-9.]/g, '')) || 0;
+    var lev = DK.orderLev, a = api.account();
+    var t = api.trade({ sym: sym, isLong: up, margin: amt2, lev: lev }) || {};
+    var mv = api.fmt.move(t.endPct);
+
+    each(DK.OR.chips, b => { b.setAttribute('aria-pressed', (b._v === 'all' ? DK.orderAll : !DK.orderAll && amt2 === b._v) ? 'true' : 'false'); });
+    each(DK.OR.seg, b => { b.setAttribute('aria-pressed', (b._v === 'custom' ? DK.orderCustom : !DK.orderCustom && b._v === lev) ? 'true' : 'false'); });
+
+    txt(DK.OR.risk, lev + '× makes every 1% move worth ' + lev + '%. A ' + mv + '% ' + (up ? 'drop' : 'rise') + ' closes this trade and the ' + (amt2 > 0 ? usdS(amt2) : 'money') + ' is gone.');
+    txt(DK.OR.wk, sym + (up ? ' up 1%' : ' down 1%')); txt(DK.OR.w, isFinite(t.win1) ? usdP(t.win1) : '—');
+    txt(DK.OR.lk, sym + (up ? ' down ' : ' up ') + mv + '%'); txt(DK.OR.l, amt2 > 0 ? '−' + usd(amt2) : '—');
+
+    var needMoney = a.loaded && a.available < (t.min || 5);
+    var why = '';
+    if (t.block) why = plain(t.block);
+    else if (needMoney) why = 'You need at least ' + usdS(t.min || 5) + ' to trade.';
+    else if (!(amt2 > 0)) why = 'Type an amount.';
+    else if (amt2 < t.min) why = 'The smallest trade is ' + usdS(t.min) + '.';
+    else if (amt2 > a.available + 1e-9) why = 'That is more than your trading money (' + usd(a.available) + ').';
+    else if (t.problem) why = plain(t.problem);
+
+    txt(DK.OR.say, why || DK.orderErr || ''); cls(DK.OR.say, 'sm-say' + (why || DK.orderErr ? ' is-bad' : ''));
+    DK.OR.go._add = needMoney && !t.block;
+    txt(DK.OR.go, DK.OR.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' · ' + usdS(amt2) + ' × ' + lev);
+    cls(DK.OR.go, 'sm-btn ' + (DK.OR.go._add ? 'is-primary' : up ? 'is-up' : 'is-dn'));
+    DK.OR.go.disabled = !!why && !DK.OR.go._add;
+  }
+
+  function desktopOrderGo() {
+    if (DK.OR.go._add) { DK.panel = 'add'; ADD.view = 'form'; S.sig = ''; paint(); return; }
+    var sym = DK.orderSym, up = DK.orderLong, amt = parseFloat(String(DK.orderTyped).replace(/[^0-9.]/g, '')) || 0, lev = DK.orderLev;
+    var why = api.open({ sym: sym, isLong: up, margin: amt, lev: lev, maxed: DK.orderAll, tp: null, sl: null });
+    if (why) { DK.orderErr = plain(why); paint(); return; }
+    closePanel();
+  }
+
+  function paintDesktopAdd() {
+    var head = el.panelHead, body = el.panelBody, foot = el.panelFoot;
+    var v = ADD.view || 'form';
+
+    head.querySelector('h2').textContent = v === 'form' ? 'Add money' : v === 'moving' || v === 'apple' ? 'On its way' : v === 'ready' ? 'Added' : v === 'finish' ? 'Finish adding' : 'Not added';
+    head.querySelector('.sm-x').onclick = closePanel;
+
+    if (ADD.built !== v + '-dk') {
+      ADD.built = v + '-dk'; body.textContent = ''; foot.textContent = ''; ADD.R = {};
+      ({ form: buildForm, moving: buildMoving, apple: buildMoving, ready: buildReady, fail: buildFail, finish: buildFinish })[v]();
+      /* move content to panel */
+      if (ADD.sh && ADD.sh.body) {
+        body.innerHTML = ADD.sh.body.innerHTML;
+        foot.innerHTML = ADD.sh.foot.innerHTML;
+      }
+    }
+    ({ form: fillForm, moving: fillMoving, apple: fillMoving, ready: fillReady, fail: noop, finish: fillFinish })[v]();
+  }
+
+  /* Escape key closes panel */
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && isDesktop() && DK.panel) { closePanel(); ev.preventDefault(); }
+  });
+
+
   function paintTop() {
     var w = api.wallet(), a = api.account();
-    var key = [S.place === 'coin' ? S.sym : '', w.account || '', w.ready, window.innerWidth < 380].join('|');
+    var dk = isDesktop();
+    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, window.innerWidth < 380].join('|');
     if (el.top.getAttribute('data-k') !== key) {
       el.top.setAttribute('data-k', key); el.top.textContent = '';
       var left;
-      if (S.place === 'coin') { left = btn('sm-back', [h('span', 'sm-arr', '←'), S.sym], () => { back(); }); left.setAttribute('aria-label', 'Back to the coins'); }
+      if (!dk && S.place === 'coin') { left = btn('sm-back', [h('span', 'sm-arr', '←'), S.sym], () => { back(); }); left.setAttribute('aria-label', 'Back to the coins'); }
       else {
         left = h('a', 'sm-logo', ['confetti', h('i', null, '_')]); left.href = 'trade.html'; left.setAttribute('aria-label', 'confetti, home');
-        left.addEventListener('click', ev => { ev.preventDefault(); if (S.place !== 'home') back(); else el.main.scrollTop = 0; });
+        left.addEventListener('click', ev => { ev.preventDefault(); if (!dk && S.place !== 'home') back(); else if (el.main) el.main.scrollTop = 0; });
       }
-      R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { openAdd(); });
+      R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { dk ? openAddDesktop() : openAdd(); });
       R.money.setAttribute('aria-label', 'Your trading money. Add money');
       R.who = btn('sm-chip' + (w.account ? '' : ' is-off'), h('span', null, w.account ? [h('i', 'sm-dot'), short(w.account)] : 'Menu'), openMenu);
       R.who.setAttribute('aria-label', w.account ? 'Wallet ' + w.account + '. Menu' : 'Menu');
       add(el.top, [left, h('span', 'sm-top-r', [R.money, R.who])]);
     }
-    var on = !!(w.account && a.loaded && S.place !== 'home');
+    var on = !!(w.account && a.loaded && (dk || S.place !== 'home'));
     show(R.money, on);
     if (on) txt(R.money.querySelector('b'), usd(a.available));
   }
@@ -510,7 +873,9 @@
   /* the small lines: only for the rows on screen (more as rows scroll in), one request at a time */
   function loadSparks(mk) {
     mk.forEach(m => {
-      var k = seriesKey(m.coin, '1D'), r = R.rows && R.rows['m' + m.sym], b = r && r.spk && r.spk.getBoundingClientRect();
+      var k = seriesKey(m.coin, '1D');
+      var r = (R.rows && R.rows['m' + m.sym]) || (DK.R.rows && DK.R.rows['m' + m.sym]);
+      var b = r && r.spk && r.spk.getBoundingClientRect();
       if (!b || b.bottom <= 0 || b.top >= window.innerHeight) return;
       if (!series[k]) { var kept = keptSeries(m.coin); if (kept) { series[k] = kept; return; } }
       if (due(series[k]) && sparkQ.indexOf(m.coin) < 0) sparkQ.push(m.coin);
@@ -1293,6 +1658,14 @@
   var COIN = { tf: '1D', errs: {}, closing: null };
   function market(sym) { return api.markets().filter(m => m.sym === sym)[0] || null; }
   function sidePill(isLong, lev) { return h('span', 'sm-pill ' + (isLong ? 'is-up' : 'is-dn'), (isLong ? '▲ UP' : '▼ DOWN') + (lev ? ' ' + lev + '×' : '')); }
+  function chartMarks(p) {
+    var marks = [];
+    if (p.entry > 0) marks.push({ px: p.entry, kind: 'entry', label: 'opened ' + price(p.entry, p.sz) });
+    if (p.endPx > 0) marks.push({ px: p.endPx, kind: 'liq', label: 'closes itself ' + price(p.endPx, p.sz) });
+    if (p.auto && p.auto.tp != null) marks.push({ px: p.auto.tp, kind: 'tp', label: 'take profit ' + price(p.auto.tp, p.sz) });
+    if (p.auto && p.auto.sl != null) marks.push({ px: p.auto.sl, kind: 'sl', label: 'stop ' + price(p.auto.sl, p.sz) });
+    return marks;
+  }
   function paintCoin() {
     var sym = S.sym, w = api.wallet(), a = api.account(), q = api.price(sym), m = market(sym);
     if (!q || !m) { back(); return; }
@@ -1394,14 +1767,18 @@
   /* The line, scaled to the range plus the trades' prices that sit near it (up to one and a half ranges beyond it): a price
      further away is said at the chart's top or bottom edge with an arrow, so a far one never flattens the line. The labels
      are HTML over the chart (the line's own box stretches), nudged apart when two prices sit close. */
-  function drawChart(m, q, marks) {
+  function drawChart(m, q, marks, tgt) {
+    var dk = isDesktop();
+    var svgEl = dk ? DK.CR.svg : R.svg;
+    var marksEl = dk ? DK.CR.marks : R.marks;
+    var csayEl = dk ? DK.CR.csay : R.csay;
     var s = getSeries(m.coin, COIN.tf);
     if (due(series[seriesKey(m.coin, COIN.tf)])) loadSeries(m.coin, COIN.tf).then(kick);      /* never while a failed load is waiting its turn */
-    if (!s) { txt(R.csay, 'Loading the chart…'); return; }
+    if (!s) { txt(csayEl, 'Loading the chart…'); return; }
     marks = marks || [];
-    var hh = R.marks.clientHeight;
-    var key = s.at + '|' + q.px + '|' + COIN.tf + '|' + hh + '|' + marks.map(k => k.kind + k.px + k.label).join(','); if (R.svg._k === key) return;
-    R.svg._k = key; txt(R.csay, ''); R.svg.textContent = ''; R.marks.textContent = '';
+    var hh = marksEl.clientHeight;
+    var key = s.at + '|' + q.px + '|' + COIN.tf + '|' + hh + '|' + marks.map(k => k.kind + k.px + k.label).join(','); if (svgEl._k === key) return;
+    svgEl._k = key; txt(csayEl, ''); svgEl.textContent = ''; marksEl.textContent = '';
     var pts = s.pts.slice(); if (q.px > 0) pts[pts.length - 1] = q.px;
     var lo = Math.min.apply(null, pts), hi = Math.max.apply(null, pts), span0 = hi - lo || hi * 0.002 || 1, room = span0 * 1.5, near = [], far = [];
     marks.forEach(k => { if (!(k.px > 0)) return; if (k.px >= lo - room && k.px <= hi + room) near.push(k); else far.push(k); });
@@ -1409,7 +1786,7 @@
     var line = linePoints(pts, 100, 100, 4, lo, hi), col = pts[pts.length - 1] < pts[0] ? 'var(--neg)' : 'var(--pos)';
     var area = document.createElementNS(NS, 'polygon'); area.setAttribute('points', line + ' 100,100 0,100'); area.setAttribute('fill', col); area.setAttribute('opacity', '0.1');
     var l = document.createElementNS(NS, 'polyline'); l.setAttribute('points', line); l.setAttribute('stroke', col);
-    R.svg.appendChild(area); R.svg.appendChild(l);
+    svgEl.appendChild(area); svgEl.appendChild(l);
     if (!marks.length) return;
     var span = hi - lo || 1, yOf = p => 4 + 92 * (1 - (p - lo) / span);
     var items = near.map(k => ({ k: k, y: yOf(k.px) })).concat(far.map(k => ({ k: k, y: k.px > hi ? 0 : 100, edge: k.px > hi ? 'top' : 'bot' })));
@@ -1423,7 +1800,7 @@
       row.style.top = it.y + '%';
       var lab = h('span', null, it.edge ? it.k.label + (it.edge === 'top' ? ' ↑' : ' ↓') : it.k.label);
       lab.style.top = Math.round(at[i] - it.y / 100 * H) + 'px';
-      row.appendChild(lab); R.marks.appendChild(row);
+      row.appendChild(lab); marksEl.appendChild(row);
     });
   }
   function closeGo(pid) {
@@ -1616,8 +1993,13 @@
     var booted = document.documentElement.getAttribute('data-mode') === 'simple' && !S.gaveUp;
     api = a; E = window.ethers;
     el.root = $('smRoot'); el.top = $('smTop'); el.main = $('smMain'); el.cta = $('smCta');
-    if (!el.root || !el.top || !el.main || !el.cta) return null;
-    S.flag = flagOf(); lsSet(FLAG_KEY, S.flag);
+    /* desktop elements */
+    el.body = $('smBody'); el.left = $('smLeft'); el.leftHead = $('smLeftHead'); el.leftScroll = $('smLeftScroll');
+    el.center = $('smCenter'); el.centerInner = $('smCenterInner'); el.dirbar = $('smDirbar');
+    el.right = $('smRight'); el.panelHead = $('smPanelHead'); el.panelBody = $('smPanelBody'); el.panelFoot = $('smPanelFoot');
+    if (!el.root || !el.top) return null;
+    S.flag = flagOf(); S.flagDk = flagDkOf();
+    lsSet(FLAG_KEY, S.flag); lsSet(FLAG_DK_KEY, S.flagDk);
     S.param = param(); S.mode = wantMode();
     /* A page view that painted Pro stays Pro (no flip on a slow load): the flag just cached decides the next load. A view the
        boot painted as Simple is corrected only towards Pro (the flag "off", or nobody asked and it is not the default). */
@@ -1661,7 +2043,12 @@
     }, true);
     /* rows that scroll into view get their small lines then */
     el.main.addEventListener('scroll', () => { if (!S.edgeF) S.edgeF = requestAnimationFrame(() => { S.edgeF = 0; edge(); }); clearTimeout(S.sct); S.sct = setTimeout(() => { if (shown() && S.place === 'home') kick(); }, 200); }, { passive: true });
-    window.addEventListener('resize', () => { kick(); fitKeyboard(); });
+    var wasDesktop = isDesktop();
+    window.addEventListener('resize', () => {
+      var nowDesktop = isDesktop();
+      if (nowDesktop !== wasDesktop) { wasDesktop = nowDesktop; S.mode = wantMode(); applyMode(); }
+      kick(); fitKeyboard();
+    });
     if (window.visualViewport) { window.visualViewport.addEventListener('resize', fitKeyboard); window.visualViewport.addEventListener('scroll', fitKeyboard); }
     document.addEventListener('visibilitychange', function () { if (!document.hidden && ADD.pend && !ADD.pend.final) { if (ADD.pend.rail === 'apple') watchApple(); else track(); } });
     setInterval(() => { if (shown() && (ADD.pend || S.place !== 'home')) kick(); }, 1000);
