@@ -1538,14 +1538,20 @@
   }
 
   /* ---- hover P&L (the owner, 2026-10-26: "you click on your position and it highlights then you can do the
-     hover"): the picked position, or the only one on this market, read at the price under the cursor ---- */
-  function hoverTarget() {
+     hover"; 2026-11-10: "wherever you hover over the chart while you have an open position it shows you what your PnL
+     would be at that price", "pnl and position worth"): every position on this market, read at the price under the
+     cursor, with its P&L and what it is worth there (what a close would give back). Picking a card narrows it to that
+     one; with several and none picked, one line each (up to four) and the total. On a phone the box follows a
+     press-and-drag on the chart. ---- */
+  var HOVER_ROWS = 4;
+  function hoverTargets() {
     var m = state.market;
-    if (!m || m.instrumentId == null || !wallet.account) return null;
+    if (!m || m.instrumentId == null || !wallet.account) return [];
     var mine = acct.positions.filter(function (p) { return p.instrumentId === m.instrumentId; });
-    if (chart.pick) { var picked = mine.filter(function (p) { return String(p.id) === chart.pick; })[0]; if (picked) return picked; }
-    return mine.length === 1 ? mine[0] : null;
+    if (chart.pick) { var picked = mine.filter(function (p) { return String(p.id) === chart.pick; }); if (picked.length) return picked; }
+    return mine;
   }
+  function hoverTarget() { var t = hoverTargets(); return t.length === 1 ? t[0] : null; }
   function pickPosition(pid) {
     pid = pid == null ? null : String(pid);
     chart.pick = chart.pick === pid ? null : pid;
@@ -1553,24 +1559,42 @@
     chart.posSig = ''; syncPositionLines();
     renderHoverPnl(null);
   }
-  function renderHoverPnl(param) {
-    var box = $('chartHoverPnl'), host = $('chartBox');
-    if (!box || !host) return;
-    var p = param && param.point && chart.series ? hoverTarget() : null;
-    if (!p) { if (!box.hidden) box.hidden = true; return; }
-    var px = chart.series.coordinateToPrice(param.point.y);
-    if (px == null || !(px > 0)) { box.hidden = true; return; }
-    px = Number(px);
+  /* one position at price px: its P&L, what it is worth there (the close payout; 0 past liquidation) */
+  function hoverAt(p, px) {
     var inst = state.byInstId[p.instrumentId];
     var queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
     var est = estimateClose(p, inst, px, queueEmpty);
     var bust = px18ToNum(posBust18(p));
     var busted = bust > 0 && (p.isLong ? px <= bust : px >= bust);
-    var pnl = busted ? -p.margin : est.pnl, pct = p.margin > 0 ? pnl / p.margin : 0;
+    return { pnl: busted ? -p.margin : est.pnl, worth: busted ? 0 : Math.max(0, est.payout), busted: busted };
+  }
+  function renderHoverPnl(param) {
+    var box = $('chartHoverPnl'), host = $('chartBox');
+    if (!box || !host) return;
+    var list = param && param.point && chart.series ? hoverTargets() : [];
+    if (!list.length) { if (!box.hidden) box.hidden = true; return; }
+    var px = chart.series.coordinateToPrice(param.point.y);
+    if (px == null || !(px > 0)) { box.hidden = true; return; }
+    px = Number(px);
+    var dec = tpslDec(list[0]);
     box.textContent = '';
-    box.appendChild(el('span', 'k', posLabel(p) + ' at ' + fmtPrice(px, tpslDec(p))));
-    box.appendChild(el('b', pnl >= 0 ? 'pos' : 'neg', fmtUsd(pnl, true) + ' (' + fmtPct(pct, true) + ')'));
-    box.appendChild(el('span', 'k', busted ? 'liquidated here: the ' + fmtUsd(p.margin) + ' put in is gone' : 'you would get back ' + fmtUsd(Math.max(0, est.payout))));
+    if (list.length === 1) {
+      var p = list[0], r = hoverAt(p, px), pct = p.margin > 0 ? r.pnl / p.margin : 0;
+      box.appendChild(el('span', 'k', posLabel(p) + ' at ' + fmtPrice(px, dec)));
+      box.appendChild(el('b', r.pnl >= 0 ? 'pos' : 'neg', 'P&L ' + fmtUsd(r.pnl, true) + ' (' + fmtPct(pct, true) + ')'));
+      box.appendChild(el('span', 'v', r.busted ? 'Liquidated here: the ' + fmtUsd(p.margin) + ' put in is gone' : 'Position worth ' + fmtUsd(r.worth)));
+    } else {
+      var tp = 0, tw = 0, tm = 0;
+      box.appendChild(el('span', 'k', list.length + ' positions at ' + fmtPrice(px, dec)));
+      list.forEach(function (q, i) {
+        var rq = hoverAt(q, px);
+        tp += rq.pnl; tw += rq.worth; tm += q.margin;
+        if (i < HOVER_ROWS) box.appendChild(el('span', 'row ' + (rq.pnl >= 0 ? 'pos' : 'neg'), posLabel(q) + '  ' + fmtUsd(rq.pnl, true) + (rq.busted ? ' · liquidated' : ' · worth ' + fmtUsd(rq.worth))));
+      });
+      if (list.length > HOVER_ROWS) box.appendChild(el('span', 'k', '+ ' + (list.length - HOVER_ROWS) + ' more'));
+      box.appendChild(el('b', tp >= 0 ? 'pos' : 'neg', 'Total P&L ' + fmtUsd(tp, true) + ' (' + fmtPct(tm > 0 ? tp / tm : 0, true) + ')'));
+      box.appendChild(el('span', 'v', 'Positions worth ' + fmtUsd(tw)));
+    }
     box.hidden = false;
     var w = box.offsetWidth, h = box.offsetHeight, W = host.clientWidth, H = host.clientHeight;
     var x = param.point.x + 16, y = param.point.y - h - 10;

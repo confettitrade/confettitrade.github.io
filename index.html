@@ -186,6 +186,10 @@
     .chart-hover-pnl b { font-weight: 500; }
     .chart-hover-pnl b.pos { color: var(--pos); }
     .chart-hover-pnl b.neg { color: var(--neg); }
+    .chart-hover-pnl .v { display: block; font-size: 12px; color: var(--ink); }
+    .chart-hover-pnl .row { display: block; font-size: 11px; }
+    .chart-hover-pnl .row.pos { color: var(--pos); }
+    .chart-hover-pnl .row.neg { color: var(--neg); }
     .pos-card.is-picked { outline: 2px solid var(--accent); outline-offset: -1px; cursor: default; }
     @media (min-width: 641px) { #posLines .pos-card:not(.is-pending) { cursor: pointer; } }
     .tpsl-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px 8px; margin: -6px 0 10px; font-size: 12px; color: var(--ink-muted); border-bottom: 1px solid var(--rule); }
@@ -1426,7 +1430,7 @@
   <script src="keeper.js?v=house1" defer></script>
   <script src="share.js?v=quiet2" defer></script>
   <script src="settle.js?v=pnl1" defer></script>
-  <script src="trade.js?v=est1" defer></script>
+  <script src="trade.js?v=hover2" defer></script>
   <script src="points.js?v=prm1" defer></script>
 </body>
 </html>
