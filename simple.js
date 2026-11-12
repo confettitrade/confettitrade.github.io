@@ -415,8 +415,8 @@
       /* open trades */
       if (ps.length || os.length) {
         var box = h('div', 'sm-rows');
-        os.forEach(o => { box.appendChild(tradeRow('o' + o.key, o, () => { selectCoin(o.sym); })); });
-        ps.forEach(x => { box.appendChild(tradeRow('p' + x.id, x, () => { selectCoin(x.sym, x.id); })); });
+        os.forEach(o => { box.appendChild(tradeRow('o' + o.key, o, () => { selectCoin(o.sym); }, DK.R.rows)); });
+        ps.forEach(x => { box.appendChild(tradeRow('p' + x.id, x, () => { selectCoin(x.sym, x.id); }, DK.R.rows)); });
         add(scroll, h('div', 'sm-sec', [h('div', 'sm-label', 'Your trades'), box]));
       }
 
@@ -520,7 +520,7 @@
         var trades = h('div', 'sm-trades');
         os.forEach(o => { trades.appendChild(buildPosCardDesktop(o, true)); });
         ps.forEach(x => { trades.appendChild(buildPosCardDesktop(x, false)); });
-        add(inner, [h('div', 'sm-label', 'Your trades on ' + S.sym), trades]);
+        var tl = h('div', 'sm-label', (ps.length + os.length > 1 ? 'Your trades on ' : 'Your trade on ') + S.sym); tl.style.marginTop = '28px'; add(inner, [tl, trades]);
       }
 
       /* Up/Down bar */
@@ -817,8 +817,8 @@
     c.n = btn('sm-note', [c.icon, h('span', 'sm-t', [c.b, c.i]), h('span', 'sm-chev', '›')]);
     return c;
   }
-  function tradeRow(key, x, fn) {
-    var r = R.rows[key] = { sub: h('i'), v: h('b', null, key.charAt(0) === 'o' ? usdS(x.margin) : '—'), c: h('i') };
+  function tradeRow(key, x, fn, rows) {
+    var r = (rows || R.rows)[key] = { sub: h('i'), v: h('b', null, key.charAt(0) === 'o' ? usdS(x.margin) : '—'), c: h('i') };
     var pill = h('span', 'sm-pill ' + (x.isLong ? 'is-up' : 'is-dn'), (x.isLong ? '▲ UP ' : '▼ DOWN ') + x.lev + '×');
     var who = h('b', null, [x.sym + ' ', pill]); who.style.display = 'flex'; who.style.alignItems = 'center'; who.style.gap = '8px';
     return btn('sm-row is-pos', [h('span', 'sm-tk', [who, r.sub]), h('span', 'sm-pr', [r.v, r.c])], fn);
