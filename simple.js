@@ -114,16 +114,19 @@
   function flagOf() { var u = api.cfg().ui, f = u && u.simplePhones; return f === 'off' || f === 'default' ? f : 'optin'; }
   function flagDkOf() { var u = api.cfg().ui, f = u && u.simpleDesktop; return f === 'off' || f === 'default' ? f : 'optin'; }
   /* wider than a phone and a mouse or trackpad: a phone on its side or a tablet is neither (applyMode then keeps Pro) */
-  function isDesktop() { var f = true; try { f = window.matchMedia('(pointer: fine)').matches; } catch (e) { /* old browser: by width */ } return window.innerWidth > 640 && f; }
+  function wide() { var f = true; try { f = window.matchMedia('(pointer: fine)').matches; } catch (e) { /* old browser: by width */ } return window.innerWidth > 640 && f; }
+  /* the layout: since 2026-11-12 every screen gets the phone's Simple (a desktop sees it centred, simple.css), so the
+     three-column desktop code below is never reached. wide() above still picks the desktop flag (ui.simpleDesktop). */
+  function isDesktop() { return false; }
   /* "Asked for Simple": a saved "simple", or a "pro" that Simple's own menu wrote. Nothing else is asking: not ?mode=pro,
      not some other stored string. Only for someone who asked (or under "default") does Pro's Menu offer the way back. */
   function asked() { var c = lsGet(MODE_KEY); return S.param === 'simple' || c === 'simple' || (c === 'pro' && lsGet(SEEN_KEY) === '1') || S.mode === 'simple'; }
   function enabled() {
-    var flag = isDesktop() ? S.flagDk : S.flag;
+    var flag = wide() ? S.flagDk : S.flag;
     return flag === 'default' || (flag === 'optin' && asked());
   }
   function wantMode() {
-    var flag = isDesktop() ? S.flagDk : S.flag;
+    var flag = wide() ? S.flagDk : S.flag;
     if (flag === 'off') return 'pro';
     var c = S.param || lsGet(MODE_KEY);
     return c === 'simple' || c === 'pro' ? c : flag === 'default' ? 'simple' : 'pro';
@@ -132,7 +135,7 @@
   function shown() { return !!S.on; }
   function applyMode() {
     var root = document.documentElement, bar = document.querySelector('meta[name="theme-color"]');
-    var dk = isDesktop(), phoneOk = !dk && api.isPhone(), deskOk = dk;
+    var dk = wide(), phoneOk = !dk && api.isPhone(), deskOk = dk;
     var on = S.mode === 'simple' && !!api && (phoneOk || deskOk);
     if (on) {
       root.setAttribute('data-mode', 'simple');
@@ -2088,9 +2091,9 @@
     }, true);
     /* rows that scroll into view get their small lines then */
     el.main.addEventListener('scroll', () => { if (!S.edgeF) S.edgeF = requestAnimationFrame(() => { S.edgeF = 0; edge(); }); clearTimeout(S.sct); S.sct = setTimeout(() => { if (shown() && S.place === 'home') kick(); }, 200); }, { passive: true });
-    var wasDesktop = isDesktop();
+    var wasDesktop = wide();
     window.addEventListener('resize', () => {
-      var nowDesktop = isDesktop();
+      var nowDesktop = wide();
       if (nowDesktop !== wasDesktop) { wasDesktop = nowDesktop; S.mode = wantMode(); applyMode(); }
       kick(); fitKeyboard();
     });
