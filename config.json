@@ -51,7 +51,7 @@
   "v2DeployBlock": 48404443,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,
-  "ui": { "simplePhones": "default" },
+  "ui": { "simplePhones": "default", "simpleDesktop": "default" },
   "$settings": "Stand-ins until the page reads the live values from the exchange (minMarginUsdc(), winFeeBps(), lossFeeBps(), borrowFreeHours(), maxWinBps()).",
   "minMarginUsdc": 5,
   "bustBufferPct": 95,

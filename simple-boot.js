@@ -12,9 +12,9 @@
   'use strict';
   var root = document.documentElement, MODE = 'confetti.trade.mode', FLAG_PH = 'confetti.trade.simpleFlag2', FLAG_DK = 'confetti.trade.simpleDesktopFlag';
   /* What a first visit gets (no flag cached yet, no choice). Phones: 'simple' since config.json's ui.simplePhones became "default".
-     Desktop: 'pro' since desktop Simple is opt-in at launch.
+     Desktop: 'simple' since config.json's ui.simpleDesktop became "default" (owner, 2026-11-12).
      Put it back to 'pro' on the day the phone flag goes back to "optin" or "off". */
-  var FIRST_PH = 'simple', FIRST_DK = 'pro';
+  var FIRST_PH = 'simple', FIRST_DK = 'simple';
   /* The address and the title as they came, before trade.js writes its coin into both: a shared trade.html#BTC opens BTC
      in Simple, and Simple's Home goes back to the page's own title. */
   window.ConfettiSimpleBoot = { hash: location.hash || '', title: document.title };
