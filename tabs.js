@@ -661,8 +661,14 @@
 
   function readHead() {
     return read.provider.getBlock('latest').then(function (b) {
-      head.block = Number(b.number); head.ts = Number(b.timestamp); head.at = Date.now();
-      return head.block;
+      var n = Number(b.number);
+      head.ts = Number(b.timestamp); head.at = Date.now();
+      if (!read.logProvider || read.logProvider === read.provider) { head.block = n; return n; }
+      /* the log node can trail the main node by a few blocks: every scan stops at what the log node has,
+         or its last chunk is refused ("beyond current head") and the whole scan starts over on each poll */
+      return read.logProvider.getBlockNumber().then(function (l) {
+        head.block = Number(l) > 0 ? Math.min(n, Number(l)) : n; return head.block;
+      }, function () { head.block = n; return n; });
     });
   }
 
