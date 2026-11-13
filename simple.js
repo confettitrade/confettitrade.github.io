@@ -607,6 +607,8 @@
     if (api.gate() && !p) { snack(OFF); return; }
     if (DK.panel && DK.panel !== 'add') closePanel();
     DK.panel = 'add';
+    /* the panel stands in for the phone's Add sheet, so every "is the Add sheet open" check and every repaint reaches it */
+    ADD.sh = { dk: true, get isOpen() { return DK.panel === 'add'; }, get body() { return el.panelBody; }, get foot() { return el.panelFoot; }, get title() { return el.panelHead.querySelector('h2'); }, get d() { return el.right; }, close: closePanel, open: noop };
     if (p && !p.final && p.state === 'arrived') ADD.fin = ADD.fin || finOf(p);
     if (!ADD.busy) ADD.view = ADD.fin ? 'finish' : p ? (p.final ? (p.state === 'done' ? 'ready' : 'fail') : p.rail === 'apple' ? 'apple' : 'moving') : 'form';
     ADD.err = ''; ADD.built = '';
@@ -1213,7 +1215,7 @@
     if (!w.account) { doConnect(); return; }
     if (api.demo) { api.pro('addUsdc'); return; }
     if (api.gate() && !p) { snack(OFF); return; }
-    var sh = ADD.sh || (ADD.sh = makeSheet('Add', true));
+    var sh = ADD.sh && !ADD.sh.dk ? ADD.sh : (ADD.sh = ADD.phoneSh || (ADD.phoneSh = makeSheet('Add', true)));
     sh.onClose = () => {
       ADD.chainsOpen = false; clearTimeout(ADD.qtimer); clearTimeout(ADD.btimer);
       if (ADD.run) endRun(null);                      /* a press whose sheet was closed never opens the wallet */
@@ -1228,6 +1230,7 @@
   }
 
   function paintAdd() {
+    if (ADD.sh && ADD.sh.dk) { if (ADD.sh.isOpen) paintDesktopAdd(); return; }
     var sh = ADD.sh, v = ADD.view || 'form';
     if (ADD.built !== v) {
       ADD.built = v; sh.body.textContent = ''; sh.foot.textContent = ''; ADD.R = {};
