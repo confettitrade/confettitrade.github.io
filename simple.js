@@ -115,9 +115,9 @@
   function flagDkOf() { var u = api.cfg().ui, f = u && u.simpleDesktop; return f === 'off' || f === 'default' ? f : 'optin'; }
   /* wider than a phone and a mouse or trackpad: a phone on its side or a tablet is neither (applyMode then keeps Pro) */
   function wide() { var f = true; try { f = window.matchMedia('(pointer: fine)').matches; } catch (e) { /* old browser: by width */ } return window.innerWidth > 640 && f; }
-  /* the layout: since 2026-11-12 every screen gets the phone's Simple (a desktop sees it centred, simple.css), so the
-     three-column desktop code below is never reached. wide() above still picks the desktop flag (ui.simpleDesktop). */
-  function isDesktop() { return false; }
+  /* the layout: desktop (wide() = wider than a phone and a mouse or trackpad) gets the three-column layout,
+     phone gets the single-column layout. */
+  function isDesktop() { return wide(); }
   /* "Asked for Simple": a saved "simple", or a "pro" that Simple's own menu wrote. Nothing else is asking: not ?mode=pro,
      not some other stored string. Only for someone who asked (or under "default") does Pro's Menu offer the way back. */
   function asked() { var c = lsGet(MODE_KEY); return S.param === 'simple' || c === 'simple' || (c === 'pro' && lsGet(SEEN_KEY) === '1') || S.mode === 'simple'; }
@@ -125,9 +125,11 @@
     var flag = wide() ? S.flagDk : S.flag;
     return flag === 'default' || (flag === 'optin' && asked());
   }
+  var NO_PRO = true;   /* owner 2026-11-12 "no more pro" "for now": no Pro view, no Candles; set false to bring Pro back */
   function wantMode() {
     var flag = wide() ? S.flagDk : S.flag;
     if (flag === 'off') return 'pro';
+    if (NO_PRO) return 'simple';   /* owner 2026-11-12: "no more pro", "for now" */
     var c = S.param || lsGet(MODE_KEY);
     return c === 'simple' || c === 'pro' ? c : flag === 'default' ? 'simple' : 'pro';
   }
@@ -380,7 +382,7 @@
     var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? api.openings() : [];
     var st = homeState(w, a), p = ADD.pend;
     var sig = ['dkLeft', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
-      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0].join('|');
+      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0, S.sym].join('|');
 
     if (DK.leftSig !== sig) {
       DK.leftSig = sig;
@@ -392,9 +394,13 @@
       add(head, h('div', 'sm-label', 'Your trading money'));
       DK.R.bal = h('div', 'sm-big', '');
       add(head, DK.R.bal);
-      if (st === 'visitor') add(head, h('p', 'sm-mid', 'Connect a wallet to trade.'));
-      else if (st === 'empty' && !p) add(head, [h('p', 'sm-mid', 'Add money to start.'), h('div', 'sm-links', btn('sm-link', 'Add money', () => { openAddDesktop(); }))]);
-      else if (st === 'money') {
+      if (st === 'visitor') {
+        add(head, h('p', 'sm-mid', 'Connect a wallet to trade.'));
+        add(head, h('div', 'sm-links', btn('sm-link', w.has ? 'Connect wallet' : 'Open in wallet app', doConnect)));
+      } else if (st === 'empty' && !p) {
+        add(head, h('p', 'sm-mid', 'Add money to start.'));
+        add(head, h('div', 'sm-links', btn('sm-link', 'Add money', () => { openAddDesktop(); })));
+      } else if (st === 'money') {
         if (a.inTrades > 0) add(head, DK.R.sub = h('p', 'sm-mid', ''));
         add(head, h('div', 'sm-links', [btn('sm-link', 'Add money', () => { openAddDesktop(); }), a.available > 0 ? btn('sm-link', 'Withdraw', withdraw) : null]));
       }
@@ -471,6 +477,7 @@
 
   function paintDesktopCenter() {
     var inner = el.centerInner, dirbar = el.dirbar;
+    if (!S.sym) { var first = (api.markets() || [])[0]; if (first) S.sym = first.sym; }   /* a wide screen opens on the first coin, never an empty middle */
     if (!S.sym) {
       /* no coin selected: welcome message */
       var sig = 'center-welcome';
@@ -510,7 +517,7 @@
 
       /* timeframe buttons */
       DK.CR.tf = h('div', 'sm-tf');
-      ['1H', '1D', '1W', '1M', 'Candles'].forEach(t => {
+      ['1H', '1D', '1W', '1M'].forEach(t => {
         var b = btn(null, t, () => {
           if (t === 'Candles') { api.pro('candles', S.sym); setMode('pro'); return; }
           COIN.tf = t; S.sig = ''; paint();
@@ -596,10 +603,9 @@
   function openAddDesktop() {
     var w = api.wallet(), p = ADD.pend;
     if (!w.account) { doConnect(); return; }
-    /* desktop: Pro's Add USDC sheet, sized for a wide screen (the phone's sheet is styled for phones only) */
-    if (DK.panel) closePanel();
-    api.pro('addUsdc'); return;
+    if (api.demo) { api.pro('addUsdc'); return; }  /* demo has no wallet to send from: Pro's own sheet */
     if (api.gate() && !p) { snack(OFF); return; }
+    if (DK.panel && DK.panel !== 'add') closePanel();
     DK.panel = 'add';
     if (p && !p.final && p.state === 'arrived') ADD.fin = ADD.fin || finOf(p);
     if (!ADD.busy) ADD.view = ADD.fin ? 'finish' : p ? (p.final ? (p.state === 'done' ? 'ready' : 'fail') : p.rail === 'apple' ? 'apple' : 'moving') : 'form';
@@ -747,14 +753,20 @@
 
     if (ADD.built !== v + '-dk') {
       ADD.built = v + '-dk'; body.textContent = ''; foot.textContent = ''; ADD.R = {};
+      /* Create a temporary sheet-like object for build functions to use the panel directly */
+      var tempSh = { title: head.querySelector('h2'), body: body, foot: foot, d: el.right, isOpen: true, close: closePanel };
+      var oldSh = ADD.sh;
+      ADD.sh = tempSh;
       ({ form: buildForm, moving: buildMoving, apple: buildMoving, ready: buildReady, fail: buildFail, finish: buildFinish })[v]();
-      /* move content to panel */
-      if (ADD.sh && ADD.sh.body) {
-        body.innerHTML = ADD.sh.body.innerHTML;
-        foot.innerHTML = ADD.sh.foot.innerHTML;
-      }
+      ADD.sh = oldSh;
     }
+    /* Use temp sheet for fill functions so they update the panel elements */
+    var tempSh2 = { title: head.querySelector('h2'), body: body, foot: foot, d: el.right, isOpen: true, close: closePanel };
+    var oldSh2 = ADD.sh;
+    ADD.sh = tempSh2;
     ({ form: fillForm, moving: fillMoving, apple: fillMoving, ready: fillReady, fail: noop, finish: fillFinish })[v]();
+    fillWait();
+    ADD.sh = oldSh2;
   }
 
   /* Escape key closes panel */
@@ -766,7 +778,7 @@
   function paintTop() {
     var w = api.wallet(), a = api.account();
     var dk = isDesktop();
-    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, window.innerWidth < 380].join('|');
+    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, w.has, a.loaded, window.innerWidth < 380].join('|');
     if (el.top.getAttribute('data-k') !== key) {
       el.top.setAttribute('data-k', key); el.top.textContent = '';
       var left;
@@ -775,15 +787,41 @@
         left = h('a', 'sm-logo', ['confetti', h('i', null, '_')]); left.href = 'trade.html'; left.setAttribute('aria-label', 'confetti, home');
         left.addEventListener('click', ev => { ev.preventDefault(); if (!dk && S.place !== 'home') back(); else if (el.main) el.main.scrollTop = 0; });
       }
-      R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { dk ? openAddDesktop() : openAdd(); });
-      R.money.setAttribute('aria-label', 'Your trading money. Add money');
-      R.who = btn('sm-chip' + (w.account ? '' : ' is-off'), h('span', null, w.account ? [h('i', 'sm-dot'), short(w.account)] : 'Menu'), openMenu);
-      R.who.setAttribute('aria-label', w.account ? 'Wallet ' + w.account + '. Menu' : 'Menu');
-      add(el.top, [left, h('span', 'sm-top-r', [R.money, R.who])]);
+      var rightItems = [];
+      if (dk) {
+        /* Desktop header: money chip (connected), wallet chip or Connect button, Menu */
+        if (w.account) {
+          R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { openAddDesktop(); });
+          R.money.setAttribute('aria-label', 'Your trading money. Add money');
+          rightItems.push(R.money);
+          R.who = btn('sm-chip', h('span', null, [h('i', 'sm-dot'), short(w.account)]), openMenu);
+          R.who.setAttribute('aria-label', 'Wallet ' + w.account + '. Menu');
+          rightItems.push(R.who);
+        } else {
+          R.connect = btn('sm-connect', 'Connect wallet', doConnect);
+          R.connect.setAttribute('aria-label', 'Connect your wallet to trade');
+          rightItems.push(R.connect);
+        }
+        R.menu = btn('sm-chip', h('span', null, 'Menu'), openMenu);
+        R.menu.setAttribute('aria-label', 'Menu');
+        rightItems.push(R.menu);
+      } else {
+        /* Phone header: money chip and wallet/menu chip */
+        R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { openAdd(); });
+        R.money.setAttribute('aria-label', 'Your trading money. Add money');
+        R.who = btn('sm-chip' + (w.account ? '' : ' is-off'), h('span', null, w.account ? [h('i', 'sm-dot'), short(w.account)] : 'Menu'), openMenu);
+        R.who.setAttribute('aria-label', w.account ? 'Wallet ' + w.account + '. Menu' : 'Menu');
+        rightItems.push(R.money, R.who);
+      }
+      add(el.top, [left, h('span', 'sm-top-r', rightItems)]);
     }
-    var on = !!(w.account && a.loaded && (dk || S.place !== 'home'));
-    show(R.money, on);
-    if (on) txt(R.money.querySelector('b'), usd(a.available));
+    /* Update money chip value */
+    if (R.money && w.account && a.loaded) {
+      txt(R.money.querySelector('b'), usd(a.available));
+      show(R.money, dk || S.place !== 'home');
+    } else if (R.money) {
+      show(R.money, false);
+    }
   }
 
   /* ---- Home: your trading money, Add money, the coins ---- */
@@ -971,7 +1009,7 @@
     if (!w.account) add(list, item(w.has ? 'Connect wallet' : 'Open in your wallet app', '', doConnect));
     if (w.account) add(list, item('Add money', '', () => { openAdd(); }));
     if (w.account && a.loaded && a.available > 0) add(list, item('Withdraw', 'to your wallet', withdraw));
-    add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));      /* from a coin: Pro opens on that coin */
+    if (!NO_PRO) add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));      /* from a coin: Pro opens on that coin */
     if (!w.account && !api.demo) add(list, item('Try it with pretend money', '', null, 'trade.html?demo=1&mode=simple'));
     if (api.demo) add(list, item('Leave the demo', 'trade for real', null, 'trade.html?mode=simple'));
     add(sh.body, list);
@@ -1783,7 +1821,6 @@
     R.svg = svg('', '0 0 100 100'); R.csay = h('div', 'sm-chart-say', ''); R.marks = h('div', 'sm-marks'); R.marks.setAttribute('aria-hidden', 'true');
     var tf = h('div', 'sm-tf');
     Object.keys(TF).forEach(function (k) { var b = btn(null, k, () => { COIN.tf = k; redo(); }); b.setAttribute('aria-pressed', k === COIN.tf ? 'true' : 'false'); tf.appendChild(b); });
-    tf.appendChild(btn(null, 'Candles', () => { toPro(sym); }));
     add(main, [h('div', 'sm-chart' + (trade ? ' is-set' : ''), [R.svg, R.marks, R.csay]), tf]);
     var up = btn('sm-dir is-up', ['▲ Up', h('i', null, 'price goes up')], () => { openOrder(sym, true); });
     var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, 'price goes down')], () => { openOrder(sym, false); });

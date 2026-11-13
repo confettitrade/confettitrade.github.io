@@ -14,7 +14,7 @@
   /* What a first visit gets (no flag cached yet, no choice). Phones: 'simple' since config.json's ui.simplePhones became "default".
      Desktop: 'simple' since config.json's ui.simpleDesktop became "default" (owner, 2026-11-12).
      Put it back to 'pro' on the day the phone flag goes back to "optin" or "off". */
-  var FIRST_PH = 'simple', FIRST_DK = 'simple';
+  var FIRST_PH = 'simple', FIRST_DK = 'simple', NO_PRO = true;
   /* The address and the title as they came, before trade.js writes its coin into both: a shared trade.html#BTC opens BTC
      in Simple, and Simple's Home goes back to the page's own title. */
   window.ConfettiSimpleBoot = { hash: location.hash || '', title: document.title };
@@ -30,6 +30,7 @@
   var saved = param || get(MODE), flagKey = phone ? FLAG_PH : FLAG_DK, first = phone ? FIRST_PH : FIRST_DK;
   var flag = get(flagKey), mode;
   if (flag === 'off') mode = 'pro';
+  else if (NO_PRO) mode = 'simple';   /* owner 2026-11-12: "no more pro", "for now": every phone and desktop opens in Simple; flag "off" is still the way back */
   else if (saved === 'simple' || saved === 'pro') mode = saved;
   else mode = flag === 'default' || (flag == null && first === 'simple') ? 'simple' : 'pro';
   if (mode !== 'simple') return;

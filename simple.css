@@ -399,19 +399,120 @@
 }
 
 /* ==========================================================================
-   Desktop (641 px and up, with a mouse or trackpad): the phone's Simple, in a
-   centred column on the full cream page, so a desktop goes through exactly
-   the phone's steps (owner, 2026-11-12: "make it do the same flow as the
-   phone pretty much", picked "phone screen, centred"). Sheets rise inside
-   the column.
+   Desktop (641 px and up, with a mouse or trackpad): three-column layout.
+   LEFT: coin list and balance. CENTER: selected coin chart and trades.
+   RIGHT: order / add money panel (instead of sheets that slide up).
+   Same cream paper look, same flow, wider layout.
    ========================================================================== */
 
 @media (min-width: 641px) {
-  .sm-root { align-items: center; }
-  .sm-root > :not(.sm-snack) { width: 100%; max-width: 480px; }
-  .sm-root > .sm-snack { width: calc(100% - 32px); max-width: 448px; }
-  .sm-root > .sm-top, .sm-root > .sm-main, .sm-root > .sm-cta { box-shadow: -1px 0 0 var(--rule), 1px 0 0 var(--rule); }
-  .sm-root > .sm-main { background-color: var(--page); }
-  .sm-root.is-more > .sm-cta { box-shadow: -1px 0 0 var(--rule), 1px 0 0 var(--rule), 0 -1px 0 var(--rule), 0 -12px 16px -12px rgba(42, 37, 32, 0.28); }
-  dialog.sm-sheet { left: 0; right: 0; margin: 0 auto; max-width: 480px; border-left: 1px solid var(--rule-strong); border-right: 1px solid var(--rule-strong); }
+  /* hide phone-only elements on desktop */
+  .sm-root > .sm-main, .sm-root > .sm-cta { display: none !important; }
+  /* show the three-column body */
+  .sm-root > .sm-body { display: flex !important; flex: 1 1 auto; min-height: 0; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; }
+
+  /* top bar: spans full width, 64px tall */
+  .sm-root > .sm-top { width: 100%; max-width: 1600px; margin: 0 auto; padding-left: 24px; padding-right: 24px; border-bottom: 1px solid var(--rule); height: 64px; }
+
+  /* Connect button for visitors in header */
+  .sm-top .sm-connect { display: inline-flex; align-items: center; height: 44px; padding: 0 16px; background: var(--ink); color: var(--page); font-size: 15px; font-weight: 600; border: none; }
+  .sm-top .sm-connect::before { content: "[\00a0"; opacity: 0.55; } .sm-top .sm-connect::after { content: "\00a0]"; opacity: 0.55; }
+  .sm-top .sm-connect:active { filter: brightness(0.9); }
+
+  /* LEFT column: coin list - wider for long prices */
+  .sm-left { flex: 0 0 360px; width: 360px; display: flex; flex-direction: column; border-right: 1px solid var(--rule); background: var(--page); }
+  .sm-left-head { flex: none; padding: 20px 20px 16px; border-bottom: 1px solid var(--rule); }
+  .sm-left-head .sm-big { margin-top: 4px; margin-bottom: 8px; }
+  .sm-left-head .sm-links { margin-top: 4px; }
+  .sm-left-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 20px 24px; }
+  .sm-left-scroll .sm-sec { margin-top: 20px; }
+  .sm-left-scroll .sm-sec:first-child { margin-top: 16px; }
+  .sm-left .sm-row.is-sel { background: var(--raised); }
+
+  /* desktop rows: more space for price, smaller sparklines */
+  .sm-left .sm-row { gap: 10px; }
+  .sm-left .sm-row .sm-tk { flex: 0 0 100px; }
+  .sm-left .sm-row .sm-spk { flex: 0 0 60px; width: 60px; }
+  .sm-left .sm-row .sm-pr { flex: 1 1 auto; min-width: 80px; }
+  .sm-left .sm-row .sm-pr b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; }
+  .sm-left .sm-row .sm-pr i { font-size: 13px; }
+
+  /* CENTER column: coin details and chart - flex layout for tall chart */
+  .sm-center { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background-color: var(--page); }
+  .sm-center-inner { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 20px 24px 0; }
+  .sm-center-inner > .sm-cname { flex: none; }
+  .sm-center-inner > .sm-cbar { flex: none; }
+  /* chart fills available space, respecting trades below */
+  .sm-center-inner .sm-chart { flex: 1 1 auto; min-height: 280px; max-height: none; margin-bottom: 12px; }
+  .sm-center-inner .sm-chart.is-set { min-height: 200px; max-height: 320px; flex: none; }
+  .sm-center-inner .sm-tf { flex: none; margin-top: 0; margin-bottom: 12px; }
+  .sm-center-inner .sm-trades { flex: none; margin-top: 8px; margin-bottom: 24px; }
+  .sm-center-inner .sm-pos { max-width: 520px; }
+  /* welcome message when no coin selected */
+  .sm-center-inner .sm-welcome { padding-top: 40px; }
+
+  /* Up/Down bar at the bottom of center */
+  .sm-dirbar { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--rule); background: var(--page); }
+  .sm-dirbar .sm-dir { height: 64px; }
+
+  /* RIGHT column: panel for order / add money */
+  .sm-right { flex: 0 0 380px; width: 380px; display: none; flex-direction: column; border-left: 1px solid var(--rule); background: var(--raised); }
+  .sm-root.has-panel .sm-right { display: flex; }
+  .sm-panel-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 20px 12px; border-bottom: 1px solid var(--rule); }
+  .sm-panel-head h2 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2; display: flex; align-items: center; gap: 8px; }
+  .sm-panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 16px 20px; }
+  .sm-panel-body .sm-amt { margin-top: 4px; }
+  .sm-panel-body .sm-chips { margin: 10px 0 16px; }
+  .sm-panel-body .sm-out { margin-top: 10px; }
+  .sm-panel-body .sm-risk { margin-top: 6px; min-height: 0; }
+  .sm-panel-body .sm-sum { margin-top: 12px; }
+  .sm-panel-body .sm-fine { margin-top: 10px; }
+  .sm-panel-foot { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--rule); background: var(--raised); }
+  .sm-panel-foot .sm-say { margin-bottom: 8px; text-align: left; }
+  .sm-panel-foot .sm-btn { margin-top: 4px; }
+
+  /* sheets: still modal dialogs for menu, but styled for desktop */
+  dialog.sm-sheet { left: auto; right: 0; margin: 0; max-width: 400px; border-left: 1px solid var(--rule-strong); border-radius: 0; }
+  dialog.sm-sheet[open] { animation: sm-slide-in 200ms ease-out; }
+  dialog.sm-sheet.is-out { animation: sm-slide-out 160ms ease-in forwards; }
+  @keyframes sm-slide-in { from { transform: translateX(100%); } }
+  @keyframes sm-slide-out { to { transform: translateX(100%); } }
+
+  /* hide snack on desktop: messages show in the panel or as inline text */
+  .sm-snack { display: none !important; }
+}
+
+/* Wider screens: more breathing room */
+@media (min-width: 1280px) {
+  .sm-left { flex-basis: 380px; width: 380px; }
+  .sm-left .sm-row .sm-tk { flex: 0 0 110px; }
+  .sm-left .sm-row .sm-spk { flex: 0 0 72px; width: 72px; }
+  .sm-left .sm-row .sm-pr { min-width: 90px; }
+  .sm-left .sm-row .sm-pr b { font-size: 16px; }
+  .sm-right { flex-basis: 400px; width: 400px; }
+  .sm-panel-body { padding: 20px 24px; }
+  .sm-panel-foot { padding: 16px 24px 20px; }
+  .sm-center-inner { padding: 24px 32px 0; }
+  .sm-center-inner .sm-chart { min-height: 360px; }
+}
+
+/* Very wide screens */
+@media (min-width: 1600px) {
+  .sm-center-inner .sm-chart { min-height: 420px; }
+}
+
+/* Narrower desktop: squeeze columns */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .sm-left { flex-basis: 300px; width: 300px; }
+  .sm-left .sm-row .sm-tk { flex: 0 0 80px; }
+  .sm-left .sm-row .sm-spk { flex: 0 0 48px; width: 48px; }
+  .sm-left .sm-row .sm-pr b { font-size: 14px; }
+  .sm-left .sm-row .sm-pr i { font-size: 12px; }
+  .sm-right { flex-basis: 340px; width: 340px; }
+  .sm-left-head { padding: 16px 16px 12px; }
+  .sm-left-scroll { padding: 0 16px 20px; }
+}
+
+@media (min-width: 641px) and (prefers-reduced-motion: reduce) {
+  dialog.sm-sheet[open], dialog.sm-sheet.is-out { animation: none; }
 }
