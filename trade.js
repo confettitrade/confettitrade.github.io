@@ -11664,7 +11664,7 @@
   function demoWhenPriced(fn) {
     var t0 = Date.now();
     (function wait() {
-      var ok = ['DOGE', 'WIF'].every(function (s) { var m = state.bySym[s]; return m && state.mids[m.coin] > 0; });
+      var ok = ['DOGE', 'WIF', 'ETH'].every(function (s) { var m = state.bySym[s]; return m && state.mids[m.coin] > 0; });
       if (ok || Date.now() - t0 > 6000) {
         ['DOGE', 'WIF'].forEach(function (s) { var m = state.bySym[s]; if (m && !(state.mids[m.coin] > 0)) state.mids[m.coin] = DEMO_FALLBACK_PX[s]; });
         demoOracle();
@@ -11692,13 +11692,14 @@
   }
 
   function demoSeed() {
-    var doge = state.bySym.DOGE, wif = state.bySym.WIF;
+    var doge = state.bySym.DOGE, wif = state.bySym.WIF, eth = state.bySym.ETH;
     if (!doge || !wif || doge.instrumentId == null || wif.instrumentId == null) return;
-    var pd = state.mids[doge.coin], pw = state.mids[wif.coin];
+    var pd = state.mids[doge.coin], pw = state.mids[wif.coin], pe = eth ? state.mids[eth.coin] : 0;
     var p1 = demoPos(doge, true, 10, 20, pd * 0.994);   /* in profit */
     var p2 = demoPos(wif, false, 10, 50, pw * 0.989);   /* a loss, its liquidation getting close (amber) */
-    acct.positions = [p1, p2];
-    acct.available = 50; acct.marginInUse = 20; acct.pending = 0; acct.loaded = true; acct.owner = wallet.account;
+    var p3 = eth && eth.instrumentId != null && pe > 0 ? demoPos(eth, false, 15, 5, pe * 1.01) : null;   /* 3rd position on ETH, short */
+    acct.positions = p3 ? [p1, p2, p3] : [p1, p2];
+    acct.available = 50; acct.marginInUse = p3 ? 35 : 20; acct.pending = 0; acct.loaded = true; acct.owner = wallet.account;
     if (PRACTICE) { acct.positions = []; acct.marginInUse = 0; }   /* the practice run starts with nothing open */
     /* &bal=20: the balance (a low-balance ticket) */
     if (demoOpt('bal') !== '' && isFinite(Number(demoOpt('bal')))) acct.available = Number(demoOpt('bal'));
@@ -11717,7 +11718,7 @@
     var e61 = toPx18(pd * 0.96), x61 = toPx18(pd * 0.9995), w61 = 500 * (0.9995 / 0.96 - 1);
     var e62 = toPx18(pw * 0.998), x62 = toPx18(pw * 1.002), l62 = 500 * (0.998 - 1.002) / 0.998;
     var e63 = toPx18(pd * 1.03), x63 = toPx18(pd * 1.03 * 0.981);
-    [[demoLog('Deposited', [me, me, numToUsd6(70)], demoHash()), 10800],
+    var logs = [[demoLog('Deposited', [me, me, numToUsd6(70)], demoHash()), 10800],
      [demoLog('PositionOpened', [61n, me, doge.instrumentId, true, numToUsd6(10), 50, e61, 31n, true], demoHash()), 10200],
      [demoLog('PositionClosed', [61n, me, x61, usd(w61), usd(w61 * 0.05), usd(10 + w61 * 0.95), 0n, 0n, true], demoHash()), 9000],
      [demoLog('PositionOpened', [62n, me, wif.instrumentId, false, numToUsd6(10), 50, e62, 32n, true], demoHash()), 7200],
@@ -11726,7 +11727,9 @@
      [demoLog('PositionLiquidated', [63n, me, me, x63, numToUsd6(10), numToUsd6(0.05), 0n], demoHash()), 4800],
      [demoLog('PositionOpened', [p1.id, me, p1.instrumentId, true, numToUsd6(10), 20, p1.entryPx18, 41n, true], demoHash()), 900],
      [demoLog('PositionOpened', [p2.id, me, p2.instrumentId, false, numToUsd6(10), 50, p2.entryPx18, 42n, true], demoHash()), 600]
-    ].filter(function (x) { return !PRACTICE || x[1] > 1000; }).forEach(function (x) { hist.blockTs[x[0].blockNumber] = now - x[1]; addLogs([x[0]]); });   /* the practice run keeps the three past outcomes only */
+    ];
+    if (p3) logs.push([demoLog('PositionOpened', [p3.id, me, p3.instrumentId, false, numToUsd6(15), 5, p3.entryPx18, 43n, true], demoHash()), 300]);
+    logs.filter(function (x) { return !PRACTICE || x[1] > 1000; }).forEach(function (x) { hist.blockTs[x[0].blockNumber] = now - x[1]; addLogs([x[0]]); });   /* the practice run keeps the three past outcomes only */
     hist.done = true;
     if (DEMO === 'pending') {
       /* an open request the ticket follows, held: Opening, then late, then expired */
@@ -13080,6 +13083,26 @@
       var c = state.ctx[m.coin];
       return { px: state.mids[m.coin], prev: c ? c.prevDayPx : NaN, sz: m.szDecimals, at: state.midsAt };
     },
+    /* [simple] house and per-coin stats: the house LP, site-wide 24h volume, and per-coin OI and volume */
+    houseStats: function () {
+      var sum = cvol.entries.reduce(function (s, e) { return s + (isFinite(e.n) ? e.n : 0); }, 0);
+      return { lp: house.lp, vol24h: sum, loaded: house.lp != null };
+    },
+    coinStats: function (sym) {
+      var m = state.bySym[sym]; if (!m) return null;
+      /* the Pro view reads open interest only for its own market: read the coin the simple view shows, at most every 15 s */
+      var at = house.oiAt || (house.oiAt = {}), ex = read.exchange, now = Date.now();
+      if (!DEMO && ex && m.instrumentId != null && !(at[m.symbol] > now - 15000)) {
+        at[m.symbol] = now;
+        ex.openInterest(m.instrumentId).then(function (r) {
+          house.oi[m.symbol] = { long: usd6ToNum(r[0]), short: usd6ToNum(r[1]) };
+          if (hbots.n) loadHouseBotOi();
+        }).catch(function () { at[m.symbol] = now - 10000; });   /* a failed read tries again about 5 s later */
+      }
+      var oi = publicOi(m.symbol, m.instrumentId);
+      var c = state.ctx[m.coin];
+      return { oiUp: oi ? oi.long : NaN, oiDown: oi ? oi.short : NaN, vol24h: c ? c.vol24h : NaN };
+    },
     /* a would-be trade in the ticket's own numbers: the price it opens near, what a 1% move pays, the move that ends it */
     trade: function (o) {
       return smWith(o, function (m) {
@@ -13181,6 +13204,82 @@
       /* Pro's own title and address again (Simple wrote its screen's): the ticket's market */
       if (state.market) { try { history.replaceState(history.state, '', '#' + encodeURIComponent(state.market.symbol)); } catch (e) { /* the address stays */ } }
       renderMarketHeader(); renderAccount(); renderPositions(); renderAction();
+    },
+    /* [simple] chart: readers and helpers for Simple's Lightweight Charts (candlestick chart in simple.js).
+       Simple creates its own LW chart instance; these expose Pro's theme, timeframes, candle loading, and
+       live price subscription so Simple reuses Pro's data plumbing without duplicating it. */
+    chart: {
+      TF_MS: TF_MS,
+      CANDLE_COUNT: CANDLE_COUNT,
+      TZ_OFFSET_S: TZ_OFFSET_S,
+      theme: function () {
+        /* Simple sets its CSS variables on body (html[data-mode="simple"] body); read from there */
+        var el = smShown() ? document.body : document.documentElement;
+        function cv(name, fallback) { var v = getComputedStyle(el).getPropertyValue(name); return (v ? v.trim() : '') || fallback; }
+        return {
+          raised: cv('--raised', '#faf6ed'), ink: cv('--ink', '#2a2520'), muted: cv('--ink-muted', '#5f564b'),
+          faint: cv('--ink-faint', '#7a7060'), rule: cv('--rule', '#d4cbba'), ruleStrong: cv('--rule-strong', '#b8ad92'),
+          pos: cv('--pos', '#2e7a4c'), neg: cv('--neg', '#b44855'), accent: cv('--accent', '#8b2020'),
+          page: cv('--page', '#f4ecd8'), mono: cv('--font-mono', 'monospace')
+        };
+      },
+      precision: function (px, sz) { return pricePrecision(px, sz); },
+      barTime: function (t) { return Math.floor(t / 1000) - TZ_OFFSET_S; },
+      /* load candles for a coin/tf; returns a promise of { candles, precision } or rejects on failure */
+      loadCandles: function (coin, tf) {
+        var ms = TF_MS[tf];
+        if (!ms) return Promise.reject(new Error('unknown tf'));
+        var end = Date.now(), start = end - (CANDLE_COUNT + 2) * ms;
+        return postInfo({ type: 'candleSnapshot', req: { coin: coin, interval: tf, startTime: start, endTime: end } }, 8000)
+          .then(function (rows) {
+            if (!Array.isArray(rows)) throw new Error('bad candles');
+            var parsed = rows.map(function (r) {
+              return { t: Number(r.t), o: Number(r.o), h: Number(r.h), l: Number(r.l), c: Number(r.c), v: Number(r.v) || 0 };
+            }).filter(function (k) {
+              return isFinite(k.t) && isFinite(k.o) && isFinite(k.h) && isFinite(k.l) && isFinite(k.c) && k.c > 0;
+            }).slice(-CANDLE_COUNT);
+            if (parsed.length === 0) throw new Error('no candles');
+            /* continuous candles: each bar opens at the previous bar's close */
+            for (var i = 1; i < parsed.length; i++) {
+              var k = parsed[i], o = parsed[i - 1].c;
+              k.o = o;
+              if (o > k.h) k.h = o;
+              if (o < k.l) k.l = o;
+            }
+            var lastPx = parsed[parsed.length - 1].c;
+            var m = state.bySym && Object.values(state.bySym).filter(function (x) { return x.coin === coin; })[0];
+            var precision = pricePrecision(lastPx, m ? m.szDecimals : 2);
+            return { candles: parsed, precision: precision };
+          });
+      }
+    },
+    /* [simple] limit orders: Simple's 'At a price' option */
+    limits: {
+      orders: function () {
+        return lim.orders.map(function (o) {
+          var px = state.mids[o.coin];
+          return { id: o.id, sym: o.sym, isLong: o.isLong, margin: o.margin, lev: o.lev, px: o.limitPx, sz: o.szDec, now: px > 0 ? px : null, at: o.at, expires: o.expires, hold: o.hold || null };
+        });
+      },
+      place: function (sym, isLong, margin, lev, px) {
+        var m = markets().filter(function (x) { return x.symbol === sym; })[0];
+        if (!m) return { ok: false, err: 'Unknown coin.' };
+        var now = marketPrice(m);
+        if (!(px > 0)) return { ok: false, err: 'Type a limit price.' };
+        if (isFinite(now) && now > 0 && limitCrossed({ isLong: isLong, limitPx: px }, now)) {
+          return { ok: false, err: (isLong ? 'A buy limit at or above the price' : 'A sell limit at or below the price') + ' would fill right now: use Now, or set the price ' + (isLong ? 'lower' : 'higher') + '.' };
+        }
+        var dup = lim.orders.some(function (x) { return x.sym === sym && x.isLong === isLong && x.limitPx === px && x.margin === margin && x.lev === lev; });
+        if (dup) return { ok: false, err: 'That limit is already placed.' };
+        var o = { id: 'L' + Date.now().toString(36), sym: sym, coin: m.coin, isLong: isLong, margin: margin, lev: lev, maxed: false, limitPx: px, szDec: m.szDecimals, at: Date.now(), expires: Date.now() + LIM_EXPIRY_MS };
+        lim.orders.push(o); limSave();
+        return { ok: true, id: o.id };
+      },
+      cancel: function (id) { cancelLimit(id); return true; },
+      marketPrice: function (sym) {
+        var m = markets().filter(function (x) { return x.symbol === sym; })[0];
+        return m ? marketPrice(m) : null;
+      }
     }
   };
   (function () {

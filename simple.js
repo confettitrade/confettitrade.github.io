@@ -64,6 +64,13 @@
   function usd(n) { return n == null || !isFinite(n) ? '$—' : '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function usdS(n) { return n == null || !isFinite(n) ? '$—' : Math.abs(n - Math.round(n)) < 0.005 ? '$' + Math.round(n).toLocaleString('en-US') : usd(n); }
   function usdP(n) { return n == null || !isFinite(n) ? '—' : (n > 0.004 ? '+' : n < -0.004 ? '−' : '') + usd(n); }
+  /* Compact USD: $64.9K, $1.2M, $820 */
+  function usdK(n) {
+    if (n == null || !isFinite(n)) return '$—';
+    if (n >= 1e6) return '$' + (n / 1e6).toFixed(n >= 10e6 ? 0 : 1) + 'M';
+    if (n >= 1e3) return '$' + (n / 1e3).toFixed(n >= 10e3 ? 0 : 1) + 'K';
+    return '$' + Math.round(n).toLocaleString('en-US');
+  }
   function price(p, sz) {
     if (!(p > 0)) return '—';
     if (p >= 10000) return '$' + Math.round(p).toLocaleString('en-US');
@@ -434,7 +441,8 @@
       var list = h('div', 'sm-rows');
       mk.forEach(m => {
         var r = DK.R.rows['m' + m.sym] = { v: h('b', null, '—'), c: h('i'), spk: svg('sm-spk', '0 0 72 28') };
-        var row = btn('sm-row' + (S.sym === m.sym ? ' is-sel' : ''), [h('span', 'sm-tk', [h('b', null, m.sym), h('i', null, nameOf(m.sym))]), r.spk, h('span', 'sm-pr', [r.v, r.c])], () => { selectCoin(m.sym); });
+        var tb = h('span', 'sm-trade', [h('span', 'sm-trade-long', 'Click here to place trade'), h('span', 'sm-trade-short', 'Place trade')]);
+        var row = btn('sm-row' + (S.sym === m.sym ? ' is-sel' : ''), [h('span', 'sm-tk', [h('b', m.sym.length >= 8 ? 'is-long' : null, m.sym), h('i', null, nameOf(m.sym))]), r.spk, tb, h('span', 'sm-pr', [r.v, r.c])], () => { selectCoin(m.sym); });
         list.appendChild(row);
       });
       var sec = h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]);
@@ -494,7 +502,8 @@
     var ps = w.account && a.loaded ? api.positions().filter(x => x.sym === S.sym) : [];
     var os = w.account ? api.openings().filter(o => o.sym === S.sym) : [];
 
-    var sig = ['center', S.sym, S.pid, ps.map(x => x.id).join(','), os.map(o => o.key).join(','), COIN.tf, S.place].join('|');
+    var allPs = w.account && a.loaded ? api.positions() : [];
+    var sig = ['center', S.sym, S.pid, ps.map(x => x.id).join(','), os.map(o => o.key).join(','), allPs.map(x => x.id).join(','), COIN.tf, S.place].join('|');
     if (DK.centerSig !== sig) {
       DK.centerSig = sig;
       inner.textContent = '';
@@ -506,25 +515,33 @@
       DK.CR.chg = h('span', 'sm-chg', '');
       add(cbar, [DK.CR.px, DK.CR.chg]);
       add(inner, cbar);
+      /* Per-coin stats */
+      DK.CR.stats = h('div', 'sm-stats', '');
+      add(inner, DK.CR.stats);
 
-      /* chart */
+      /* chart: LightweightCharts container */
       var chart = h('div', 'sm-chart' + (ps.length ? ' is-set' : ''));
-      DK.CR.svg = svg(null, '0 0 100 100'); DK.CR.svg.setAttribute('preserveAspectRatio', 'none');
-      DK.CR.marks = h('div', 'sm-marks');
+      DK.CR.chartHost = h('div', 'sm-chart-lw');
       DK.CR.csay = h('div', 'sm-chart-say', '');
-      add(chart, [DK.CR.svg, DK.CR.marks, DK.CR.csay]);
+      add(chart, [DK.CR.chartHost, DK.CR.csay]);
       add(inner, chart);
 
-      /* timeframe buttons */
+      /* timeframe and mode buttons */
       DK.CR.tf = h('div', 'sm-tf');
-      ['1H', '1D', '1W', '1M'].forEach(t => {
-        var b = btn(null, t, () => {
-          if (t === 'Candles') { api.pro('candles', S.sym); setMode('pro'); return; }
-          COIN.tf = t; S.sig = ''; paint();
-        });
+      CHART_TF.forEach(function (t) {
+        var b = btn(null, t, () => { setSmChartTf(t); S.sig = ''; paint(); });
         DK.CR.tf.appendChild(b);
       });
+      /* Line/Candles toggle */
+      DK.CR.lineBtn = btn(null, 'Line', () => { setSmChartMode('line'); S.sig = ''; paint(); });
+      DK.CR.candleBtn = btn(null, 'Candles', () => { setSmChartMode('candles'); S.sig = ''; paint(); });
+      DK.CR.tf.appendChild(h('span', 'sm-tf-sep', ''));
+      DK.CR.tf.appendChild(DK.CR.lineBtn);
+      DK.CR.tf.appendChild(DK.CR.candleBtn);
       add(inner, DK.CR.tf);
+
+      /* initialize chart after layout */
+      setTimeout(() => { initSmChart(DK.CR.chartHost, m.coin, m.sz); }, 0);
 
       /* positions */
       if (ps.length || os.length) {
@@ -541,6 +558,32 @@
         btn('sm-dir is-up', ['▲ UP', h('i', null, '(Click here to open)')], () => { openOrderDesktop(S.sym, true); }),
         btn('sm-dir is-dn', ['▼ DOWN', h('i', null, '(Click here to open)')], () => { openOrderDesktop(S.sym, false); })
       ]);
+
+      /* All open trades section: all positions across all coins */
+      var allTr = el.allTrades;
+      if (allPs.length) {
+        allTr.hidden = false;
+        allTr.textContent = '';
+        DK.AT = { cards: {} };
+        add(allTr, h('div', 'sm-label', 'All your open trades'));
+        allPs.sort((a2, b2) => (b2.openedAt || 0) - (a2.openedAt || 0));
+        allPs.forEach(x => {
+          var c = DK.AT.cards[x.id] = { pnl: h('span', 'sm-all-pnl', '—'), close: h('button', 'sm-all-close', 'Close') };
+          var coin = h('span', 'sm-all-coin', x.sym); coin.addEventListener('click', () => { selectCoin(x.sym, x.id); });
+          var pill = h('span', 'sm-all-pill ' + (x.isLong ? 'sm-pill is-up' : 'sm-pill is-dn'), (x.isLong ? '▲ ' : '▼ ') + x.lev + '×');
+          var inAmt = h('span', 'sm-all-in', usdS(x.margin) + ' in');
+          c.close.addEventListener('click', () => { closeGo(x.id); });
+          var autoTxt = '';
+          if (x.auto && x.auto.tp != null) autoTxt += 'profit at ' + price(x.auto.tp, x.sz);
+          if (x.auto && x.auto.sl != null) autoTxt += (autoTxt ? ', ' : '') + 'stop at ' + price(x.auto.sl, x.sz);
+          var autoEl = autoTxt ? h('span', 'sm-all-auto', 'Auto-close: ' + autoTxt) : null;
+          var card = h('div', 'sm-all-card', autoEl ? [coin, pill, inAmt, c.pnl, c.close, autoEl] : [coin, pill, inAmt, c.pnl, c.close]);
+          allTr.appendChild(card);
+        });
+      } else {
+        allTr.hidden = true;
+        DK.AT = null;
+      }
     }
 
     /* update values */
@@ -548,7 +591,18 @@
       var px = q.px, prev = q.prev, move = prev > 0 && px > 0 ? px / prev - 1 : NaN;
       txt(DK.CR.px, price(px, q.sz)); cls(DK.CR.px, 'sm-price' + (String(price(px, q.sz)).length > 10 ? ' is-long' : ''));
       txt(DK.CR.chg, isFinite(move) ? arrow(move) + pct(move) + ' today' : ''); cls(DK.CR.chg, 'sm-chg ' + tone(move));
-      drawChart(m, q, ps.length ? chartMarks(ps[0]) : []);
+      /* update stats */
+      if (DK.CR.stats) {
+        var cs = api.coinStats(S.sym);
+        var parts = [];
+        if (cs && isFinite(cs.oiUp)) parts.push('Open Up ' + usdK(cs.oiUp));
+        if (cs && isFinite(cs.oiDown)) parts.push('Open Down ' + usdK(cs.oiDown));
+        if (cs && isFinite(cs.vol24h) && cs.vol24h > 0) parts.push('24h volume ' + usdK(cs.vol24h));
+        txt(DK.CR.stats, parts.join(' · ') || '');
+      }
+      /* update chart: sync price lines, update last candle from live price */
+      syncSmPriceLines();
+      if (px > 0 && smChart.candles.length) updateSmChartFromPrice(px);
     }
 
     /* trade cards: P&L, the Close button, and why a close did not happen */
@@ -561,8 +615,24 @@
     });
     os.forEach(o => { var c = DK.CR.cards && DK.CR.cards['o' + o.key]; if (c) txt(c.say, plainStatus(o.say)); });
 
-    /* update tf buttons */
-    each(DK.CR.tf, b => { b.setAttribute('aria-pressed', b.textContent === COIN.tf ? 'true' : 'false'); });
+    /* all trades section: update P&L */
+    if (DK.AT && DK.AT.cards) {
+      allPs.forEach(x => {
+        var c = DK.AT.cards[x.id]; if (!c) return;
+        var ok = !x.delayed && isFinite(x.pnl);
+        txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-all-pnl ' + (ok ? tone(x.pnl) : ''));
+        c.close.disabled = !!COIN.closing || x.status === 'closing';
+        c.close.textContent = COIN.closing === x.id ? 'Closing…' : 'Close';
+      });
+    }
+
+    /* update tf and mode buttons */
+    each(DK.CR.tf, b => {
+      var t = b.textContent;
+      if (t === 'Line') b.setAttribute('aria-pressed', COIN.mode === 'line' ? 'true' : 'false');
+      else if (t === 'Candles') b.setAttribute('aria-pressed', COIN.mode === 'candles' ? 'true' : 'false');
+      else b.setAttribute('aria-pressed', t === COIN.tf ? 'true' : 'false');
+    });
   }
 
   function buildPosCardDesktop(x, isOpening) {
@@ -778,9 +848,9 @@
 
 
   function paintTop() {
-    var w = api.wallet(), a = api.account();
+    var w = api.wallet(), a = api.account(), hs = api.houseStats();
     var dk = isDesktop();
-    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, w.has, a.loaded, window.innerWidth < 380].join('|');
+    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, w.has, a.loaded, window.innerWidth < 380, hs.loaded].join('|');
     if (el.top.getAttribute('data-k') !== key) {
       el.top.setAttribute('data-k', key); el.top.textContent = '';
       var left;
@@ -789,9 +859,17 @@
         left = h('a', 'sm-logo', ['confetti', h('i', null, '_')]); left.href = 'trade.html'; left.setAttribute('aria-label', 'confetti, home');
         left.addEventListener('click', ev => { ev.preventDefault(); if (!dk && S.place !== 'home') back(); else if (el.main) el.main.scrollTop = 0; });
       }
+      /* House chip: LP and site-wide 24h volume, links to house.html */
+      var houseVal = hs.loaded ? usdK(hs.lp) : '—';
+      var volVal = hs.vol24h > 0 ? usdK(hs.vol24h) : '';
+      /* the volume slot always exists: the 24h scan lands seconds after the first paint, and the refresh below fills it */
+      var houseInner = [h('b', null, 'House ' + houseVal), h('i', null, volVal ? '24h ' + volVal : '')];
+      R.house = h('a', 'sm-house', h('span', null, houseInner)); R.house.href = 'house.html';
+      R.house.setAttribute('aria-label', 'House LP ' + houseVal + (volVal ? ', 24h volume ' + volVal : '') + '. View house stats');
       var rightItems = [];
       if (dk) {
-        /* Desktop header: money chip (connected), wallet chip or Connect button, Menu */
+        /* Desktop header: house chip, money chip (connected), wallet chip or Connect button, Menu */
+        rightItems.push(R.house);
         if (w.account) {
           R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { openAddDesktop(); });
           R.money.setAttribute('aria-label', 'Your trading money. Add money');
@@ -808,14 +886,24 @@
         R.menu.setAttribute('aria-label', 'Menu');
         rightItems.push(R.menu);
       } else {
-        /* Phone header: money chip and wallet/menu chip */
-        R.money = btn('sm-chip', h('span', null, h('b', null, '')), () => { openAdd(); });
-        R.money.setAttribute('aria-label', 'Your trading money. Add money');
+        /* Phone header: house chip and wallet/menu chip only (money is shown on page) */
+        rightItems.push(R.house);
         R.who = btn('sm-chip' + (w.account ? '' : ' is-off'), h('span', null, w.account ? [h('i', 'sm-dot'), short(w.account)] : 'Menu'), openMenu);
         R.who.setAttribute('aria-label', w.account ? 'Wallet ' + w.account + '. Menu' : 'Menu');
-        rightItems.push(R.money, R.who);
+        rightItems.push(R.who);
       }
       add(el.top, [left, h('span', 'sm-top-r', rightItems)]);
+    }
+    /* Update house chip value */
+    if (R.house) {
+      var hsNow = api.houseStats();
+      var hv = hsNow.loaded ? usdK(hsNow.lp) : '—';
+      var vv = hsNow.vol24h > 0 ? usdK(hsNow.vol24h) : '';
+      var hb = R.house.querySelector('b');
+      if (hb) txt(hb, 'House ' + hv);
+      var hi = R.house.querySelector('i');
+      if (hi && vv) txt(hi, '24h ' + vv);
+      else if (hi && !vv) hi.textContent = '';
     }
     /* Update money chip value */
     if (R.money && w.account && a.loaded) {
@@ -888,7 +976,8 @@
     if (!mk.length) add(list, h('div', 'sm-skel', [h('i'), h('i'), h('i'), h('i'), h('i')]));
     mk.forEach(m => {
       var r = R.rows['m' + m.sym] = { v: h('b', null, '—'), c: h('i'), spk: svg('sm-spk', '0 0 72 28') };
-      var row = btn('sm-row', [h('span', 'sm-tk', [h('b', null, m.sym), h('i', null, nameOf(m.sym))]), r.spk, h('span', 'sm-pr', [r.v, r.c])], () => { go('coin', m.sym); });
+      var tb = h('span', 'sm-trade', [h('span', 'sm-trade-long', 'Click here to place trade'), h('span', 'sm-trade-short', 'Place trade')]);
+      var row = btn('sm-row', [h('span', 'sm-tk', [h('b', m.sym.length >= 8 ? 'is-long' : null, m.sym), h('i', null, nameOf(m.sym))]), r.spk, tb, h('span', 'sm-pr', [r.v, r.c])], () => { go('coin', m.sym); });
       list.appendChild(row);
     });
     var sec = h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]); sec.id = 'smCoins';
@@ -1011,13 +1100,24 @@
     if (!w.account) add(list, item(w.has ? 'Connect wallet' : 'Open in your wallet app', '', doConnect));
     if (w.account) add(list, item('Add money', '', () => { openAdd(); }));
     if (w.account && a.loaded && a.available > 0) add(list, item('Withdraw', 'to your wallet', withdraw));
-    if (!NO_PRO) add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));      /* from a coin: Pro opens on that coin */
-    if (!w.account && !api.demo) add(list, item('Try it with pretend money', '', null, 'trade.html?demo=1&mode=simple'));
-    if (api.demo) add(list, item('Leave the demo', 'trade for real', null, 'trade.html?mode=simple'));
-    /* the site's other pages (owner 2026-11-12: "we also had other stuff we hadded", "do both") */
-    add(list, h('div', 'sm-label', 'More'));
-    [['Portfolio', 'your trades and history', 'portfolio.html'], ['Leaderboard', 'points and PnL', 'leaderboard.html'], ['House', 'provide liquidity', 'house.html'],
-     ['$FETTI', 'stake and earn', 'confetti.html'], ['Docs', 'how it works', 'docs.html'], ['Contracts', 'on HyperEVM', 'contracts.html']].forEach(r => { add(list, item(r[0], r[1], null, r[2])); });
+    /* page links */
+    add(list, item('Portfolio', 'your trades', null, 'portfolio.html'));
+    add(list, item('Leaderboard', 'top traders', null, 'leaderboard.html'));
+    add(list, item('House', 'LP and stats', null, 'house.html'));
+    add(list, item('$FETTI', 'the token', null, 'confetti.html'));
+    /* sub-links: smaller docs and contracts */
+    var sub = h('div', 'sm-menu-sub');
+    add(sub, item('Docs', '', null, 'docs.html'));
+    add(sub, item('Contracts', '', null, 'contracts.html'));
+    add(list, sub);
+    /* one-tap trading status */
+    if (w.account && !api.demo) {
+      var s = api.session();
+      add(list, item('One-tap trading', s.live ? 'On' : 'Off', () => { api.pro('menu'); setMode('pro'); }));
+    }
+    /* refer */
+    if (w.account) add(list, item('Refer friends', 'earn 15%', () => { api.pro('menu'); setMode('pro'); }));
+    if (!NO_PRO) add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));
     add(sh.body, list);
     sh.open();
   }
@@ -1748,7 +1848,238 @@
      itself, its auto-close prices) and has its own card under the chart, with its own Close and auto-close. Up and Down stay,
      for another trade on the coin. Every trade action is the Pro code's (api.open, api.close) ---- */
 
-  var COIN = { tf: '1D', errs: {}, closing: null };
+  var COIN = { tf: '1H', mode: 'candles', errs: {}, closing: null };
+  var CHART_TF = ['1m', '5m', '15m', '1H', '4H', '1D'];
+  /* The LightweightCharts chart for Simple: one instance shared between phone and desktop, destroyed on
+     navigation away from a coin. The chart seam in trade.js loads candles and exposes Pro's theme. */
+  var smChart = { api: null, series: null, host: null, coin: null, candles: [], byTime: {}, precision: 4, lines: [], lineSig: '' };
+  function smChartTheme() {
+    var t = api.chart.theme();
+    return {
+      background: { type: 'solid', color: t.page },
+      textColor: t.ink,
+      fontFamily: t.mono,
+      fontSize: isDesktop() ? 11 : 12
+    };
+  }
+  function smChartOptions() {
+    var t = api.chart.theme();
+    var LW = window.LightweightCharts;
+    return {
+      autoSize: true,
+      layout: smChartTheme(),
+      grid: { vertLines: { color: t.rule, style: 1 }, horzLines: { color: t.rule, style: 1 } },
+      rightPriceScale: { borderColor: t.ruleStrong, scaleMargins: { top: 0.08, bottom: 0.08 } },
+      timeScale: { borderColor: t.ruleStrong, timeVisible: true, secondsVisible: COIN.tf === '1m', rightOffset: 3, barSpacing: 7 },
+      handleScroll: { vertTouchDrag: false, horzTouchDrag: true, mouseWheel: true, pressedMouseMove: true },
+      handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+      crosshair: {
+        mode: LW && LW.CrosshairMode ? LW.CrosshairMode.Normal : 0,
+        vertLine: { color: t.faint, labelBackgroundColor: t.ink, style: 1 },
+        horzLine: { color: t.faint, labelBackgroundColor: t.ink, style: 1 }
+      },
+      localization: { priceFormatter: function (p) { return Number(p).toFixed(smChart.precision); } }
+    };
+  }
+  function smSeriesOptions() {
+    var t = api.chart.theme();
+    return {
+      upColor: t.pos, downColor: t.neg,
+      borderUpColor: t.pos, borderDownColor: t.neg,
+      wickUpColor: t.pos, wickDownColor: t.neg,
+      priceLineColor: t.ink,
+      priceFormat: { type: 'price', precision: smChart.precision, minMove: Math.pow(10, -smChart.precision) }
+    };
+  }
+  function smLineOptions() {
+    var t = api.chart.theme();
+    return {
+      color: t.pos, lineWidth: 2, crosshairMarkerVisible: true,
+      priceLineVisible: false, lastValueVisible: true,
+      priceFormat: { type: 'price', precision: smChart.precision, minMove: Math.pow(10, -smChart.precision) }
+    };
+  }
+  function smBarTime(t) { return api.chart.barTime(t); }
+  function smToBar(k) { return { time: smBarTime(k.t), open: k.o, high: k.h, low: k.l, close: k.c }; }
+  function smToLinePoint(k) { return { time: smBarTime(k.t), value: k.c }; }
+  /* ---- hover P&L: shows position P&L at the crosshair price ---- */
+  function onSmCrosshair(param) {
+    if (!param || !param.point || !smChart.series) { hideSmHoverPnl(); return; }
+    var ps = api.positions().filter(function (x) { return x.sym === S.sym; });
+    if (!ps.length) { hideSmHoverPnl(); return; }
+    var px = smChart.series.coordinateToPrice(param.point.y);
+    if (px == null || !(px > 0)) { hideSmHoverPnl(); return; }
+    renderSmHoverPnl(ps, Number(px), param.point);
+  }
+  function hoverPnlAt(p, px) {
+    /* P&L calculation: for long positions, pnl = margin * lev * (px/entry - 1)
+       for short positions, pnl = margin * lev * (1 - px/entry)
+       Liquidation: the trade is worth 0 if price passed the liquidation point */
+    var entry = p.entry, lev = p.lev, margin = p.margin, isLong = p.isLong, endPx = p.endPx;
+    var busted = endPx > 0 && (isLong ? px <= endPx : px >= endPx);
+    if (busted) return { pnl: -margin, worth: 0, busted: true };
+    var pnl = isLong ? margin * lev * (px / entry - 1) : margin * lev * (1 - px / entry);
+    var worth = margin + pnl;
+    return { pnl: pnl, worth: Math.max(0, worth), busted: false };
+  }
+  function renderSmHoverPnl(ps, px, point) {
+    var box = getSmHoverBox();
+    if (!box) return;
+    box.textContent = '';
+    var totalPnl = 0, totalWorth = 0, totalMargin = 0;
+    ps.forEach(function (p) {
+      var r = hoverPnlAt(p, px);
+      totalPnl += r.pnl; totalWorth += r.worth; totalMargin += p.margin;
+    });
+    var pxText = price(px, ps[0].sz);
+    if (ps.length === 1) {
+      var p = ps[0], r = hoverPnlAt(p, px), pnlPct = p.margin > 0 ? r.pnl / p.margin : 0;
+      add(box, h('span', null, (p.isLong ? 'Up' : 'Down') + ' at ' + pxText));
+      add(box, h('b', r.pnl >= 0 ? 'sm-up' : 'sm-dn', usdP(r.pnl) + ' (' + pct(pnlPct) + ')'));
+      add(box, h('span', null, r.busted ? 'Closes itself here' : 'Worth ' + usd(r.worth)));
+    } else {
+      add(box, h('span', null, ps.length + ' trades at ' + pxText));
+      var tpct = totalMargin > 0 ? totalPnl / totalMargin : 0;
+      add(box, h('b', totalPnl >= 0 ? 'sm-up' : 'sm-dn', 'Total ' + usdP(totalPnl) + ' (' + pct(tpct) + ')'));
+      add(box, h('span', null, 'Worth ' + usd(totalWorth)));
+    }
+    box.classList.remove('is-hidden');
+    /* position the box near the cursor */
+    var host = smChart.host ? smChart.host.parentElement : null;
+    if (!host) return;
+    var w = box.offsetWidth, hh = box.offsetHeight, W = host.clientWidth, H = host.clientHeight;
+    var x = point.x + 12, y = point.y - hh - 8;
+    if (x + w > W - 8) x = point.x - w - 12;
+    if (x < 8) x = 8;
+    if (y < 6) y = point.y + 12;
+    if (y + hh > H - 6) y = H - hh - 6;
+    box.style.left = Math.round(x) + 'px';
+    box.style.top = Math.round(y) + 'px';
+  }
+  function getSmHoverBox() {
+    var host = smChart.host ? smChart.host.parentElement : null;
+    if (!host) return null;
+    var box = host.querySelector('.sm-hover');
+    if (!box) {
+      box = h('div', 'sm-hover is-hidden');
+      host.appendChild(box);
+    }
+    return box;
+  }
+  function hideSmHoverPnl() {
+    var box = smChart.host ? smChart.host.parentElement && smChart.host.parentElement.querySelector('.sm-hover') : null;
+    if (box && !box.classList.contains('is-hidden')) box.classList.add('is-hidden');
+  }
+  function initSmChart(host, coin, sz) {
+    if (!window.LightweightCharts || !host) return;
+    destroySmChart();
+    smChart.host = host;
+    smChart.coin = coin;
+    smChart.api = window.LightweightCharts.createChart(host, smChartOptions());
+    if (COIN.mode === 'candles') {
+      smChart.series = smChart.api.addCandlestickSeries(smSeriesOptions());
+    } else {
+      smChart.series = smChart.api.addLineSeries(smLineOptions());
+    }
+    /* subscribe to crosshair moves for hover P&L */
+    smChart.api.subscribeCrosshairMove(onSmCrosshair);
+    loadSmCandles(coin);
+  }
+  function destroySmChart() {
+    if (smChart.api) { try { smChart.api.remove(); } catch (e) { /* already gone */ } }
+    smChart.api = null; smChart.series = null; smChart.host = null; smChart.coin = null;
+    smChart.candles = []; smChart.byTime = {}; smChart.lines = []; smChart.lineSig = '';
+  }
+  function loadSmCandles(coin) {
+    if (!smChart.api || !coin) return;
+    var tf = COIN.tf.toLowerCase();
+    api.chart.loadCandles(coin, tf).then(function (r) {
+      if (smChart.coin !== coin) return;
+      smChart.candles = r.candles;
+      smChart.precision = r.precision;
+      smChart.byTime = {};
+      r.candles.forEach(function (k, i) { smChart.byTime[smBarTime(k.t)] = i; });
+      if (smChart.series) {
+        smChart.series.applyOptions(COIN.mode === 'candles' ? smSeriesOptions() : smLineOptions());
+        if (COIN.mode === 'candles') {
+          smChart.series.setData(r.candles.map(smToBar));
+        } else {
+          smChart.series.setData(r.candles.map(smToLinePoint));
+        }
+      }
+      smChart.api.applyOptions({ timeScale: { secondsVisible: tf === '1m' } });
+      smChart.api.timeScale().scrollToRealTime();
+      syncSmPriceLines();
+    }).catch(function () {
+      /* candles unavailable */
+    });
+  }
+  function updateSmChartFromPrice(px) {
+    if (!smChart.series || !smChart.candles.length || !(px > 0)) return;
+    var tf = COIN.tf.toLowerCase();
+    var ms = api.chart.TF_MS[tf];
+    if (!ms) return;
+    var bucket = Math.floor(Date.now() / ms) * ms;
+    var last = smChart.candles[smChart.candles.length - 1];
+    if (bucket > last.t) {
+      var bar = { t: bucket, o: last.c, h: Math.max(last.c, px), l: Math.min(last.c, px), c: px, v: 0 };
+      smChart.candles.push(bar);
+      if (smChart.candles.length > api.chart.CANDLE_COUNT) smChart.candles.shift();
+      smChart.byTime = {};
+      smChart.candles.forEach(function (k, i) { smChart.byTime[smBarTime(k.t)] = i; });
+      smChart.series.update(COIN.mode === 'candles' ? smToBar(bar) : smToLinePoint(bar));
+    } else {
+      last.c = px;
+      if (px > last.h) last.h = px;
+      if (px < last.l) last.l = px;
+      smChart.series.update(COIN.mode === 'candles' ? smToBar(last) : smToLinePoint(last));
+    }
+  }
+  function setSmChartMode(mode) {
+    if (mode === COIN.mode || !smChart.api) return;
+    COIN.mode = mode;
+    if (smChart.series) { try { smChart.api.removeSeries(smChart.series); } catch (e) { /* ok */ } }
+    if (mode === 'candles') {
+      smChart.series = smChart.api.addCandlestickSeries(smSeriesOptions());
+      smChart.series.setData(smChart.candles.map(smToBar));
+    } else {
+      smChart.series = smChart.api.addLineSeries(smLineOptions());
+      smChart.series.setData(smChart.candles.map(smToLinePoint));
+    }
+    syncSmPriceLines();
+  }
+  function setSmChartTf(tf) {
+    if (tf === COIN.tf || !smChart.coin) return;
+    COIN.tf = tf;
+    loadSmCandles(smChart.coin);
+  }
+  /* Price lines for open positions: "You opened at" and "Closes itself at" (liquidation), plus TP/SL when set */
+  function syncSmPriceLines() {
+    if (!smChart.series) return;
+    var t = api.chart.theme();
+    var ps = api.positions().filter(function (x) { return x.sym === S.sym; });
+    var lines = [];
+    ps.forEach(function (p) {
+      if (p.entry > 0) lines.push({ px: p.entry, title: 'You opened at', color: t.ink, style: 2 });
+      if (p.endPx > 0) lines.push({ px: p.endPx, title: 'Closes itself at', color: t.accent, style: 0 });
+      if (p.auto && p.auto.tp != null) lines.push({ px: p.auto.tp, title: 'Take profit', color: t.pos, style: 2 });
+      if (p.auto && p.auto.sl != null) lines.push({ px: p.auto.sl, title: 'Stop loss', color: t.neg, style: 2 });
+    });
+    var sig = lines.map(function (l) { return l.px + ':' + l.title; }).join('|');
+    if (sig === smChart.lineSig) return;
+    smChart.lineSig = sig;
+    /* remove old lines */
+    smChart.lines.forEach(function (line) { try { smChart.series.removePriceLine(line); } catch (e) { /* ok */ } });
+    smChart.lines = [];
+    /* add new lines */
+    lines.forEach(function (l) {
+      var line = smChart.series.createPriceLine({
+        price: l.px, color: l.color, lineWidth: 1, lineStyle: l.style,
+        axisLabelVisible: true, title: l.title
+      });
+      smChart.lines.push(line);
+    });
+  }
   function market(sym) { return api.markets().filter(m => m.sym === sym)[0] || null; }
   function sidePill(isLong, lev) { return h('span', 'sm-pill ' + (isLong ? 'is-up' : 'is-dn'), (isLong ? '▲ UP' : '▼ DOWN') + (lev ? ' ' + lev + '×' : '')); }
   function chartMarks(p) {
@@ -1764,23 +2095,29 @@
     if (!q || !m) { back(); return; }
     var ps = w.account && a.loaded ? api.positions().filter(x => x.sym === sym) : [];
     var os = w.account ? api.openings().filter(o => o.sym === sym) : [];
+    var lims = w.account ? api.limits.orders().filter(o => o.sym === sym) : [];
     if (S.pid != null && !ps.some(x => x.id === S.pid)) S.pid = null;
-    var mode = ps.length || os.length ? 'trade' : 'chart';
-    var sig = ['coin', sym, mode, COIN.tf, ps.map(x => x.id).join(','), os.map(o => o.key).join(',')].join('|');
-    if (S.sig !== sig) { S.sig = sig; buildCoin(sym, mode, ps, os); }
+    var mode = ps.length || os.length || lims.length ? 'trade' : 'chart';
+    var sig = ['coin', sym, mode, COIN.tf, ps.map(x => x.id).join(','), os.map(o => o.key).join(','), lims.map(o => o.id).join(',')].join('|');
+    if (S.sig !== sig) { S.sig = sig; buildCoin(sym, mode, ps, os, lims); }
     var move = q.prev > 0 && q.px > 0 ? q.px / q.prev - 1 : NaN, pt = price(q.px, q.sz);
     flash(R.px, q.px); txt(R.px, pt); cls(R.px, 'sm-price' + (pt.length > 9 ? ' is-long' : '')); R.px.style.color = q.at && Date.now() - q.at < 15000 ? '' : 'var(--ink-muted)';
     txt(R.chg, isFinite(move) ? arrow(move) + pct(move) + ' today' : ''); cls(R.chg, 'sm-chg ' + tone(move));
-    /* the trades on the chart: where each opened, where it closes itself, and its auto-close prices */
-    var marks = [], tag = ps.length > 1;
-    ps.forEach(x => {
-      var t = tag ? (x.isLong ? '▲' : '▼') + x.lev + '× ' : '';
-      if (x.entry > 0) marks.push({ px: x.entry, kind: 'entry', label: t + 'opened ' + price(x.entry, x.sz) });
-      if (x.endPx > 0) marks.push({ px: x.endPx, kind: 'liq', label: t + 'closes itself ' + price(x.endPx, x.sz) });
-      if (x.auto && x.auto.tp != null) marks.push({ px: x.auto.tp, kind: 'tp', label: t + 'take profit ' + price(x.auto.tp, x.sz) });
-      if (x.auto && x.auto.sl != null) marks.push({ px: x.auto.sl, kind: 'sl', label: t + 'stop ' + price(x.auto.sl, x.sz) });
-    });
-    drawChart(m, q, marks);
+    /* Update per-coin stats */
+    if (R.stats) {
+      var cs = api.coinStats(sym);
+      var parts = [];
+      if (cs && isFinite(cs.oiUp)) parts.push('Open Up ' + usdK(cs.oiUp));
+      if (cs && isFinite(cs.oiDown)) parts.push('Open Down ' + usdK(cs.oiDown));
+      if (cs && isFinite(cs.vol24h) && cs.vol24h > 0) parts.push('24h volume ' + usdK(cs.vol24h));
+      txt(R.stats, parts.join(' · ') || '');
+    }
+    /* update the chart: sync price lines for positions, update last candle from live price */
+    syncSmPriceLines();
+    if (q.px > 0 && smChart.candles.length) updateSmChartFromPrice(q.px);
+    /* update tf and mode button states */
+    if (R.lineBtn) R.lineBtn.setAttribute('aria-pressed', COIN.mode === 'line' ? 'true' : 'false');
+    if (R.candleBtn) R.candleBtn.setAttribute('aria-pressed', COIN.mode === 'candles' ? 'true' : 'false');
     os.forEach(o => {
       var c = R.cards['o' + o.key]; if (!c) return;
       txt(c.pnl, o.kind === 'end' ? 'Not opened' : 'Opening…'); txt(c.pct, o.tone ? plainStatus(o.say) : 'A few seconds'); cls(c.pct, 'sm-pnlp ' + (o.tone === 'bad' ? 'sm-dn' : 'sm-mute'));
@@ -1819,22 +2156,70 @@
       txt(c.say, say || ''); cls(c.say, 'sm-say' + (err && say === err ? ' is-bad' : '')); show(c.say, !!say);
       c.set.disabled = !!(st || mine); txt(c.chev, c.set.disabled ? '' : '›');
     });
+    /* limit order updates */
+    lims.forEach(lm => {
+      var c = R.cards['lim' + lm.id]; if (!c) return;
+      txt(c.px, price(lm.px, lm.sz));
+      txt(c.now, lm.now ? price(lm.now, lm.sz) : '—');
+    });
+    /* update all open trades section (other coins) */
+    var allPs = api.positions().filter(p => p.sym !== sym);
+    allPs.forEach(x => {
+      var c = R.cards['all' + x.id]; if (!c) return;
+      var ok = !x.delayed && isFinite(x.pnl);
+      txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      txt(c.pct, ok ? pct(x.pnl / x.margin) : '—'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      var au = x.auto ? [x.auto.tp != null ? 'profit at ' + price(x.auto.tp, x.sz) : '', x.auto.sl != null ? 'stop at ' + price(x.auto.sl, x.sz) : ''].filter(Boolean) : null, key = au ? au.join('|') : 'Off';
+      if (c.auto._k !== key) {
+        c.auto._k = key; c.auto.textContent = '';
+        if (!au) txt(c.auto, 'Off'); else add(c.auto, au.length ? au.map((t, i) => { var n = h('span', null, (i ? '' : 'On · ') + t); n.style.whiteSpace = 'nowrap'; n.style.display = 'block'; return n; }) : 'On');
+      }
+      var st = x.status, mine = COIN.closing === x.id, label, busy = false;
+      if (st && st.final) { label = 'Closed'; busy = true; }
+      else if (st || mine) { label = 'Closing…'; busy = true; }
+      else label = 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout) : usdS(x.margin));
+      txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy;
+      c.set.disabled = !!(st || mine); txt(c.chev, c.set.disabled ? '' : '›');
+    });
   }
-  function buildCoin(sym, mode, ps, os) {
-    var main = el.main, cta = el.cta, trade = mode === 'trade';
+  function buildCoin(sym, mode, ps, os, lims) {
+    var main = el.main, cta = el.cta, trade = mode === 'trade', m = market(sym);
     main.className = 'sm-main' + (trade ? ' is-trade' : ' is-fit'); main.textContent = ''; cta.textContent = ''; cta.className = 'sm-cta is-two';
     R.cards = {};
     add(main, [h('div', 'sm-cname', nameOf(sym)), h('div', 'sm-cbar', [R.px = h('span', 'sm-price', ''), R.chg = h('span', 'sm-chg', '')])]);
-    R.svg = svg('', '0 0 100 100'); R.csay = h('div', 'sm-chart-say', ''); R.marks = h('div', 'sm-marks'); R.marks.setAttribute('aria-hidden', 'true');
-    var tf = h('div', 'sm-tf');
-    Object.keys(TF).forEach(function (k) { var b = btn(null, k, () => { COIN.tf = k; redo(); }); b.setAttribute('aria-pressed', k === COIN.tf ? 'true' : 'false'); tf.appendChild(b); });
-    add(main, [h('div', 'sm-chart' + (trade ? ' is-set' : ''), [R.svg, R.marks, R.csay]), tf]);
+    /* Per-coin stats: Open Up / Open Down / 24h volume */
+    R.stats = h('div', 'sm-stats', '');
+    add(main, R.stats);
+    /* LightweightCharts container */
+    R.chartHost = h('div', 'sm-chart-lw');
+    R.csay = h('div', 'sm-chart-say', '');
+    var chartBox = h('div', 'sm-chart' + (trade ? ' is-set' : ''), [R.chartHost, R.csay]);
+    /* timeframe and mode buttons */
+    var tfBar = h('div', 'sm-tf');
+    CHART_TF.forEach(function (t) {
+      var b = btn(null, t, () => { setSmChartTf(t); S.sig = ''; paint(); });
+      b.setAttribute('aria-pressed', t === COIN.tf ? 'true' : 'false');
+      tfBar.appendChild(b);
+    });
+    /* Line/Candles toggle */
+    var lineBtn = btn(null, 'Line', () => { setSmChartMode('line'); S.sig = ''; paint(); });
+    lineBtn.setAttribute('aria-pressed', COIN.mode === 'line' ? 'true' : 'false');
+    var candleBtn = btn(null, 'Candles', () => { setSmChartMode('candles'); S.sig = ''; paint(); });
+    candleBtn.setAttribute('aria-pressed', COIN.mode === 'candles' ? 'true' : 'false');
+    R.lineBtn = lineBtn; R.candleBtn = candleBtn;
+    tfBar.appendChild(h('span', 'sm-tf-sep', ''));
+    tfBar.appendChild(lineBtn);
+    tfBar.appendChild(candleBtn);
+    add(main, [chartBox, tfBar]);
+    /* initialize chart after layout */
+    setTimeout(() => { initSmChart(R.chartHost, m.coin, m.sz); }, 0);
     var up = btn('sm-dir is-up', ['▲ Up', h('i', null, '(Click here to open)')], () => { openOrder(sym, true); });
     var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, '(Click here to open)')], () => { openOrder(sym, false); });
     add(cta, [up, dn]);
     if (!trade) return;
     function head(x) { return h('div', 'sm-pos-h', [h('span', null, [x.sym, sidePill(x.isLong, x.lev)]), h('span', 'sm-in', usdS(x.margin) + ' in')]); }
-    var box = h('div', 'sm-trades', h('div', 'sm-label', ps.length + os.length > 1 ? 'Your trades on ' + sym : 'Your trade on ' + sym));
+    var total = ps.length + os.length + lims.length;
+    var box = h('div', 'sm-trades', h('div', 'sm-label', total > 1 ? 'Your trades on ' + sym : 'Your trade on ' + sym));
     os.forEach(o => {
       var c = R.cards['o' + o.key] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', '') };
       c.go = btn('sm-btn is-primary', '', () => { if (c.go._act) c.go._act(); }); c.go.hidden = true;
@@ -1850,7 +2235,40 @@
         h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set])]);
       box.appendChild(c.n);
     });
+    /* limit orders waiting to fire */
+    lims.forEach(lm => {
+      function limHead() { return h('div', 'sm-pos-h', [h('span', null, [sym, sidePill(lm.isLong, lm.lev), h('i', 'sm-wait-tag', 'Limit')]), h('span', 'sm-in', usdS(lm.margin) + ' in')]); }
+      var c = R.cards['lim' + lm.id] = { now: h('span', null, '—'), px: h('span', null, '—') };
+      c.cancel = btn('sm-btn is-ghost', 'Cancel', () => { api.limits.cancel(lm.id); S.sig = ''; kick(); });
+      c.n = h('div', 'sm-pos is-lim', [limHead(),
+        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'Opens at'), c.px]), h('div', 'sm-kv', [h('span', null, 'Now'), c.now])]),
+        h('p', 'sm-fine', 'Fires while Confetti is open on this phone.'), c.cancel]);
+      box.appendChild(c.n);
+    });
     main.appendChild(box);
+
+    /* All open trades section: all positions across all coins, not just this one */
+    var w = api.wallet(), a = api.account();
+    var allPs = w.account && a.loaded ? api.positions() : [];
+    var otherPs = allPs.filter(p => p.sym !== sym);
+    if (otherPs.length) {
+      otherPs.sort((a2, b2) => (b2.openedAt || 0) - (a2.openedAt || 0));
+      var allBox = h('div', 'sm-all-trades-ph');
+      add(allBox, h('div', 'sm-label', 'Your other open trades'));
+      otherPs.forEach(x => {
+        function allHead(p) {
+          var coin = h('span', 'sm-all-link', p.sym); coin.addEventListener('click', ev => { ev.stopPropagation(); go('coin', p.sym, p.id); });
+          return h('div', 'sm-pos-h', [h('span', null, [coin, sidePill(p.isLong, p.lev)]), h('span', 'sm-in', usdS(p.margin) + ' in')]);
+        }
+        var c = R.cards['all' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), auto: h('span', null, '—'), chev: h('i', 'sm-chev', '›'), say: sayLine() };
+        c.close = btn('sm-btn is-primary', '', () => { closeGo(x.id); });
+        c.set = btn('sm-kv is-btn', [h('span', null, 'Auto-close'), h('span', 'sm-kv-v', [c.auto, c.chev])], () => { api.pro('position', x.id); });
+        c.n = h('div', 'sm-pos', [allHead(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.say, c.close,
+          h('div', 'sm-kvs', [c.set])]);
+        allBox.appendChild(c.n);
+      });
+      main.appendChild(allBox);
+    }
     /* opened from that trade's row on Home: its card is brought into view */
     var pick = S.pickOnce && S.pid != null && R.cards['p' + S.pid]; S.pickOnce = false;
     if (pick && ps.length > 1 && ps[0].id !== S.pid) setTimeout(() => { if (pick.n.isConnected) pick.n.scrollIntoView({ block: 'nearest' }); }, 60);
@@ -1934,7 +2352,7 @@
 
   /* ---- the sheet: dollars, Boost, both outcomes in dollars, one Open ---- */
 
-  var ORD = { sh: null, sym: null, isLong: true, typed: '10', all: false, lev: 20, err: '', busy: false, auto: false, R: {} };
+  var ORD = { sh: null, sym: null, isLong: true, typed: '10', all: false, lev: 20, err: '', busy: false, auto: false, limit: false, limitPx: '', R: {} };
   /* five set boosts per coin (the coin's top one last), plus Custom for any whole number from 1x to the top. On the 1000x
      coins 250x and 500x are among the five (owner, 11/11) */
   function boosts(max) {
@@ -1949,7 +2367,7 @@
     if (!w.account) { doConnect(); return; }
     if (!m) return;
     var sh = ORD.sh || (ORD.sh = makeSheet('Order')), r = ORD.R = {}, steps = boosts(m.maxLev), last = Number(lsGet(AMT_KEY)) || 10, lv = Number(lsGet('confetti.trade.lev.' + sym)) || 20;
-    ORD.sym = sym; ORD.isLong = isLong; ORD.err = ''; ORD.busy = false; ORD.auto = false; ORD.all = false; S.claim = false;
+    ORD.sym = sym; ORD.isLong = isLong; ORD.err = ''; ORD.busy = false; ORD.auto = false; ORD.limit = false; ORD.limitPx = ''; ORD.all = false; S.claim = false;
     ORD.typed = String(a.loaded && a.available >= a.min && a.available < last ? Math.floor(a.available) : last);
     ORD.max = m.maxLev; ORD.levBad = false;
     ORD.lev = lv >= 1 && lv <= m.maxLev && Math.round(lv) === lv ? lv : steps.filter(v => v <= 20).pop() || steps[0];
@@ -1991,8 +2409,17 @@
       i.addEventListener('input', () => { ORD.err = ''; paintOrder(); }); return i; }
     r.tp = pxIn('Take profit at'); r.sl = pxIn('Stop loss at');
     r.autoBox = h('div', 'sm-auto', [h('label', null, [h('span', null, 'Take profit at'), r.tp]), h('label', null, [h('span', null, 'Stop loss at'), r.sl]), h('p', 'sm-fine', 'Optional. It closes the trade for you while Confetti is open on this phone.')]);
+    /* limit order: "At a price" option */
+    r.limSeg = h('div', 'sm-seg'); r.limSeg.setAttribute('role', 'group'); r.limSeg.setAttribute('aria-label', 'When');
+    r.limNow = btn(null, 'Now', () => { ORD.limit = false; ORD.err = ''; paintOrder(); }); r.limNow._v = 'now';
+    r.limAt = btn(null, 'At a price', () => { ORD.limit = true; ORD.err = ''; paintOrder(); var px = api.limits.marketPrice(sym); if (px > 0 && !ORD.limitPx) { ORD.limitPx = String(Number(px.toPrecision(6))); } setTimeout(() => { r.limPx.focus(); }, 30); }); r.limAt._v = 'at';
+    r.limSeg.appendChild(r.limNow); r.limSeg.appendChild(r.limAt);
+    r.limPx = h('input'); r.limPx.id = 'smOrdLimPx'; r.limPx.type = 'text'; r.limPx.setAttribute('inputmode', 'decimal'); r.limPx.setAttribute('autocomplete', 'off'); r.limPx.placeholder = 'the price it opens at';
+    r.limPx.addEventListener('input', () => { ORD.limitPx = r.limPx.value; ORD.err = ''; paintOrder(); });
+    r.limPx.addEventListener('keydown', ev => { if (ev.key === 'Enter') r.limPx.blur(); });
+    r.limBox = h('div', 'sm-lim', [h('label', null, [h('span', null, 'Opens when ' + sym + ' reaches'), r.limPx]), h('p', 'sm-fine', 'The order waits in this browser and fires while Confetti is open.')]);
     add(sh.body, [lab, h('div', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Boost'), r.seg, r.levBox, r.risk,
-      h('div', 'sm-out', [h('div', null, [r.wk, r.w]), h('div', null, [r.lk, r.l])]), r.autoRow, r.autoBox]);
+      h('div', 'sm-out', [h('div', null, [r.wk, r.w]), h('div', null, [r.lk, r.l])]), h('div', 'sm-label', 'When'), r.limSeg, r.limBox, r.autoRow, r.autoBox]);
     r.say = sayLine();
     r.go = btn('sm-btn', '', orderGo);
     add(sh.foot, [r.say, r.go]);
@@ -2017,6 +2444,11 @@
       b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.disabled = !!ORD.busy;
       if (b._v === 'custom') txt(b, ORD.custom && !ORD.levBad ? lev + '×' : 'Custom');
     });
+    /* limit order toggle */
+    r.limNow.setAttribute('aria-pressed', !ORD.limit ? 'true' : 'false'); r.limNow.disabled = !!ORD.busy;
+    r.limAt.setAttribute('aria-pressed', ORD.limit ? 'true' : 'false'); r.limAt.disabled = !!ORD.busy;
+    show(r.limBox, ORD.limit); r.limPx.disabled = !!ORD.busy;
+    if (document.activeElement !== r.limPx && r.limPx.value !== ORD.limitPx) r.limPx.value = ORD.limitPx;
     show(r.levBox, ORD.custom); r.lev.disabled = !!ORD.busy;
     r.amt.disabled = r.autoRow.disabled = r.tp.disabled = r.sl.disabled = !!ORD.busy;
     txt(r.risk, lev + '× makes every 1% move worth ' + lev + '%. A ' + mv + '% ' + (up ? 'drop' : 'rise') + ' closes this trade and the ' + (amt > 0 ? usdS(amt) : 'money') + ' is gone.');
@@ -2037,20 +2469,34 @@
       else if (t.room != null && amt * lev > t.room + 1e-6) why = 'Too big right now. Pick a smaller amount or a lower boost.';
       else if (t.problem) why = plain(t.problem);
       else if (tp != null || sl != null) why = plain(api.autoCheck({ sym: sym, isLong: up, margin: amt, lev: lev }, tp, sl) || '');
+      else if (ORD.limit && !(Number(ORD.limitPx) > 0)) why = 'Type a price for your limit order.';
     }
     if (!why && !err && t.oneTap && !api.demo) note = t.oneTap === 'first' ? 'First trade: your wallet asks once to turn on one‑tap trading. After that, no popups.' : 'Your wallet asks once to renew one‑tap trading.';
     txt(r.say, why || err || note); cls(r.say, 'sm-say' + (why || err ? ' is-bad' : ''));      /* the reason the button is off comes first */
     var word = ORD.busy ? (tk.phase === 'wallet' || t.oneTap ? CONFIRM : 'Opening…') : '';
     r.go._add = needMoney && !ORD.busy && !t.block;
-    txt(r.go, word || (r.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' · ' + usdS(amt) + ' × ' + lev));
+    if (ORD.limit) {
+      txt(r.go, word || (r.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' at $' + ORD.limitPx + ' · ' + usdS(amt) + ' × ' + lev));
+    } else {
+      txt(r.go, word || (r.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' · ' + usdS(amt) + ' × ' + lev));
+    }
     cls(r.go, 'sm-btn ' + (r.go._add ? 'is-primary' : up ? 'is-up' : 'is-dn') + (word ? ' is-busy' : ''));
     r.go.disabled = !!word || (!!why && !r.go._add);
-    r.go._o = { sym: sym, isLong: up, margin: amt, lev: lev, maxed: ORD.all, tp: tp, sl: sl };
+    r.go._o = { sym: sym, isLong: up, margin: amt, lev: lev, maxed: ORD.all, tp: tp, sl: sl, limit: ORD.limit, limitPx: Number(ORD.limitPx) };
   }
   function orderGo() {
     var r = ORD.R, o = r.go._o, s = api.session();
     if (ORD.busy || r.go.disabled || early()) return;
     if (r.go._add) { ORD.sh.close(); setTimeout(() => { openAdd(); }, 200); return; }
+    /* limit order: placed in browser, no wallet interaction */
+    if (o.limit && o.limitPx > 0) {
+      var res = api.limits.place(o.sym, o.isLong, o.margin, o.lev, o.limitPx);
+      if (!res.ok) { ORD.err = res.err; paintOrder(); return; }
+      snack('Limit placed: ' + (o.isLong ? 'Up' : 'Down') + ' ' + o.sym + ' at $' + o.limitPx + '. It fires while Confetti is open.');
+      if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); lsSet('confetti.trade.lev.' + o.sym, String(o.lev));
+      ORD.sh.close(); S.sig = ''; kick();
+      return;
+    }
     /* this press has a token: closing the sheet ends it, and a press that has ended sends nothing */
     var mine = ORD.busy = Date.now() + Math.random(), t = api.trade(o) || {};
     ORD.err = ''; ORD.sent = 0; S.claim = true; S.lastErr = null; paintOrder();
@@ -2087,7 +2533,7 @@
     el.root = $('smRoot'); el.top = $('smTop'); el.main = $('smMain'); el.cta = $('smCta');
     /* desktop elements */
     el.body = $('smBody'); el.left = $('smLeft'); el.leftHead = $('smLeftHead'); el.leftScroll = $('smLeftScroll');
-    el.center = $('smCenter'); el.centerInner = $('smCenterInner'); el.dirbar = $('smDirbar');
+    el.center = $('smCenter'); el.centerInner = $('smCenterInner'); el.dirbar = $('smDirbar'); el.allTrades = $('smAllTrades');
     el.right = $('smRight'); el.panelHead = $('smPanelHead'); el.panelBody = $('smPanelBody'); el.panelFoot = $('smPanelFoot');
     if (!el.root || !el.top) return null;
     S.flag = flagOf(); S.flagDk = flagDkOf();

@@ -964,6 +964,39 @@
     }
     if (!wallet.account) phNums = null;
     renderPhAcct();
+    renderHeader();
+  }
+
+  /* ---- new Simple-style header for cream pages (brief 8) ----
+     Updates the House chip with LP value, handles wallet/connect states. */
+  var headerHouseLp = null;
+  function renderHeader() {
+    /* Update wallet chip and connect button */
+    var wc = $('walletChip'), wa = $('walletAddr'), cb = $('connectBtn');
+    if (wc && wa && cb) {
+      if (wallet.account) {
+        wa.textContent = shortAddr(wallet.account);
+        wc.hidden = false;
+        wc.classList.remove('is-off');
+        cb.hidden = true;
+      } else {
+        wc.hidden = true;
+        cb.hidden = false;
+      }
+    }
+    /* Update house chip */
+    var hc = $('houseChip');
+    if (hc && headerHouseLp != null) {
+      var b = hc.querySelector('b');
+      if (b) b.textContent = 'House ' + fmtUsdCompact(headerHouseLp);
+    }
+  }
+  function loadHeaderHouse() {
+    if (!read || !read.ex) return;
+    read.ex.lpBalance().then(function (lp) {
+      headerHouseLp = usd6(lp);
+      renderHeader();
+    }).catch(function () { /* ignore */ });
   }
 
   /* ---- phones (<= 640 px): the compact header (build 8) and its sheets (build 6) -------------------
@@ -3368,11 +3401,18 @@
     initPhone();
     var cb = $('connectBtn');
     if (cb) cb.addEventListener('click', function () { if (wallet.account) disconnect(); else connect(); });
+    /* New header: wallet chip click disconnects; menu button opens menu sheet or navigates to trade.html */
+    var wc = $('walletChip');
+    if (wc) wc.addEventListener('click', function () { if (wallet.account) disconnect(); });
+    var mb = $('menuBtn');
+    if (mb) mb.addEventListener('click', function () { window.location.href = 'trade.html'; });
     page = PAGES[document.body.getAttribute('data-page')] || null;
     if (!window.ethers) { toast('ethers.js did not load: chain reads are off.', 'err', null, 0); return; }
     listenForProviders();
     initRead();
     renderWallet();
+    /* Load house LP for header chip (may fail before exchange is ready, retried after prepare) */
+    setTimeout(loadHeaderHouse, 100);
     if (!page) return;
     if (!page.closeOut) initGate();
     /* The local demo (DEMO, 127.0.0.1 only) on a page that has one: no exchange check, no chain, no wallet. */
@@ -3383,6 +3423,7 @@
     var ready = demo ? Promise.resolve() : page.prepare ? page.prepare() : prepareExchange();
     if (!ready) return;
     ready.then(function () {
+      loadHeaderHouse();  /* refresh house LP for header chip */
       page.init();
       if (demo) page.demo();
       var running = false;
