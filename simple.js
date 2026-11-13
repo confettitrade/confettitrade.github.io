@@ -538,8 +538,8 @@
       dirbar.hidden = false;
       dirbar.textContent = '';
       add(dirbar, [
-        btn('sm-dir is-up', ['▲ UP', h('i', null, 'price goes up')], () => { openOrderDesktop(S.sym, true); }),
-        btn('sm-dir is-dn', ['▼ DOWN', h('i', null, 'price goes down')], () => { openOrderDesktop(S.sym, false); })
+        btn('sm-dir is-up', ['▲ UP', h('i', null, '(Click here to open)')], () => { openOrderDesktop(S.sym, true); }),
+        btn('sm-dir is-dn', ['▼ DOWN', h('i', null, '(Click here to open)')], () => { openOrderDesktop(S.sym, false); })
       ]);
     }
 
@@ -1014,6 +1014,10 @@
     if (!NO_PRO) add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));      /* from a coin: Pro opens on that coin */
     if (!w.account && !api.demo) add(list, item('Try it with pretend money', '', null, 'trade.html?demo=1&mode=simple'));
     if (api.demo) add(list, item('Leave the demo', 'trade for real', null, 'trade.html?mode=simple'));
+    /* the site's other pages (owner 2026-11-12: "we also had other stuff we hadded", "do both") */
+    add(list, h('div', 'sm-label', 'More'));
+    [['Portfolio', 'your trades and history', 'portfolio.html'], ['Leaderboard', 'points and PnL', 'leaderboard.html'], ['House', 'provide liquidity', 'house.html'],
+     ['$FETTI', 'stake and earn', 'confetti.html'], ['Docs', 'how it works', 'docs.html'], ['Contracts', 'on HyperEVM', 'contracts.html']].forEach(r => { add(list, item(r[0], r[1], null, r[2])); });
     add(sh.body, list);
     sh.open();
   }
@@ -1825,8 +1829,8 @@
     var tf = h('div', 'sm-tf');
     Object.keys(TF).forEach(function (k) { var b = btn(null, k, () => { COIN.tf = k; redo(); }); b.setAttribute('aria-pressed', k === COIN.tf ? 'true' : 'false'); tf.appendChild(b); });
     add(main, [h('div', 'sm-chart' + (trade ? ' is-set' : ''), [R.svg, R.marks, R.csay]), tf]);
-    var up = btn('sm-dir is-up', ['▲ Up', h('i', null, 'price goes up')], () => { openOrder(sym, true); });
-    var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, 'price goes down')], () => { openOrder(sym, false); });
+    var up = btn('sm-dir is-up', ['▲ Up', h('i', null, '(Click here to open)')], () => { openOrder(sym, true); });
+    var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, '(Click here to open)')], () => { openOrder(sym, false); });
     add(cta, [up, dn]);
     if (!trade) return;
     function head(x) { return h('div', 'sm-pos-h', [h('span', null, [x.sym, sidePill(x.isLong, x.lev)]), h('span', 'sm-in', usdS(x.margin) + ' in')]); }
