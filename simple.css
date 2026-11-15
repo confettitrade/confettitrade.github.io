@@ -760,3 +760,241 @@ body.cream-page .pts-bar { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .sm-dir, .sm-trade { transition: none; }
 }
+
+/* ---- every clickable thing a button --------------------------------------------
+   The owner, 2026-11-14: "make every clickable thing on confetti a button'".
+   Everything that does something when tapped is a key, in the build of the keys above (Place trade, Up / Down):
+   a rounded edge, a darker rim, a solid lip under it, a soft shadow on the paper, and a press that sinks it onto
+   the lip in 80 ms. One family, three weights:
+     primary    one filled key per screen: black for the main step, green / red for money direction (4 px lip)
+     secondary  everything else that acts: a paper key (3 px lip; 2 px for the small ones in the top bar)
+     selected   the chosen one of a group: pressed in (no lip, sunken fill, ink rim), not colour alone
+   plus small inline keys for links inside text. Plain information stays flat. Text, sizes and what each tap
+   does are unchanged; the lip is a box-shadow, so it pushes nothing.
+   How it is built: one rule draws every key from a few variables (--k-face, --k-rim, --k-lip, --k-r); the
+   rules after it only set those variables and the room a key needs. Every key is listed in KEYS_INVENTORY.md. */
+@media screen {
+  html[data-mode="simple"] body, body.cream-page {
+    --key-rim: #8a7f66;                              /* the paper key's rim and lip: 3:1 on the page and on raised */
+    --key-ink-rim: #0f0d0b;                          /* the black key's rim and lip */
+    --key-go-rim: #1c4a2e; --key-no-rim: #7a2b37;    /* the green / red key's rim and lip */
+    --key-shade: rgba(42, 37, 32, 0.42);
+    --key-hi: rgba(255, 255, 255, 0.9);              /* the light from above, on paper */
+    --key-hi-dark: rgba(255, 255, 255, 0.24);        /* the same light on a filled key */
+  }
+
+  /* -- the key: every button and link Simple draws, the small boxes in the top bar, and the Pro / cream-page controls */
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *),
+  :is(.sm-root, .sm-page-top) :is(.sm-chip, .sm-house) > span, .sm-pick .sm-more,
+  body.cream-page .sm-page-top .sm-connect,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta, .ph-menu-list a, .pf-fetti):not(.pv *, .dk-pv *) {
+    background: var(--k-face, var(--raised)); color: var(--k-ink, var(--ink));
+    border: 1px solid var(--k-rim, var(--key-rim)); border-radius: var(--k-r, 10px);
+    box-shadow: 0 var(--k-now, var(--k-lip, 3px)) 0 var(--k-rim, var(--key-rim)),
+                0 calc(var(--k-now, var(--k-lip, 3px)) + 5px) var(--k-blur, 10px) -5px var(--k-shade, var(--key-shade)),
+                inset 0 1px 0 var(--k-hi, var(--key-hi)), inset 0 -1px 0 var(--k-lo, transparent);
+    text-decoration: none;
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out, background-color 80ms ease-out;
+    -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;
+  }
+  /* pressed: the key sinks onto its lip */
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *):active,
+  :is(.sm-root, .sm-page-top) :is(.sm-chip, .sm-house):active > span, .sm-pick .sm-more:active,
+  body.cream-page .sm-page-top .sm-connect:active,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta, .ph-menu-list a, .pf-fetti):not(.pv *, .dk-pv *):active {
+    --k-now: 1px; transform: translateY(calc(var(--k-lip, 3px) - 1px)); filter: none;
+    background: var(--k-face, var(--raised)); color: var(--k-ink, var(--ink));
+  }
+  /* keyboard focus: the ring, and the key under it */
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *):focus-visible,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta, .ph-menu-list a, .pf-fetti, .sm-connect):not(.pv *, .dk-pv *):focus-visible {
+    outline: none;
+    box-shadow: var(--focus), 0 var(--k-now, var(--k-lip, 3px)) 0 var(--k-rim, var(--key-rim)), inset 0 1px 0 var(--k-hi, var(--key-hi));
+  }
+  /* selected: pressed in and staying in. The lip is gone, the face is sunken, the rim is ink */
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *):is([aria-pressed="true"], [aria-checked="true"]),
+  :is(html[data-mode="simple"], body.cream-page) :is(.seg-item, .cf-seg-item, .cf-chip, .ph-menu-list a):not(.pv *, .dk-pv *):is([aria-pressed="true"], [aria-current="page"], .is-active) {
+    background: var(--k-face-in, var(--sunken)); color: var(--k-ink, var(--ink)); border-color: var(--k-rim-in, var(--ink));
+    box-shadow: inset 0 0 0 1px var(--k-rim-in, var(--ink)), inset 0 3px 4px rgba(42, 37, 32, 0.22), 0 1px 0 var(--key-hi);
+    transform: translateY(var(--k-lip, 3px));
+  }
+  :is(.sm-root, .sm-sheet) :is(button, a):is([aria-pressed="true"], [aria-checked="true"]):focus-visible,
+  :is(html[data-mode="simple"], body.cream-page) :is(.seg-item, .cf-seg-item, .cf-chip, .ph-menu-list a):is([aria-pressed="true"], [aria-current="page"], .is-active):focus-visible {
+    box-shadow: var(--focus), inset 0 0 0 1px var(--k-rim-in, var(--ink)), inset 0 3px 4px rgba(42, 37, 32, 0.22);
+  }
+  /* disabled and busy: today's muted look, no lip, no shadow: nothing looks pressable that is not */
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *):is([disabled], .is-busy),
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta):not(.pv *, .dk-pv *):is([disabled], [aria-disabled="true"]) {
+    box-shadow: none; transform: none; cursor: default;
+  }
+  /* a busy key stays down until it is done */
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *).is-busy { transform: translateY(var(--k-lip, 3px)); }
+  :is(.sm-root, .sm-sheet) .sm-opts button[disabled] { opacity: 0.5; }
+
+  /* -- primary keys: filled, 4 px lip ------------------------------------------------ */
+  .sm-btn { --k-r: 12px; }
+  .sm-btn.is-primary, .sm-btn.is-apple, .sm-btn.is-up, .sm-btn.is-dn, .sm-connect, .sm-all-close,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn-primary, .close-btn, .ph-ps-close, .ph-ps-act, .cf-cta), body.cream-page :is(.btn-accent, .hero-actions .btn:first-child) {
+    --k-lip: 4px; --k-hi: var(--key-hi-dark);
+  }
+  .sm-btn.is-primary, .sm-connect, .sm-all-close,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn-primary, .close-btn, .ph-ps-close, .ph-ps-act, .cf-cta), body.cream-page :is(.btn-accent, .hero-actions .btn:first-child) {
+    --k-face: var(--ink); --k-rim: var(--key-ink-rim); --k-ink: var(--page);
+  }
+  .sm-btn.is-apple { --k-face: #000; --k-rim: #000; --k-ink: #fff; }
+  .sm-btn.is-up { --k-face: var(--pos); --k-rim: var(--key-go-rim); --k-ink: #fff; }
+  .sm-btn.is-dn { --k-face: var(--neg); --k-rim: var(--key-no-rim); --k-ink: #fff; }
+  .sm-btn.is-busy { --k-face: var(--ink-muted); --k-rim: var(--ink-muted); --k-ink: var(--page); }
+  .sm-btn.is-up.is-busy { --k-face: var(--pos); --k-rim: var(--pos); --k-ink: #fff; }
+  .sm-btn.is-dn.is-busy { --k-face: var(--neg); --k-rim: var(--neg); --k-ink: #fff; }
+  /* the black keys (the owner, 2026-11-15: "all the black bars should be buttons on confetti too"): the main step of
+     their screen, so the strongest key on it. A near-black lip, a faint light on the top edge, a hair of light where
+     the face ends so the lip shows against the black face, and the deepest shadow on the paper */
+  .sm-btn.is-primary, .sm-connect, .sm-all-close,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn-primary, .close-btn, .ph-ps-close, .ph-ps-act, .cf-cta), body.cream-page :is(.btn-accent, .hero-actions .btn:first-child) { --k-lo: rgba(255, 255, 255, 0.16); --k-hi: rgba(255, 255, 255, 0.16); --k-shade: rgba(20, 17, 14, 0.62); --k-blur: 14px; }
+  body.cream-page .sm-page-top .sm-connect::before, body.cream-page .sm-page-top .sm-connect::after { color: inherit; }      /* its brackets show, as on the trade page */
+  body.cream-page .hero-actions .btn:first-child:is(:hover, :active, :focus) { border-color: var(--key-ink-rim); }
+  /* small black keys (top bar Connect, a trade's Close on desktop): 3 px lip */
+  .sm-connect, .sm-all-close { --k-lip: 3px; }
+  .sm-top .sm-connect, body.cream-page .sm-page-top .sm-connect { height: 40px; }
+  .sm-root .sm-all-trades .sm-all-close { --k-r: 8px; min-height: 30px; padding: 0 12px; }
+  /* room under a primary key for its lip */
+  .sm-pos { padding-bottom: 12px; }
+  .sm-sh-foot { gap: 12px; }
+
+  /* -- secondary keys: paper ----------------------------------------------------------- */
+  /* the top bar: Menu, the wallet, the House, Back */
+  :is(.sm-root, .sm-page-top) :is(.sm-chip, .sm-house) > span { --k-lip: 2px; --k-r: 9px; font-weight: 600; }
+  :is(.sm-root, .sm-page-top) .sm-house > span { --k-rim: var(--pos); }
+  :is(.sm-root, .sm-page-top) :is(.sm-chip, .sm-house):focus-visible { border-radius: 10px; }
+  .sm-root .sm-back { --k-lip: 2px; --k-r: 9px; min-height: 36px; height: 36px; margin-left: 0; padding: 0 12px 0 2px; gap: 0; position: relative; }
+  .sm-root .sm-back .sm-arr { width: 32px; height: 32px; font-size: 20px; }
+  .sm-root .sm-back::after { content: ""; position: absolute; inset: -5px -4px; }      /* the 44 px target around the 36 px key */
+  /* text links that act: Add money, Withdraw, Just looking?, Cancel, Not now, Other ways to add ... */
+  :is(.sm-root, .sm-sheet) .sm-link { padding: 0 16px; font-weight: 600; }
+  :is(.sm-root, .sm-sheet) .sm-links { gap: 10px 10px; margin-top: 8px; padding-bottom: 3px; }
+  :is(.sm-root, .sm-sheet) .sm-quiet { margin-top: 12px; font-size: 15px; font-weight: 600; color: var(--ink); }
+  .sm-sh-foot .sm-link { width: 100%; }
+  /* the ghost button: a full-width paper key (its brackets stay) */
+  .sm-btn.is-ghost { --k-lip: 3px; }
+  /* the chart's timeframes and Line / Candles: a row of keys, the chosen one pressed in. The row scrolls sideways,
+     so it keeps room inside itself for the lips and gives the same room back with a margin */
+  :is(.sm-root) .sm-tf { padding: 4px 4px 12px; margin: -4px -4px -12px; }
+  :is(.sm-root) .sm-tf button { --k-r: 9px; height: 44px; min-width: 44px; font-weight: 600; color: var(--ink); }
+  :is(.sm-root) .sm-tf-sep { flex-basis: 0; width: 0; }      /* the keys grew to 44 px wide: the spacer gives that room back */
+  /* amounts and boosts: separate keys in the same grid */
+  :is(.sm-root, .sm-sheet) .sm-chips button { font-weight: 600; }
+  :is(.sm-root, .sm-sheet) .sm-seg { border: 0; gap: 11px 8px; margin-bottom: 3px; }
+  :is(.sm-root, .sm-sheet) :is(.sm-chips, .sm-seg) button:is([aria-pressed="true"]) { font-weight: 700; }
+  :is(.sm-root, .sm-sheet) .sm-seg button { font-weight: 600; }
+  /* rows that toggle or open something inside a sheet or a card */
+  :is(.sm-root, .sm-sheet) .sm-opt { padding: 0 14px; margin-bottom: 3px; }
+  :is(.sm-root, .sm-sheet) .sm-kv.is-btn { --k-lip: 2px; --k-r: 9px; margin: 8px 0 4px; padding: 0 12px; }
+  /* close: a square key */
+  :is(.sm-root, .sm-sheet) .sm-x { --k-lip: 2px; width: 40px; height: 40px; font-size: 17px; font-weight: 600; color: var(--ink); position: relative; }
+  :is(.sm-root, .sm-sheet) .sm-x::after { content: ""; position: absolute; inset: -3px; }
+  .sm-sh-head .sm-x { margin-right: 12px; }
+  :is(.sm-root, .sm-sheet) .sm-more { --k-lip: 2px; --k-r: 9px; color: var(--ink); }
+
+  /* -- rows: a whole row that opens something is a raised paper card ----------------------- */
+  :is(.sm-root, .sm-sheet) :is(.sm-note, .sm-pick) { --k-r: 12px; }
+  .sm-root .sm-row.is-pos { padding: 4px 12px; margin-top: 8px; }
+  .sm-root .sm-rows:has(> .sm-row.is-pos) { padding-bottom: 3px; }
+  .sm-sheet .sm-pick, .sm-root .sm-pick { margin-top: 11px; }
+  :is(.sm-root, .sm-sheet) .sm-opts { border: 0; background: none; margin: 8px 0 4px; display: grid; gap: 9px; }
+  :is(.sm-root, .sm-sheet) .sm-opts button { --k-lip: 2px; --k-r: 9px; }
+  /* the menu: every line is a row key (48 + 8 = the old 56 px pitch) */
+  :is(.sm-root, .sm-sheet) .sm-menu { padding-top: 10px; }
+  :is(.sm-root, .sm-sheet) .sm-menu :is(button, a) { min-height: 48px; margin-bottom: 8px; padding: 0 14px; }
+  :is(.sm-root, .sm-sheet) .sm-menu-sub { gap: 8px; }
+  :is(.sm-root, .sm-sheet) .sm-menu-sub :is(button, a) { min-height: 48px; }
+
+  /* -- inline keys: a link inside a line of text, like a key cap in a sentence ------------- */
+  .sm-root :is(.sm-all-link, .sm-all-coin),
+  body.cream-page :is(p, li, dd, td, .fineprint, .sub, .c-src, .pos-line, .cf-ca-row) > a:not(.btn, .sm-logo, .wordmark, .pf-fetti),
+  body.cream-page :is(.trade-foot, .docs-foot, .site-foot, .landing-foot) > a:not(.wordmark) {
+    --k-lip: 2px; --k-r: 6px;
+    background: var(--raised); color: var(--ink); border: 1px solid var(--key-rim); border-radius: 6px;
+    box-shadow: 0 1.5px 0 var(--key-rim), inset 0 1px 0 var(--key-hi);
+    padding: 0 5px; text-decoration: none; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out;
+  }
+  body.cream-page :is(p, li, dd, td, .fineprint, .sub, .c-src, .pos-line, .cf-ca-row) > a:not(.btn, .sm-logo, .wordmark, .pf-fetti):active,
+  body.cream-page :is(.trade-foot, .docs-foot, .site-foot, .landing-foot) > a:not(.wordmark):active {
+    transform: translateY(1px); box-shadow: 0 0.5px 0 var(--key-rim), inset 0 1px 0 var(--key-hi);
+  }
+  .sm-root :is(.sm-all-link, .sm-all-coin):active { transform: translateY(1px); box-shadow: 0 0.5px 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
+  .sm-root :is(.sm-all-link, .sm-all-coin) { display: inline-block; padding: 1px 8px; text-decoration: none; position: relative; font-weight: 600; }
+  .sm-root :is(.sm-all-link, .sm-all-coin)::after { content: ""; position: absolute; inset: -10px -6px; }
+  /* footers: each link is a small key with a real target */
+  body.cream-page :is(.trade-foot, .docs-foot, .site-foot, .landing-foot) > a:not(.wordmark) {
+    display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 8px;
+    box-shadow: 0 2px 0 var(--key-rim), inset 0 1px 0 var(--key-hi);
+  }
+  body.cream-page :is(.trade-foot, .docs-foot, .site-foot, .landing-foot) { gap: 10px 8px; }
+  /* the landing page's one-line banner link: a row key, not a wrapped inline one */
+  body.cream-page.landing p > a:not(.btn) { display: inline-block; padding: 8px 14px; border-radius: 10px; box-shadow: 0 3px 0 var(--key-rim), 0 7px 10px -5px var(--key-shade), inset 0 1px 0 var(--key-hi); }
+
+  /* -- Pro sheets opened from Simple, and the cream pages' own controls ---------------------- */
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn):not(.pv *, .dk-pv *)::before,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn):not(.pv *, .dk-pv *)::after { color: var(--k-br, var(--ink-faint)); }
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn-primary, .close-btn, .ph-ps-close, .ph-ps-act), body.cream-page :is(.btn-accent, .hero-actions .btn:first-child) { --k-br: rgba(250, 246, 237, 0.55); }
+  :is(html[data-mode="simple"], body.cream-page) .btn-sm:not(.pv *, .dk-pv *) { --k-lip: 2px; --k-r: 8px; }
+  :is(html[data-mode="simple"], body.cream-page) .btn-plain { --k-lip: 2px; --k-r: 9px; min-width: 40px; }
+  :is(html[data-mode="simple"], body.cream-page) .panel-head > .btn-plain { width: 40px; min-height: 40px; height: 40px; margin-right: 6px; }
+  body.cream-page .cf-ca-row { gap: 10px 8px; }
+  :is(html[data-mode="simple"], body.cream-page) .ph-quiet { --k-lip: 2px; --k-r: 9px; padding: 0 12px; }
+  :is(html[data-mode="simple"], body.cream-page) .ph-x { --k-lip: 2px; --k-r: 9px; width: 40px; height: 40px; margin: 2px 8px 2px 2px; color: var(--ink); }
+  body.cream-page .cf-ca-copy.is-done { --k-face: var(--pos); --k-rim: var(--key-go-rim); }
+  /* segmented controls: separate keys, the chosen one pressed in */
+  :is(html[data-mode="simple"], body.cream-page) :is(.seg, .cf-seg):not(.pv *, .dk-pv *) { border: 0; gap: 8px; margin-bottom: 3px; }
+  :is(html[data-mode="simple"], body.cream-page) .cf-seg { display: grid; }
+  :is(html[data-mode="simple"], body.cream-page) :is(.seg-long, .seg-short):is([aria-pressed="true"], .is-active) { --k-ink: #fff; }
+  :is(html[data-mode="simple"], body.cream-page) .seg-long:is([aria-pressed="true"], .is-active) { --k-face-in: var(--pos); --k-rim-in: var(--key-go-rim); }
+  :is(html[data-mode="simple"], body.cream-page) .seg-short:is([aria-pressed="true"], .is-active) { --k-face-in: var(--neg); --k-rim-in: var(--key-no-rim); }
+  /* the phone menu on the cream pages: row keys, the page you are on pressed in */
+  :is(html[data-mode="simple"], body.cream-page) .ph-menu-list { padding: 10px 16px 8px; gap: 8px; }
+  :is(html[data-mode="simple"], body.cream-page) .ph-menu-list a { min-height: 48px; padding: 0 14px; }
+  :is(html[data-mode="simple"], body.cream-page) .ph-menu-list a[aria-current="page"]::before { content: none; }
+  :is(html[data-mode="simple"], body.cream-page) .ph-menu-list a:not(.ph-menu-sub) + .ph-menu-sub { margin-top: 0; }
+  body.cream-page .pos-lines .pos-line > a { justify-self: start; width: fit-content; }
+  body.cream-page .pf-fetti { --k-lip: 2px; --k-r: 9px; padding: 0 12px; margin-bottom: 4px; }
+  /* cream pages on a phone: the top bar holds the logo, House, Connect and Menu without cutting Menu off
+     (before this, Menu ran off the right edge at 390 px when no wallet was connected) */
+  @media (max-width: 480px) {
+    body.cream-page .sm-page-top { padding-left: 12px; padding-right: 12px; gap: 4px; }
+    body.cream-page .sm-page-top-r { gap: 4px; }
+    body.cream-page .sm-page-top .sm-logo { font-size: 18px; }
+    body.cream-page .sm-page-top .sm-connect { padding: 0 9px; font-size: 14px; }
+    body.cream-page .sm-page-top :is(.sm-chip, .sm-house) { padding: 0; }
+    body.cream-page .sm-page-top :is(.sm-chip, .sm-house) > span { padding: 0 8px; }
+    body.cream-page .sm-page-top .sm-house { font-size: 12.5px; }
+  }
+  /* the wallet chooser's box keeps its paper edge, without the hard offset shadow fighting the keys */
+  html[data-mode="simple"] dialog[aria-label="Choose a wallet"], body.cream-page dialog[aria-label="Choose a wallet"] { border-radius: 14px; }
+}
+
+/* desktop */
+@media (min-width: 641px) {
+  .sm-center-inner .sm-tf { margin-top: -4px; margin-bottom: 0; }
+  .sm-left .sm-row.is-pos { padding: 4px 12px; }
+}
+/* a mouse over a key lifts it a hair (desktop only: on a touch screen hover sticks) */
+@media (hover: hover) and (min-width: 641px) {
+  :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *, [disabled], .is-busy, [aria-pressed="true"], [aria-checked="true"]):hover:not(:active),
+  :is(.sm-root, .sm-page-top) :is(.sm-chip, .sm-house):hover:not(:active) > span,
+  body.cream-page .sm-page-top .sm-connect:hover:not(:active),
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta, .ph-menu-list a, .pf-fetti):not(.pv *, .dk-pv *, [disabled], [aria-disabled="true"], [aria-pressed="true"], [aria-current="page"], .is-active):hover:not(:active) {
+    --k-now: calc(var(--k-lip, 3px) + 1px); transform: translateY(-1px);
+    background: var(--k-face, var(--raised)); color: var(--k-ink, var(--ink));
+  }
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn):not(.pv *, .dk-pv *):hover::before,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn):not(.pv *, .dk-pv *):hover::after { color: var(--k-br, var(--ink-faint)); }
+  body.cream-page :is(p, li, dd, td, .fineprint, .sub, .c-src, .pos-line, .cf-ca-row) > a:not(.btn, .sm-logo, .wordmark, .pf-fetti):hover,
+  body.cream-page :is(.trade-foot, .docs-foot, .site-foot, .landing-foot) > a:not(.wordmark):hover { color: var(--ink); transform: translateY(-1px); box-shadow: 0 2.5px 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.sm-root, .sm-sheet) :is(button, a), :is(.sm-root, .sm-page-top) :is(.sm-chip, .sm-house) > span,
+  :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta, .ph-menu-list a, .pf-fetti, .sm-connect),
+  body.cream-page a { transition: none; }
+}
