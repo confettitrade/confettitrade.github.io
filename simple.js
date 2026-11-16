@@ -313,7 +313,7 @@
 
   /* the amount: a real field (tap the big number, the numeric keypad), digits and one dot */
   function amtInput(id, label, value, onInput) {
-    var i = h('input'); i.type = 'text'; i.id = id; i.value = value; i.maxLength = 9;
+    var i = h('input'); i.type = 'text'; i.id = id; i.value = value; i.maxLength = 9; i.placeholder = '0';
     i.setAttribute('inputmode', 'decimal'); i.setAttribute('enterkeyhint', 'done'); i.setAttribute('autocomplete', 'off'); i.setAttribute('aria-label', label);
     i.addEventListener('input', () => { var v = i.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'); if (v !== i.value) i.value = v; onInput(v); });
     i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); i.blur(); } });
@@ -711,7 +711,7 @@
       var amt = ordAmount();
       DK.OR = {};
       DK.OR.amt = amtInput('smDkOrdAmount', 'Amount', DK.orderTyped, v => { DK.orderTyped = v; DK.orderAll = false; DK.orderErr = ''; paint(); });
-      var lab = h('label', 'sm-label', 'Amount'); lab.htmlFor = 'smDkOrdAmount';
+      var lab = h('label', 'sm-label is-amt', ['Amount', h('span', 'sm-hint', 'Type any amount')]); lab.htmlFor = 'smDkOrdAmount';
       var chips = h('div', 'sm-chips');
       [5, 10, 25, 'all'].forEach(v => {
         var b = btn(null, v === 'all' ? 'All' : '$' + v, () => {
@@ -753,7 +753,7 @@
       DK.OR.w = h('b', 'sm-up', ''); DK.OR.l = h('b', 'sm-dn', '');
       DK.OR.wk = h('span'); DK.OR.lk = h('span');
 
-      add(body, [lab, h('div', 'sm-amt is-mid', [h('span', null, '$'), DK.OR.amt]), chips,
+      add(body, [lab, h('label', 'sm-amt is-mid', [h('span', null, '$'), DK.OR.amt]), chips,
         h('div', 'sm-label', 'Boost'), seg, DK.OR.levBox, DK.OR.risk,
         h('div', 'sm-out', [h('div', null, [DK.OR.wk, DK.OR.w]), h('div', null, [DK.OR.lk, DK.OR.l])])]);
 
@@ -1349,7 +1349,7 @@
     var sh = ADD.sh, r = ADD.R, m = methods();
     txt(sh.title, 'Add money');
     r.amt = amtInput('smAddAmount', 'How much, in dollars', ADD.typed, v => { ADD.typed = v; ADD.err = ''; ADD.q = null; ADD.max = false; paintAdd(); scheduleQuote(); });
-    var lab = h('label', 'sm-label', 'How much'); lab.htmlFor = 'smAddAmount';
+    var lab = h('label', 'sm-label is-amt', ['How much', h('span', 'sm-hint', 'Type any amount')]); lab.htmlFor = 'smAddAmount';
     r.chips = h('div', 'sm-chips');
     [25, 50, 100, 'max'].forEach(v => {
       var b = btn(null, '', () => {
@@ -1377,7 +1377,7 @@
     var group = h('div', null, [r.apple.n, r.eth.n, r.opts, r.wallet.n]); group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Pay with');
     r.get = h('span', 'is-go', ''); r.eta = h('span', null, '');
     r.fine = h('p', 'sm-fine', '');
-    add(sh.body, [lab, h('div', 'sm-amt', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Pay with'), group,
+    add(sh.body, [lab, h('label', 'sm-amt', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Pay with'), group,
       h('div', 'sm-sum', [h('div', 'sm-sumrow', [h('span', null, 'You’ll trade with'), r.get]), h('div', 'sm-sumrow', [h('span', null, 'Ready in'), r.eta])]), r.fine]);
     r.say = sayLine();
     r.go = btn('sm-btn is-primary', '', addGo);
@@ -2375,7 +2375,7 @@
     sh.title.textContent = ''; add(sh.title, [sym, sidePill(isLong)]);
     sh.body.textContent = ''; sh.foot.textContent = '';
     r.amt = amtInput('smOrdAmount', 'Amount, in dollars', ORD.typed, v => { ORD.typed = v; ORD.all = false; ORD.err = ''; paintOrder(); });
-    var lab = h('label', 'sm-label', 'Amount'); lab.htmlFor = 'smOrdAmount';
+    var lab = h('label', 'sm-label is-amt', ['Amount', h('span', 'sm-hint', 'Type any amount')]); lab.htmlFor = 'smOrdAmount';
     r.chips = h('div', 'sm-chips');
     [5, 10, 25, 'all'].forEach(v => {
       var b = btn(null, v === 'all' ? 'All' : '$' + v, () => {
@@ -2418,7 +2418,7 @@
     r.limPx.addEventListener('input', () => { ORD.limitPx = r.limPx.value; ORD.err = ''; paintOrder(); });
     r.limPx.addEventListener('keydown', ev => { if (ev.key === 'Enter') r.limPx.blur(); });
     r.limBox = h('div', 'sm-lim', [h('label', null, [h('span', null, 'Opens when ' + sym + ' reaches'), r.limPx]), h('p', 'sm-fine', 'The order waits in this browser and fires while Confetti is open.')]);
-    add(sh.body, [lab, h('div', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Boost'), r.seg, r.levBox, r.risk,
+    add(sh.body, [lab, h('label', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Boost'), r.seg, r.levBox, r.risk,
       h('div', 'sm-out', [h('div', null, [r.wk, r.w]), h('div', null, [r.lk, r.l])]), h('div', 'sm-label', 'When'), r.limSeg, r.limBox, r.autoRow, r.autoBox]);
     r.say = sayLine();
     r.go = btn('sm-btn', '', orderGo);

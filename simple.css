@@ -998,3 +998,21 @@ body.cream-page .pts-bar { display: none; }
   :is(html[data-mode="simple"], body.cream-page) :is(.btn, .ph-btn, .ph-quiet, .ph-x, .seg-item, .cf-seg-item, .cf-chip, .cf-cta, .ph-menu-list a, .pf-fetti, .sm-connect),
   body.cream-page a { transition: none; }
 }
+
+/* ---- Amounts you can type (the owner, 2026-11-16: "we need to make it so people can type in custom amoounts on the
+   add money", then "and on the amount of the trade").
+   The amount was already a real field, but it showed as a bare big number, so nothing said you could type in it. Now
+   it sits in a box sunk into the paper (keys stand up, fields sink in), its label says "Type any amount", and a tap
+   anywhere in the box (the $ too) opens the number keypad with the amount selected, so typing replaces it. The preset
+   keys ($25 $50 $100 Max, $5 $10 $25 All) are unchanged. Covers Add money, the trade sheet and the desktop order panel. */
+@media screen {
+  .sm-amt {
+    margin: 8px 0 4px; padding: 6px 14px; gap: 2px; cursor: text;
+    background: var(--raised); border-radius: 12px;
+    box-shadow: inset 0 0 0 1px var(--key-rim, #8a7f66), inset 0 3px 5px rgba(42, 37, 32, 0.16);
+  }
+  .sm-amt:focus-within { box-shadow: inset 0 0 0 2px var(--ink), inset 0 3px 5px rgba(42, 37, 32, 0.16); }
+  .sm-amt input:focus { box-shadow: none; }
+  .sm-label.is-amt { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .sm-label.is-amt .sm-hint { font-size: 14px; letter-spacing: normal; text-transform: none; font-weight: 500; color: var(--ink-muted); }
+}
