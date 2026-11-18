@@ -304,6 +304,19 @@
   .sm-say { font-size: 15px; line-height: 1.4; min-height: 21px; margin: 0; color: var(--ink-muted); }
   .sm-say.is-bad { color: var(--sm-neg-t); } .sm-say.is-warn { color: var(--ink); font-weight: 500; }
   .sm-pos.is-lim { border-color: var(--ink-muted); }
+  /* (cf_LIQ) room before a trade closes itself: one line and a slim flat bar under the P&L. The bar is the share of the full move
+     to the closing price that is left; it and the figure are green, amber under half, red under a fifth. Fixed heights: a tick
+     changes the figure and the bar's width, never the card's. */
+  .sm-room { margin-top: 10px; color: var(--sm-pos-t); }
+  .sm-room-l { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; height: 22px; font-size: 15px; line-height: 22px; white-space: nowrap; }
+  .sm-room-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink-muted); }
+  .sm-room-v { flex: none; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sm-room-bar { height: 6px; margin-top: 5px; background: var(--rule); }
+  .sm-room-bar i { display: block; height: 100%; min-width: 2px; background: currentColor; transition: width 240ms ease-out, background-color 240ms ease-out; }
+  .sm-room.is-amber { color: var(--warn); } .sm-room.is-red { color: var(--sm-neg-t); }
+  .sm-room.is-late { color: var(--ink-muted); } .sm-room.is-late .sm-room-bar i { min-width: 0; }
+  .sm-room-s { font-style: normal; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+  .sm-room-s.is-amber { color: var(--warn); font-weight: 600; } .sm-room-s.is-red { color: var(--sm-neg-t); font-weight: 600; }
   .sm-wait-tag { font-style: normal; font-size: 12px; font-weight: 500; padding: 2px 6px; background: var(--ink-muted); color: var(--page); margin-left: 4px; }
   .sm-cta .sm-say { text-align: center; }
   /* All open trades section (phone): goes in main area after chart */
@@ -476,7 +489,7 @@
   @media (prefers-reduced-motion: reduce) {
     dialog.sm-sheet[open], dialog.sm-sheet.is-out, dialog.sm-sheet.is-out.is-gone, dialog.sm-sheet[open]::backdrop, dialog.sm-sheet.is-out::backdrop, .sm-wait, .sm-wait > div, .sm-snack, .sm-tick-up, .sm-tick-dn { animation: none; }
     .sm-spin { animation-duration: 2400ms; }
-    .sm-btn, .sm-dir, .sm-st .sm-m { transition: none; }
+    .sm-btn, .sm-dir, .sm-st .sm-m, .sm-room-bar i { transition: none; }
   }
 }
 
@@ -556,6 +569,7 @@
   .sm-all-trades .sm-all-coin:hover { color: var(--pos); }
   .sm-all-trades .sm-all-pill { flex: 0 0 auto; }
   .sm-all-trades .sm-all-in { flex: 0 0 auto; font-size: 14px; color: var(--ink-muted); }
+  .sm-all-trades .sm-room-s { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
   .sm-all-trades .sm-all-pnl { flex: 1 1 auto; min-width: 0; text-align: right; font-size: 15px; font-weight: 600; }
   .sm-all-trades .sm-all-close { flex: 0 0 auto; padding: 6px 10px; font-size: 13px; font-weight: 600; background: var(--ink); color: var(--page); border: none; cursor: pointer; }
   .sm-all-trades .sm-all-close:active { filter: brightness(0.85); }

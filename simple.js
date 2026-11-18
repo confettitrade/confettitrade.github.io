@@ -462,6 +462,7 @@
       var r = DK.R.rows['p' + see(x)]; if (!r) return;
       var st2 = x.status;
       txt(r.sub, st2 ? plainStatus(st2.text) : usdS(x.margin) + ' in');
+      roomShort(r.room, x, ' · ', !!st2);
       txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
       txt(r.c, x.delayed || !isFinite(x.pnl) ? 'price delayed' : pct(x.pnl / x.margin)); cls(r.c, tone(x.pnl));
     });
@@ -568,7 +569,7 @@
         add(allTr, h('div', 'sm-label', 'All your open trades'));
         allPs.sort((a2, b2) => (b2.openedAt || 0) - (a2.openedAt || 0));
         allPs.forEach(x => {
-          var c = DK.AT.cards[x.id] = { pnl: h('span', 'sm-all-pnl', '—'), close: h('button', 'sm-all-close', 'Close') };
+          var c = DK.AT.cards[x.id] = { pnl: h('span', 'sm-all-pnl', '—'), close: h('button', 'sm-all-close', 'Close'), room: h('span', 'sm-room-s') };
           var coin = h('span', 'sm-all-coin', x.sym); coin.addEventListener('click', () => { selectCoin(x.sym, x.id); });
           var pill = h('span', 'sm-all-pill ' + (x.isLong ? 'sm-pill is-up' : 'sm-pill is-dn'), (x.isLong ? '▲ ' : '▼ ') + x.lev + '×');
           var inAmt = h('span', 'sm-all-in', usdS(x.margin) + ' in');
@@ -577,7 +578,7 @@
           if (x.auto && x.auto.tp != null) autoTxt += 'profit at ' + price(x.auto.tp, x.sz);
           if (x.auto && x.auto.sl != null) autoTxt += (autoTxt ? ', ' : '') + 'stop at ' + price(x.auto.sl, x.sz);
           var autoEl = autoTxt ? h('span', 'sm-all-auto', 'Auto-close: ' + autoTxt) : null;
-          var card = h('div', 'sm-all-card', autoEl ? [coin, pill, inAmt, c.pnl, c.close, autoEl] : [coin, pill, inAmt, c.pnl, c.close]);
+          var card = h('div', 'sm-all-card', autoEl ? [coin, pill, inAmt, c.room, c.pnl, c.close, autoEl] : [coin, pill, inAmt, c.room, c.pnl, c.close]);
           allTr.appendChild(card);
         });
       } else {
@@ -610,6 +611,7 @@
       var c = DK.CR.cards && DK.CR.cards[x.id]; if (!c) return;
       var mine = COIN.closing === x.id, err = COIN.errs[x.id] || '';
       txt(c.pnl, (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(c.pnl, 'sm-pnl ' + tone(x.pnl));
+      roomSet(c.room, x);
       txt(c.go, mine ? 'Closing…' : 'Close · take about ' + usd(x.payout)); c.go.disabled = !!COIN.closing || x.status === 'closing';
       txt(c.say, err); show(c.say, !!err);
     });
@@ -621,6 +623,7 @@
         var c = DK.AT.cards[x.id]; if (!c) return;
         var ok = !x.delayed && isFinite(x.pnl);
         txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-all-pnl ' + (ok ? tone(x.pnl) : ''));
+        roomShort(c.room, x, '', false);
         c.close.disabled = !!COIN.closing || x.status === 'closing';
         c.close.textContent = COIN.closing === x.id ? 'Closing…' : 'Close';
       });
@@ -641,8 +644,9 @@
     add(card, hdr);
     var c = { pnl: h('div', 'sm-pnl'), say: h('p', 'sm-say is-bad') };
     if (!isOpening) {
+      c.room = roomNew();
       c.go = btn('sm-btn is-primary', '', () => { if (!COIN.closing && !early()) closeGo(x.id); });
-      c.say.hidden = true; add(card, [c.pnl, c.go, c.say]); DK.CR.cards[x.id] = c;
+      c.say.hidden = true; add(card, [c.pnl, c.room.n, c.go, c.say]); DK.CR.cards[x.id] = c;
     } else {
       c.say = h('p', 'sm-say', plainStatus(x.say)); add(card, c.say); DK.CR.cards['o' + x.key] = c;
     }
@@ -933,6 +937,7 @@
       var r = R.rows['p' + see(x)]; if (!r) return;
       var st2 = x.status;
       txt(r.sub, st2 ? plainStatus(st2.text) : usdS(x.margin) + ' in');
+      roomShort(r.room, x, ' · ', !!st2);
       txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
       txt(r.c, x.delayed || !isFinite(x.pnl) ? 'price delayed' : pct(x.pnl / x.margin)); cls(r.c, tone(x.pnl));
     });
@@ -995,10 +1000,10 @@
     return c;
   }
   function tradeRow(key, x, fn, rows) {
-    var r = (rows || R.rows)[key] = { sub: h('i'), v: h('b', null, key.charAt(0) === 'o' ? usdS(x.margin) : '—'), c: h('i') };
+    var r = (rows || R.rows)[key] = { sub: h('span'), room: h('em', 'sm-room-s'), v: h('b', null, key.charAt(0) === 'o' ? usdS(x.margin) : '—'), c: h('i') };
     var pill = h('span', 'sm-pill ' + (x.isLong ? 'is-up' : 'is-dn'), (x.isLong ? '▲ UP ' : '▼ DOWN ') + x.lev + '×');
     var who = h('b', null, [x.sym + ' ', pill]); who.style.display = 'flex'; who.style.alignItems = 'center'; who.style.gap = '8px';
-    return btn('sm-row is-pos', [h('span', 'sm-tk', [who, r.sub]), h('span', 'sm-pr', [r.v, r.c])], fn);
+    return btn('sm-row is-pos', [h('span', 'sm-tk', [who, h('i', null, [r.sub, r.room])]), h('span', 'sm-pr', [r.v, r.c])], fn);
   }
   function plainStatus(s) {
     s = String(s || '');
@@ -2081,6 +2086,38 @@
     });
   }
   function market(sym) { return api.markets().filter(m => m.sym === sym)[0] || null; }
+  /* (cf_LIQ) Room before a trade closes itself: one line and a slim bar under the P&L, live on every price tick. The figure is how
+     far the price now is from the closing price (api.positions().away, a share of the price now); the bar is how much of the
+     full move to it is left (share: full while the trade is ahead), and both take the Pro cards' colours (near: amber under
+     half, red under a fifth). A late price shows a dash and an empty bar, never an old figure. Read-only: nothing to press. */
+  function roomFig(a) {
+    var v = a * 100, s = v >= 1 ? v.toFixed(1) : v >= 0.1 ? v.toFixed(2) : v.toFixed(3);
+    return (Number(s) > 0 ? s : '<0.001') + '%';      /* an open trade never reads 0%: at 1000× the whole room is 0.05% */
+  }
+  function roomNew() {
+    var r = { t: h('span', 'sm-room-t', ''), v: h('b', 'sm-room-v', '—'), f: h('i') };
+    r.n = h('div', 'sm-room is-late', [h('div', 'sm-room-l', [r.t, r.v]), h('div', 'sm-room-bar', r.f)]);
+    r.n.setAttribute('role', 'img'); r.f.style.width = '0%';
+    return r;
+  }
+  function roomSet(r, x) {
+    if (!r) return;
+    var late = !!x.delayed || !(x.px > 0) || !(x.endPx > 0) || !isFinite(x.away), past = !late && !(x.away > 0);
+    var share = late || past || !isFinite(x.share) ? 0 : Math.max(0, Math.min(1, x.share)), fig = late ? '—' : past ? '' : roomFig(x.away);
+    var at = price(x.endPx, x.sz), w = Math.round(share * 1000) / 10 + '%';
+    txt(r.t, past ? 'At the price where it closes itself' : 'Closes itself if ' + x.sym + (x.isLong ? ' falls' : ' rises'));
+    txt(r.v, fig);
+    cls(r.n, 'sm-room' + (late ? ' is-late' : past ? ' is-red' : x.near ? ' ' + x.near : ''));
+    if (r.f.style.width !== w) r.f.style.width = w;
+    var al = x.sym + ' closes itself at ' + at + (late ? '. The price is delayed.' : past ? '. The price is there now.' : ', ' + fig + (x.isLong ? ' below' : ' above') + ' the price now.');
+    if (r.al !== al) { r.al = al; r.n.setAttribute('aria-label', al); }
+  }
+  /* the same distance in a few words, for a row: quiet while there is room, amber and red as on the cards; nothing while the price is late */
+  function roomShort(n, x, lead, off) {
+    var late = off || !!x.delayed || !(x.px > 0) || !(x.endPx > 0) || !isFinite(x.away), past = !late && !(x.away > 0);
+    txt(n, late ? '' : (lead || '') + (past ? 'at the price where it closes itself' : roomFig(x.away) + ' from closing itself'));
+    cls(n, 'sm-room-s' + (late ? '' : past ? ' is-red' : x.near ? ' ' + x.near : ''));
+  }
   function sidePill(isLong, lev) { return h('span', 'sm-pill ' + (isLong ? 'is-up' : 'is-dn'), (isLong ? '▲ UP' : '▼ DOWN') + (lev ? ' ' + lev + '×' : '')); }
   function chartMarks(p) {
     var marks = [];
@@ -2133,7 +2170,8 @@
       txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute'));
       txt(c.pct, ok ? pct(x.pnl / x.margin) : 'The price is delayed'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
       txt(c.entry, price(x.entry, x.sz));
-      txt(c.end, price(x.endPx, x.sz) + (x.entry > 0 && x.endPx > 0 ? ' (' + pct(x.endPx / x.entry - 1, 2) + ')' : '')); cls(c.end, 'sm-dn');
+      txt(c.end, price(x.endPx, x.sz)); cls(c.end, 'sm-dn');      /* the price; how far it is now is the line under the P&L */
+      roomSet(c.room, x);
       var au = x.auto ? [x.auto.tp != null ? 'profit at ' + price(x.auto.tp, x.sz) : '', x.auto.sl != null ? 'stop at ' + price(x.auto.sl, x.sz) : ''].filter(Boolean) : null, key = au ? au.join('|') : 'Off';
       if (c.auto._k !== key) {
         c.auto._k = key; c.auto.textContent = '';
@@ -2169,6 +2207,7 @@
       var ok = !x.delayed && isFinite(x.pnl);
       txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute'));
       txt(c.pct, ok ? pct(x.pnl / x.margin) : '—'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      roomSet(c.room, x);
       var au = x.auto ? [x.auto.tp != null ? 'profit at ' + price(x.auto.tp, x.sz) : '', x.auto.sl != null ? 'stop at ' + price(x.auto.sl, x.sz) : ''].filter(Boolean) : null, key = au ? au.join('|') : 'Off';
       if (c.auto._k !== key) {
         c.auto._k = key; c.auto.textContent = '';
@@ -2227,11 +2266,11 @@
       box.appendChild(c.n);
     });
     ps.forEach(x => {
-      var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), auto: h('span', null, '—'), chev: h('i', 'sm-chev', '›'), say: sayLine() };
+      var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), auto: h('span', null, '—'), chev: h('i', 'sm-chev', '›'), say: sayLine(), room: roomNew() };
       c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
       c.set = btn('sm-kv is-btn', [h('span', null, 'Auto-close'), h('span', 'sm-kv-v', [c.auto, c.chev])], () => { api.pro('position', x.id); });
       c.set.setAttribute('aria-label', 'Auto-close for this trade: set take profit and stop loss');
-      c.n = h('div', 'sm-pos', [head(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.say, c.close,
+      c.n = h('div', 'sm-pos', [head(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
         h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set])]);
       box.appendChild(c.n);
     });
@@ -2260,10 +2299,11 @@
           var coin = h('span', 'sm-all-link', p.sym); coin.addEventListener('click', ev => { ev.stopPropagation(); go('coin', p.sym, p.id); });
           return h('div', 'sm-pos-h', [h('span', null, [coin, sidePill(p.isLong, p.lev)]), h('span', 'sm-in', usdS(p.margin) + ' in')]);
         }
-        var c = R.cards['all' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), auto: h('span', null, '—'), chev: h('i', 'sm-chev', '›'), say: sayLine() };
+        var c = R.cards['all' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), auto: h('span', null, '—'), chev: h('i', 'sm-chev', '›'), say: sayLine(), room: roomNew() };
+        c.say.hidden = true;      /* nothing is said on these cards: no empty line between the bar and Close */
         c.close = btn('sm-btn is-primary', '', () => { closeGo(x.id); });
         c.set = btn('sm-kv is-btn', [h('span', null, 'Auto-close'), h('span', 'sm-kv-v', [c.auto, c.chev])], () => { api.pro('position', x.id); });
-        c.n = h('div', 'sm-pos', [allHead(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.say, c.close,
+        c.n = h('div', 'sm-pos', [allHead(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
           h('div', 'sm-kvs', [c.set])]);
         allBox.appendChild(c.n);
       });

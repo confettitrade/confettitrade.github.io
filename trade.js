@@ -13124,7 +13124,7 @@
         var p = it.p, m = positionMarket(p), e = it.est || {}, rule = tpsl.rules[it.pid], le = null;
         try { le = liveEstimate(p, e); } catch (x) { le = null; }
         return { id: it.pid, sym: m ? m.symbol : '', sz: m ? m.szDecimals : null, isLong: p.isLong, lev: p.leverage, margin: p.margin, entry: p.entry, px: it.px,
-          endPx: it.room.liq, away: it.room.away, near: it.room.cls, pnl: le ? le.pnl : e.pnl, payout: le ? le.payout : e.payout, delayed: !!e.delayed,
+          endPx: it.room.liq, away: it.room.away, near: it.room.cls, share: it.share, pnl: le ? le.pnl : e.pnl, payout: le ? le.payout : e.payout, delayed: !!e.delayed,
           status: closeStatus(it.pid, p), auto: rule ? { tp: rule.tp, sl: rule.sl } : null, est: !!le };      /* est: pnl / payout are the live estimate (the card's ≈), not the figure at the last print */
       });
     },
