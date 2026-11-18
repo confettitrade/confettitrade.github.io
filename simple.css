@@ -884,6 +884,34 @@ body.cream-page .pts-bar { display: none; }
   .sm-root .sm-back { --k-lip: 2px; --k-r: 9px; min-height: 36px; height: 36px; margin-left: 0; padding: 0 12px 0 2px; gap: 0; position: relative; }
   .sm-root .sm-back .sm-arr { width: 32px; height: 32px; font-size: 20px; }
   .sm-root .sm-back::after { content: ""; position: absolute; inset: -5px -4px; }      /* the 44 px target around the 36 px key */
+  /* phones, wallet connected: a Menu key ends the bar, as on desktop (owner 11/18: "it doesnt have a menu button at the top").
+     Four keys in one row: the keys close up (8 px between them, 6 px under 385 px), the wallet key shows its dot and
+     last 4 (simple.js topFit), and Back's coin name steps down a size when it is a long one. Nothing wraps or clips from 360 px up. */
+  .sm-root .sm-menu-key .sm-bars { display: none; width: 16px; height: 12px; flex: none;
+    background: linear-gradient(var(--ink), var(--ink)) 0 0 / 100% 2px no-repeat, linear-gradient(var(--ink), var(--ink)) 0 5px / 100% 2px no-repeat, linear-gradient(var(--ink), var(--ink)) 0 10px / 100% 2px no-repeat; }
+  @media (max-width: 519px) {
+    .sm-root > .sm-top.has-menu { gap: 6px; }
+    .sm-root > .sm-top.has-menu .sm-top-r { gap: 8px; flex: none; }
+    .sm-root > .sm-top.has-menu :is(.sm-chip, .sm-house) { padding: 0; }
+    .sm-root > .sm-top.has-menu .sm-chip > span { padding: 0 8px; }
+    .sm-root > .sm-top.has-menu .sm-back { padding-right: 10px; }
+    .sm-root > .sm-top.has-menu .sm-back .sm-arr { width: 28px; }
+  }
+  @media (max-width: 399px) {
+    .sm-root > .sm-top.has-menu .sm-back.is-long { font-size: 15px; }
+  }
+  @media (max-width: 384px) {
+    .sm-root > .sm-top.has-menu .sm-top-r { gap: 6px; }
+    .sm-root > .sm-top.has-menu .sm-back.is-mid { font-size: 15px; }
+    .sm-root > .sm-top.has-menu .sm-back.is-long { font-size: 13px; }
+  }
+  @media (max-width: 369px) {
+    .sm-root > .sm-top.has-menu .sm-menu-key .sm-menu-w { display: none; }
+    .sm-root > .sm-top.has-menu .sm-menu-key .sm-bars { display: block; }
+    .sm-root > .sm-top.has-menu .sm-menu-key > span { padding: 0 9px; }
+    .sm-root > .sm-top.has-menu .sm-menu-key { position: relative; }
+    .sm-root > .sm-top.has-menu .sm-menu-key::after { content: ""; position: absolute; inset: 0 -7px 0 -3px; }      /* the 44 px target around the 36 px key */
+  }
   /* text links that act: Add money, Withdraw, Just looking?, Cancel, Not now, Other ways to add ... */
   :is(.sm-root, .sm-sheet) .sm-link { padding: 0 16px; font-weight: 600; }
   :is(.sm-root, .sm-sheet) .sm-links { gap: 10px 10px; margin-top: 8px; padding-bottom: 3px; }

@@ -81,6 +81,10 @@
   function arrow(x) { return x > 0 ? '▲ ' : x < 0 ? '▼ ' : ''; }
   function tone(x) { return x > 0 ? 'sm-up' : x < 0 ? 'sm-dn' : 'sm-mute'; }
   function short(a) { return !a ? '' : window.innerWidth < 380 ? '…' + a.slice(-4) : a.slice(0, 6) + '…' + a.slice(-4); }
+  /* the phone top bar holds four keys once a wallet is connected (Back or the logo, the House, the wallet, Menu), so the
+     wallet key gives way first: 0 = the dot and the last 4, 1 = "…" and the last 4, 2 = the usual short form */
+  function topFit() { var x = window.innerWidth; return x < 400 ? 0 : x < 520 ? 1 : 2; }
+  function shortTop(a) { var f = topFit(); return !a ? '' : f === 0 ? a.slice(-4) : f === 1 ? '…' + a.slice(-4) : a.slice(0, 6) + '…' + a.slice(-4); }
   function ethS(wei) { var n = Number(wei) / 1e18; return String(Number(n.toPrecision(n >= 1 ? 6 : 4))); }
   function nameOf(sym) { return NAMES[sym] || sym; }
   /* An error from the Pro code, in Simple's words where the words differ. */
@@ -854,11 +858,13 @@
   function paintTop() {
     var w = api.wallet(), a = api.account(), hs = api.houseStats();
     var dk = isDesktop();
-    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, w.has, a.loaded, window.innerWidth < 380, hs.loaded].join('|');
+    var key = [dk ? 'dk' : (S.place === 'coin' ? S.sym : ''), w.account || '', w.ready, w.has, a.loaded, window.innerWidth < 380, dk ? '' : topFit(), hs.loaded].join('|');
     if (el.top.getAttribute('data-k') !== key) {
       el.top.setAttribute('data-k', key); el.top.textContent = '';
       var left;
-      if (!dk && S.place === 'coin') { left = btn('sm-back', [h('span', 'sm-arr', '←'), S.sym], () => { back(); }); left.setAttribute('aria-label', 'Back to the coins'); }
+      /* a signed-in phone bar has a Menu key at its end: Back's coin name steps down a size when it is a long one (CSS, by width) */
+      el.top.classList.toggle('has-menu', !dk && !!w.account);
+      if (!dk && S.place === 'coin') { left = btn('sm-back' + (S.sym.length > 6 ? ' is-long' : S.sym.length > 4 ? ' is-mid' : ''), [h('span', 'sm-arr', '←'), S.sym], () => { back(); }); left.setAttribute('aria-label', 'Back to the coins'); }
       else {
         left = h('a', 'sm-logo', ['confetti', h('i', null, '_')]); left.href = 'trade.html'; left.setAttribute('aria-label', 'confetti, home');
         left.addEventListener('click', ev => { ev.preventDefault(); if (!dk && S.place !== 'home') back(); else if (el.main) el.main.scrollTop = 0; });
@@ -890,11 +896,19 @@
         R.menu.setAttribute('aria-label', 'Menu');
         rightItems.push(R.menu);
       } else {
-        /* Phone header: house chip and wallet/menu chip only (money is shown on page) */
+        /* Phone header: house chip, the wallet chip (connected), and a Menu key last, as on desktop (owner 11/18: "it doesnt
+           have a menu button at the top you have to click on your wallet address to see the menu"). Money is shown on page.
+           A visitor's one chip already says Menu. Both keys open the same menu. */
         rightItems.push(R.house);
-        R.who = btn('sm-chip' + (w.account ? '' : ' is-off'), h('span', null, w.account ? [h('i', 'sm-dot'), short(w.account)] : 'Menu'), openMenu);
+        R.who = btn('sm-chip' + (w.account ? ' sm-who-key' : ' is-off'), h('span', null, w.account ? [h('i', 'sm-dot'), shortTop(w.account)] : 'Menu'), openMenu);
         R.who.setAttribute('aria-label', w.account ? 'Wallet ' + w.account + '. Menu' : 'Menu');
         rightItems.push(R.who);
+        if (w.account) {
+          /* the word; on the narrowest phones (under 370 px) three drawn bars stand in for it (CSS) */
+          R.menu = btn('sm-chip sm-menu-key', h('span', null, [h('b', 'sm-menu-w', 'Menu'), h('i', 'sm-bars')]), openMenu);
+          R.menu.setAttribute('aria-label', 'Menu');
+          rightItems.push(R.menu);
+        }
       }
       add(el.top, [left, h('span', 'sm-top-r', rightItems)]);
     }
