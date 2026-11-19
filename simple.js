@@ -465,7 +465,7 @@
         list.appendChild(row);
       });
       var sec = h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]);
-      add(scroll, sec);
+      add(scroll, [sec, newsCard()]);
     }
 
     /* update values */
@@ -635,6 +635,7 @@
       txt(c.say, err || as); cls(c.say, 'sm-say' + (err ? ' is-bad' : ' is-warn')); show(c.say, !!(err || as));
       txt(c.entry, price(x.entry, x.sz)); txt(c.end, price(x.endPx, x.sz));
       autoKeySet(c.ak, x, !!(x.status || mine));
+      poweredSet(c.pb);
     });
     os.forEach(o => { var c = DK.CR.cards && DK.CR.cards['o' + o.key]; if (c) txt(c.say, plainStatus(o.say)); });
 
@@ -670,9 +671,9 @@
       c.room = roomNew();
       c.go = btn('sm-btn is-primary', '', () => { if (!COIN.closing && !early()) closeGo(x.id); });
       /* the phone card's figures under the key: where it opened, where it closes itself, its take profit and stop loss */
-      c.entry = h('span', null, '—'); c.end = h('span', 'sm-dn', '—'); c.ak = autoKey(x);
+      c.entry = h('span', null, '—'); c.end = h('span', 'sm-dn', '—'); c.ak = autoKey(x); c.pb = poweredRow();
       c.say.hidden = true; add(card, [c.pnl, c.room.n, c.go, c.say,
-        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.ak.n])]);
+        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.ak.n, c.pb])]);
       DK.CR.cards[x.id] = c;
     } else {
       c.say = h('p', 'sm-say', plainStatus(x.say)); add(card, c.say); DK.CR.cards['o' + x.key] = c;
@@ -1042,7 +1043,7 @@
       list.appendChild(row);
     });
     var sec = h('div', 'sm-sec', [h('div', 'sm-label', 'Trade a coin'), list]); sec.id = 'smCoins';
-    add(main, sec);
+    add(main, [sec, newsCard()]);
     if (st === 'visitor') {
       add(cta, btn('sm-btn is-primary', w.has ? 'Connect wallet' : 'Open in your wallet app', doConnect));
       if (!api.demo) { var d = h('a', 'sm-link', 'Just looking? Try it with pretend money'); d.href = 'trade.html?demo=1&mode=simple'; d.style.justifyContent = 'center'; add(cta, d); }
@@ -1054,6 +1055,16 @@
     var c = { icon: h('span', 'sm-spin'), b: h('b'), i: h('i') };
     c.n = btn('sm-note', [c.icon, h('span', 'sm-t', [c.b, c.i]), h('span', 'sm-chev', '›')]);
     return c;
+  }
+  /* (cf_BFNEWS) the one small announcement, under the coins on Home (the owner, 2026-11-19: "a little announcment somwhere"): a slim
+     paper card with the article's link, and a close that hides it for this browser (and for this visit where nothing can be kept). */
+  var NEWS_KEY = 'confetti.simple.bfnews', NEWS = { off: false };
+  function newsCard() {
+    if (NEWS.off || lsGet(NEWS_KEY) === '1') return null;
+    var go = h('a', 'sm-news-go', 'Read about Blockfront ›'); go.href = 'blockfront.html';
+    var x = btn('sm-news-x', '✕', () => { NEWS.off = true; lsSet(NEWS_KEY, '1'); Array.prototype.forEach.call(el.root.querySelectorAll('.sm-news'), n => { n.parentNode.removeChild(n); }); });
+    x.setAttribute('aria-label', 'Hide this note');
+    return h('div', 'sm-news', [h('p', null, [h('b', null, 'Here’s what we’re also working on:'), ' a decentralized RPC and data transformation market for Hyperliquid.']), go, x]);
   }
   function tradeRow(key, x, fn, rows) {
     var r = (rows || R.rows)[key] = { sub: h('span'), room: h('em', 'sm-room-s'), v: h('b', null, key.charAt(0) === 'o' ? usdS(x.margin) : '—'), c: h('i') };
@@ -1166,6 +1177,7 @@
     add(list, item('Leaderboard', 'top traders', null, 'leaderboard.html'));
     add(list, item('House', 'LP and stats', null, 'house.html'));
     add(list, item('$FETTI', 'the token', null, 'confetti.html'));
+    add(list, item('Blockfront', 'what we’re also working on', null, 'blockfront.html'));
     /* sub-links: smaller docs and contracts */
     var sub = h('div', 'sm-menu-sub');
     add(sub, item('Docs', '', null, 'docs.html'));
@@ -2340,6 +2352,22 @@
     txt(n, late ? '' : (lead || '') + (past ? 'at the price where it closes itself' : roomFig(x.away) + ' from closing itself'));
     cls(n, 'sm-room-s' + (late ? '' : past ? ' is-red' : x.near ? ' ' + x.near : ''));
   }
+  /* (cf_BFNEWS) "Powered by Blockfront", the last line of a trade card (the owner, 2026-11-19: "powered by block front", then "on the
+     position cards actually"): one line in the card's own key / value style, its link the article. It shows only while this page
+     really reads the chain through Blockfront (api.poweredByBlockfront: switched on, and the read provider's last good answer came
+     from it), so never in the demo and never while config.json says "blockfront": false. Decided at most once in 30 s (the provider's
+     own wait before it tries an endpoint again) and only on the cards' normal repaint: a fail-over hides the line once, no flicker. */
+  var PB = { on: false, at: 0 };
+  function poweredRow() {
+    var a = h('a', null, 'Blockfront'); a.href = 'blockfront.html';
+    var n = h('div', 'sm-kv sm-pb', [h('span', null, 'Powered by'), a]); n.hidden = true;
+    return n;
+  }
+  function poweredSet(n) {
+    var now = Date.now();
+    if (now - PB.at >= 30000) { PB.at = now; try { PB.on = !!(api.poweredByBlockfront && api.poweredByBlockfront()); } catch (e) { PB.on = false; } }
+    show(n, PB.on);
+  }
   function sidePill(isLong, lev) { return h('span', 'sm-pill ' + (isLong ? 'is-up' : 'is-dn'), (isLong ? '▲ UP' : '▼ DOWN') + (lev ? ' ' + lev + '×' : '')); }
   function chartMarks(p) {
     var marks = [];
@@ -2411,6 +2439,7 @@
       var as = say ? '' : autoSay(x);      /* else: a take profit / stop loss that fired, or waits on hold, says so here */
       txt(c.say, say || as); cls(c.say, 'sm-say' + (err && say === err ? ' is-bad' : as ? ' is-warn' : '')); show(c.say, !!(say || as));
       autoKeySet(c.ak, x, !!(st || mine));
+      poweredSet(c.pb);
     });
     /* limit order updates */
     lims.forEach(lm => {
@@ -2434,6 +2463,7 @@
       var as = autoSay(x);      /* these cards say nothing else: only a take profit / stop loss that fired or waits on hold */
       txt(c.say, as); cls(c.say, 'sm-say' + (as ? ' is-warn' : '')); show(c.say, !!as);
       autoKeySet(c.ak, x, !!(st || mine));
+      poweredSet(c.pb);
     });
   }
   function buildCoin(sym, mode, ps, os, lims) {
@@ -2484,8 +2514,9 @@
       var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), say: sayLine(), room: roomNew() };
       c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
       c.ak = autoKey(x); c.set = c.ak.n;      /* Take profit and Stop loss, under where it opened and where it closes itself */
+      c.pb = poweredRow();
       c.n = h('div', 'sm-pos', [head(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set])]);
+        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set, c.pb])]);
       box.appendChild(c.n);
     });
     /* limit orders waiting to fire */
@@ -2516,9 +2547,9 @@
         var c = R.cards['all' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), say: sayLine(), room: roomNew() };
         c.say.hidden = true;      /* nothing is said on these cards: no empty line between the bar and Close */
         c.close = btn('sm-btn is-primary', '', () => { closeGo(x.id); });
-        c.ak = autoKey(x); c.set = c.ak.n;
+        c.ak = autoKey(x); c.set = c.ak.n; c.pb = poweredRow();
         c.n = h('div', 'sm-pos', [allHead(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-          h('div', 'sm-kvs', [c.set])]);
+          h('div', 'sm-kvs', [c.set, c.pb])]);
         allBox.appendChild(c.n);
       });
       main.appendChild(allBox);

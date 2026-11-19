@@ -4682,7 +4682,7 @@
   var RPC_TIMEOUT_MS = 4000, RPC_COOLDOWN_MS = 30000;
   /* JSON-RPC errors that mean "this node cannot serve that" (rate limit, range, capacity), not "the call reverted" */
   var RPC_CAPACITY = { '-32005': 1, '-32016': 1, '-32029': 1, '-32090': 1, '35': 1, '429': 1 };
-  var rpcState = { down: {}, used: '', fails: 0 };
+  var rpcState = { down: {}, used: '', read: '', fails: 0 };
 
   function rawProvider(url) {
     var E = window.ethers;
@@ -4721,6 +4721,7 @@
           clearTimeout(timer);
           if (k + 1 < order.length && capacity(resp)) { var c = new Error('capacity'); c.rpcCapacity = true; throw c; }
           rpcState.used = u;
+          if (p === read.provider) rpcState.read = u;   /* [simple] hook: the READ provider's own last good endpoint (used is also written by the log scans and the send race) */
           return resp;
         }).catch(function (e) {
           clearTimeout(timer);
@@ -13014,8 +13015,8 @@
 
   /* ==== [simple] BEGIN: the seam to simple.js ========================================================================
      Confetti Simple (the owner, 2026-11-11: "much simpler and easier to get going"): the phone view that lives in
-     simple.js / simple.css. This block is the whole of it in this file, but for two marked one-line hooks ("[simple] hook"
-     in openWalletApps and onrampGo). simple.js is loaded async and never holds this file up: whichever of the two arrives
+     simple.js / simple.css. This block is the whole of it in this file, but for three marked one-line hooks ("[simple] hook"
+     in openWalletApps, onrampGo and makeProvider). simple.js is loaded async and never holds this file up: whichever of the two arrives
      second does the hand-over (start(), at the end of the block), once, with the narrow api below: readers of this page's
      state, the very actions the Pro ticket and sheets run, and change events. Nothing else of the page can be reached
      from outside. The wraps at the end call the function they wrap first and only add an event; a few step aside or add a
@@ -13177,6 +13178,11 @@
     closeAct: function (pid) { var p = posById(pid); if (p) closeReqAction(p); },
     share: function (pid) { var r = ui.recent.filter(function (x) { return x.key === 'c' + pid; })[0], b = r && (r.buttons || []).filter(function (x) { return x.label === 'Share'; })[0]; if (b) b.fn(); return !!b; },
     session: function () { return { live: sessionLive(), feeWei: sess.feeWei, router: !!read.router }; },
+    /* "Powered by Blockfront" on Simple's trade cards (the owner, 2026-11-19: "powered by block front", "on the position cards
+       actually"). True only while this page really reads the chain through Blockfront: it is switched on (blockfrontOn: never in
+       the demo, never with config.json "blockfront": false) AND the read provider's last good answer came from it (rpcState.read,
+       the one marked hook in makeProvider: once Blockfront fails over to another endpoint this is false until it answers again). */
+    poweredByBlockfront: function () { return blockfrontOn() && rpcState.read === BLOCKFRONT_RPC; },
     fees: feeCfg,
     /* Simple's Connect leaves the wallet on the chain its ETH is on: the one switch that Connect would ask is skipped, and
        only that one (the mark dies with the press, or after a few seconds) */

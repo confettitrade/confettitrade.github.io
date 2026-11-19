@@ -1132,3 +1132,24 @@ body.cream-page .pts-bar { display: none; }
   .sm-panel-foot .sm-card-go { margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) { .sm-card canvas { transition: none; } }
 }
+/* ---- (cf_BFNEWS) the Blockfront article's two small marks in Simple (the owner, 2026-11-19: "a little announcment somwhere", then
+   "powered by block front", "on the position cards actually").
+   .sm-news: one slim paper card under the coins on Home: the sentence, the article's link as a small key, and a close that hides
+   it for this browser. Flat paper, like everything here that only informs; its two keys are the small paper keys of the top bar.
+   .sm-pb: the last line of a trade card, in the card's own key / value style: "Powered by", and the article's link as an inline
+   key (the build of the coin names on "Your other open trades"). simple.js shows it only while the page reads through Blockfront. ---- */
+@media screen {
+  .sm-news { position: relative; margin-top: 24px; padding: 12px 54px 14px 14px; border: 1px solid var(--rule-strong); background: var(--raised); }
+  .sm-news p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--ink-muted); text-wrap: pretty; }
+  .sm-news p b { font-weight: 600; color: var(--ink); }
+  .sm-root .sm-news .sm-news-go { --k-lip: 2px; --k-r: 9px; position: relative; display: inline-flex; align-items: center; min-height: 36px; margin-top: 10px; padding: 0 12px; font-size: 14px; font-weight: 600; }
+  .sm-root .sm-news .sm-news-go::after { content: ""; position: absolute; inset: -4px 0; }      /* the 44 px target around the 36 px key */
+  .sm-root .sm-news .sm-news-x { --k-lip: 2px; --k-r: 8px; --k-ink: var(--ink-muted); position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 32px; height: 32px; font-size: 13px; font-weight: 600; }
+  .sm-root .sm-news .sm-news-x::after { content: ""; position: absolute; inset: -6px; }          /* the 44 px target around the 32 px key */
+  .sm-left-scroll .sm-news { margin-top: 20px; }
+
+  .sm-kv.sm-pb { min-height: 36px; margin-top: 6px; padding: 6px 0 2px; font-size: 14px; }
+  .sm-root .sm-kv.sm-pb > a { --k-lip: 2px; --k-r: 6px; position: relative; display: inline-block; padding: 1px 8px; font-weight: 600; box-shadow: 0 1.5px 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
+  .sm-root .sm-kv.sm-pb > a:active { transform: translateY(1px); box-shadow: 0 0.5px 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
+  .sm-root .sm-kv.sm-pb > a::after { content: ""; position: absolute; inset: -10px -6px; }       /* a real target around the small key */
+}
