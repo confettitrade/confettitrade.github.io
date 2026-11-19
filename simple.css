@@ -1121,3 +1121,14 @@ body.cream-page .pts-bar { display: none; }
   }
   :is(.sm-root, .sm-sheet) :is(button, a):not(.sm-logo, .sm-chip, .sm-house, .sm-dir, .sm-row:not(.is-pos), .sm-chart *).sm-pick[aria-disabled="true"]:focus-visible { box-shadow: var(--focus); }
 }
+/* ---- the trade card at the end (the owner, 2026-11-19: two mock-ups and "can you use those at the end"). The card share.js
+   draws, as wide as the column and 16:9 like the PNG, sits under the end screen's words; it is a key like everything here that
+   does something (a tap shares it), so it gets the paper key's rim and lip, its corners only just rounded. ---- */
+@media screen {
+  :is(.sm-root, .sm-sheet) .sm-card { --k-r: 8px; --k-lip: 3px; --k-face: #f9edcf; display: block; width: 100%; margin: 22px 0 8px; padding: 0; overflow: hidden; }
+  .sm-card canvas { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; opacity: 0; transition: opacity 160ms ease-out; }
+  .sm-card.is-in canvas { opacity: 1; }
+  .sm-panel-body .sm-ok { margin: 4px 0 18px; }
+  .sm-panel-foot .sm-card-go { margin-top: 12px; }
+  @media (prefers-reduced-motion: reduce) { .sm-card canvas { transition: none; } }
+}

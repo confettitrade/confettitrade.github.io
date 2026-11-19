@@ -444,7 +444,7 @@
         txt(c.b, res.liq ? res.sym + ' closed itself' : res.sym + ' closed: ' + usdP(res.pnl));
         txt(c.i, res.liq ? 'The ' + usdS(res.lost) + ' you put in is gone.' : usd(res.paid) + ' is back in your trading money.');
         c.icon.className = 'sm-pill ' + (win ? 'is-up' : 'is-dn'); c.icon.textContent = win ? '✓' : '×';
-        c.n.addEventListener('click', () => { S.done = res; S.res = null; S.sym = res.sym; S.place = 'done'; S.sig = ''; paint(); });
+        c.n.addEventListener('click', () => { openDoneDesktop(res); });
         add(scroll, h('div', 'sm-sec', c.n));
       }
 
@@ -688,6 +688,7 @@
     el.root.classList.add('has-panel');
     if (DK.panel === 'order') paintDesktopOrder();
     else if (DK.panel === 'add') paintDesktopAdd();
+    else if (DK.panel === 'done') paintDesktopDone();
   }
 
   function openOrderDesktop(sym, isLong) {
@@ -718,7 +719,7 @@
   }
 
   function closePanel() {
-    DK.panel = ''; DK.busy = false;
+    DK.panel = ''; DK.busy = false; DK.done = null;
     el.root.classList.remove('has-panel');
     ADD.busy = ''; clearTimeout(ADD.qtimer); clearTimeout(ADD.btimer);
     if (ADD.run) endRun(null);
@@ -2582,26 +2583,98 @@
     if (!res || !seen || !/^[cl]/.test(String(r.key))) { kick(); return; }
     var d = { key: r.key, pid: pid, sym: seen.sym, isLong: seen.isLong, lev: seen.lev, margin: seen.margin, liq: !!res.liq, pnl: res.liq ? -res.lost : res.pnl, paid: res.liq ? 0 : res.paid, lost: res.lost, exit: res.exit };
     d.by = res.liq ? '' : AUTO.fired[pid] || '';      /* closed by its take profit or its stop loss: the result says so */
-    if (shown() && !isDesktop() && S.place === 'coin' && S.sym === d.sym && !sheets.length) { S.done = d; S.place = 'done'; S.sig = ''; } else S.res = d;
+    if (shown() && !isDesktop() && S.place === 'coin' && S.sym === d.sym && !sheets.length) { S.done = d; S.place = 'done'; S.sig = ''; }
+    /* a wide screen on that coin, nothing open over it: the result (and its card) comes up in the right-hand panel */
+    else if (shown() && isDesktop() && !DK.panel && S.sym === d.sym && !document.querySelector('dialog[open]')) { openDoneDesktop(d); return; }
+    else S.res = d;
     redo();
+  }
+  /* the end screen's own words: "DOGE up 20×, closed by your take profit", and what is back or gone, with the balance */
+  function doneLabel(d) { return d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×, ' + (d.liq ? 'closed itself' : d.by === 'tp' ? 'closed by your take profit' : d.by === 'sl' ? 'closed by your stop loss' : 'closed'); }
+  function doneMid(d, bal) {
+    return d.liq ? ['The price reached ' + (d.exit ? '$' + d.exit : 'its limit') + ', so this trade closed itself. The ' + usdS(d.lost) + ' you put in is gone. Nothing more is owed.', h('br'), 'Balance: ', bal]
+      : [usd(d.paid) + ' is back in your trading money.', h('br'), 'Balance: ', bal];
   }
   function paintDone() {
     var d = S.done, a = api.account();
     if (!d) { S.place = 'home'; S.sig = ''; paintHome(); return; }
     if (S.sig !== 'done' + d.key) {
       S.sig = 'done' + d.key;
-      var main = el.main, cta = el.cta, win = d.pnl > 0.004, flat = Math.abs(d.pnl) <= 0.004;
+      var main = el.main, cta = el.cta, win = d.pnl > 0.004, flat = Math.abs(d.pnl) <= 0.004, card = cardOn();
       main.className = 'sm-main'; main.textContent = ''; cta.textContent = ''; cta.className = 'sm-cta';
       R.bal = h('b', null, '');
       add(main, [h('div', 'sm-ok' + (win ? '' : flat ? ' is-flat' : ' is-loss'), win ? '✓' : flat ? '=' : '×'),
-        h('div', 'sm-label', d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×, ' + (d.liq ? 'closed itself' : d.by === 'tp' ? 'closed by your take profit' : d.by === 'sl' ? 'closed by your stop loss' : 'closed')),
-        h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)),
-        h('p', 'sm-mid', d.liq ? ['The price reached ' + (d.exit ? '$' + d.exit : 'its limit') + ', so this trade closed itself. The ' + usdS(d.lost) + ' you put in is gone. Nothing more is owed.', h('br'), 'Balance: ', R.bal]
-          : [usd(d.paid) + ' is back in your trading money.', h('br'), 'Balance: ', R.bal])]);
+        h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R.bal)),
+        card ? cardKey(d, () => { cardGo(d, snack); }) : null]);
       add(cta, btn('sm-btn is-primary', 'Trade again', () => { S.done = null; S.place = 'coin'; S.sym = d.sym; S.pid = null; S.sig = ''; paint(); }));
-      if (win) add(cta, btn('sm-btn is-ghost', 'Share this win', function () { if (!api.share(d.pid)) snack('The picture of this win is no longer here. Your history in Pro view still has it.'); }));
+      if (card) add(cta, btn('sm-btn is-ghost', 'Share your trade', () => { cardGo(d, snack); }));
     }
     txt(R.bal, a.loaded ? usd(a.available) : '…');
+  }
+
+  /* ---- the trade card at the end (the owner, 2026-11-19: two mock-ups, then "can you use those at the end"). Every end
+     screen shows the trader's own card in his design, green for a win and red for a loss: share.js draws it from the same
+     figures the screen says (what went in, what it made or lost, the coin, the side, the boost), with the short address and a
+     QR code to confetti.trade carrying the trader's own referral code. A tap on the card or on Share your trade hands the PNG
+     to the phone's share sheet, or saves it where there is none. The PNG is made as the screen comes up: a share sheet has
+     to open in the tap's own moment. ---- */
+
+  var CARD = { key: '', p: null, card: null };
+  function cardOn() { var cs = window.ConfettiShare; return !!(cs && cs.tradeCard && cs.drawCardInto && cs.shareCard); }
+  /* the trader's own referral code, as Pro's Refer panel shows it (trade.js reads it from the chain when the wallet connects) */
+  function refCode() { var n = $('rfCode'), c = n ? String(n.textContent || '').trim() : ''; return /^[a-z0-9_]{3,16}$/.test(c) ? c : ''; }
+  function cardOf(d) { return { sym: d.sym, isLong: d.isLong, lev: d.lev, margin: d.margin, pnl: d.pnl, account: api.wallet().account || '', code: refCode() }; }
+  function cardMake(d) {
+    if (CARD.key === d.key && CARD.card) return Promise.resolve(CARD.card);
+    if (CARD.key === d.key && CARD.p) return CARD.p;
+    CARD.key = d.key; CARD.card = null;
+    var p = CARD.p = window.ConfettiShare.tradeCard(cardOf(d)).then(c => { if (CARD.p === p) { CARD.card = c; CARD.p = null; } return c; },
+      e => { if (CARD.p === p) CARD.p = null; throw e; });
+    return p;
+  }
+  function cardGo(d, say) {
+    if (!cardOn()) return;
+    var c = CARD.key === d.key ? CARD.card : null;
+    var go = card => window.ConfettiShare.shareCard(card).then(r => { if (r === 'saved') say('Your card is saved: ' + card.name); });
+    if (c) { go(c); return; }
+    cardMake(d).then(go, () => { say('The card could not be made just now. Try again in a moment.'); });
+  }
+  /* the card itself, a key as wide as the screen: drawn at its own size on the page, and the PNG made for the share */
+  function cardKey(d, onTap) {
+    var cv = h('canvas'), n = btn('sm-card', cv, onTap);
+    n.setAttribute('aria-label', 'Your trade card: ' + d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×, ' + pct(d.pnl / d.margin) + '. Share it');
+    cv.setAttribute('aria-hidden', 'true');
+    var tries = 0;
+    (function draw() {
+      var w = n.clientWidth;
+      if (!w) { if (++tries < 60) requestAnimationFrame(draw); return; }
+      window.ConfettiShare.drawCardInto(cv, cardOf(d), w).then(() => { n.classList.add('is-in'); }, () => { n.hidden = true; });
+    })();
+    cardMake(d).catch(noop);
+    return n;
+  }
+
+  /* a wide screen's end screen: the right-hand panel, with the result's words, the card and its keys */
+  function openDoneDesktop(d) {
+    if (DK.panel && DK.panel !== 'done') closePanel();
+    DK.panel = 'done'; DK.done = d; DK.doneSig = ''; S.res = null; S.sym = d.sym; S.place = 'coin'; S.sig = ''; paint();
+  }
+  function paintDesktopDone() {
+    var d = DK.done, a = api.account(), head = el.panelHead, body = el.panelBody, foot = el.panelFoot;
+    if (!d) { closePanel(); return; }
+    if (DK.doneSig !== d.key) {
+      DK.doneSig = d.key;
+      var win = d.pnl > 0.004, flat = Math.abs(d.pnl) <= 0.004, card = cardOn(), R2 = DK.DR = { bal: h('b', null, ''), say: sayLine() };
+      var say = s => { txt(R2.say, s); };
+      head.querySelector('h2').textContent = d.sym + ' closed';
+      head.querySelector('.sm-x').onclick = closePanel;
+      body.textContent = ''; foot.textContent = '';
+      add(body, [h('div', 'sm-ok' + (win ? '' : flat ? ' is-flat' : ' is-loss'), win ? '✓' : flat ? '=' : '×'),
+        h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R2.bal)),
+        card ? cardKey(d, () => { cardGo(d, say); }) : null]);
+      add(foot, [R2.say, btn('sm-btn is-primary', 'Trade again', closePanel), card ? btn('sm-btn is-ghost sm-card-go', 'Share your trade', () => { cardGo(d, say); }) : null]);
+    }
+    txt(DK.DR.bal, a.loaded ? usd(a.available) : '…');
   }
 
   /* ---- take profit and stop loss (the owner, 2026-11-19: "we need to bring back stop loss and take profit", "just make it
