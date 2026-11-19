@@ -12635,15 +12635,20 @@
     if (!best || best.k === 0) return null;
     var px = Number(fmtPrice(best.px, sz)); return px > 0 ? px : null;
   }
-  /* "Stop loss 0.077000 · 0.29% below now · about -$0.60 (-6.00% of your $10.00)": the position's close maths
-     (fees, impact curve, borrow) at that price. */
-  function tpslLine(p, kind, px, now) {
+  /* The position's close maths (fees, impact curve, borrow) at that price: how far the price is from now (away, a share
+     of now), the dollar result there (pnl) and that against what went in (pct of margin). tpslLine words it for Pro;
+     Simple's boxes word the same numbers their own way (smApi.autoRead), so the two can never disagree. */
+  function tpslNums(p, px, now) {
     var inst = state.byInstId[p.instrumentId], queueEmpty = house.queueLen == null ? true : house.queueHead === house.queueLen;
-    var est = estimateClose(p, inst, px, queueEmpty), sz = tpslDec(p);
-    var away = now > 0 ? px / now - 1 : NaN, pct = p.margin > 0 ? est.pnl / p.margin : 0;
+    var est = estimateClose(p, inst, px, queueEmpty);
+    return { away: now > 0 ? px / now - 1 : NaN, pnl: est.pnl, pct: p.margin > 0 ? est.pnl / p.margin : 0, margin: p.margin };
+  }
+  /* "Stop loss 0.077000 · 0.29% below now · about -$0.60 (-6.00% of your $10.00)" */
+  function tpslLine(p, kind, px, now) {
+    var r = tpslNums(p, px, now), sz = tpslDec(p), away = r.away;
     return (kind === 'tp' ? 'Take profit ' : 'Stop loss ') + fmtPrice(px, sz)
       + (isFinite(away) ? ' · ' + Math.abs(away * 100).toFixed(2) + '% ' + (away >= 0 ? 'above' : 'below') + ' now' : '')
-      + ' · about ' + fmtUsd(est.pnl, true) + ' (' + fmtPct(pct, true) + ' of your ' + fmtUsd(p.margin) + ')';
+      + ' · about ' + fmtUsd(r.pnl, true) + ' (' + fmtPct(r.pct, true) + ' of your ' + fmtUsd(r.margin) + ')';
   }
   /* The ticket's would-be position at the current price, for the readout before an open. */
   function tpslPseudo(m, isLong, lev, now) {
@@ -12666,6 +12671,16 @@
     if (why) { input.classList.add('is-bad'); readEl.appendChild(el('span', 'is-bad', why)); return why; }
     readEl.textContent = tpslLine(p, kind, n, now);
     return '';
+  }
+  /* The same reading for Simple's boxes, as data: { n } nothing typed (n null), { n, fin } the price a few typed digits
+     mean (finish it first), { n, why } the refusal, else { n, away, pnl, pct, margin } (tpslNums). The very checks above. */
+  function tpslRead(p, kind, raw, now) {
+    var n = tpslNum(raw); if (n == null) return { n: null };
+    var sz = tpslDec(p), done = tpslComplete(raw, now, sz);
+    if (done != null) return { n: n, fin: done };
+    var why = tpslProblem(p.isLong, p.leverage, p.entry, now, kind === 'tp' ? n : null, kind === 'sl' ? n : null, sz);
+    if (why) return { n: n, why: why };
+    var r = tpslNums(p, n, now); r.n = n; return r;
   }
   /* The ticket's two boxes (desktop): what they ask for the next open, and why it is refused. */
   function tpslTicketWant(m, isLong, lev) {
@@ -12749,7 +12764,7 @@
       if (r.claimed) {
         if (now - r.claimed < TPSL_CLAIM_MS) continue;                                  // some tab is closing it
         /* a claim this old means the tab that sent it went away mid-request: the outcome is unknown */
-        delete r.claimed; r.hold = 'another tab was closing it. Check the position, then set it again.'; r.until = now + TPSL_HOLD_MS; tpslSave();
+        delete r.claimed; delete r.fired; r.hold = 'another tab was closing it. Check the position, then set it again.'; r.until = now + TPSL_HOLD_MS; tpslSave();
         continue;
       }
       if (r.until > now) continue;                                                      // held after a refusal
@@ -12770,12 +12785,12 @@
     var fresh = null; try { fresh = JSON.parse(lsGet(tpslKey()) || 'null'); } catch (e) { fresh = null; }
     var mine = fresh && fresh.rules ? fresh.rules[pid] : null;
     if (lsGet(tpslKey()) != null && (!mine || (mine.claimed && Date.now() - mine.claimed < TPSL_CLAIM_MS))) { tpslLoad(); return false; }
-    tpsl.firing = pid; r.claimed = Date.now(); tpslSave();
+    tpsl.firing = pid; r.claimed = Date.now(); r.fired = which; tpslSave();      /* fired: which level it was, for the card that says so */
     toast((which === 'tp' ? 'Take profit hit: ' : 'Stop loss hit: ') + 'closing your ' + posLabel(p) + ' at ' + fmtPrice(px, tpslDec(p)) + '.', 'ok');
     submitClose(p).then(function (ok) {
       var cur = tpsl.rules[pid];
       if (ok) { delete tpsl.rules[pid]; tpslSave(); }
-      else if (cur) { delete cur.claimed; cur.hold = 'the close was not sent. It tries again in a few minutes; Close it by hand if you want it now.'; cur.until = Date.now() + TPSL_HOLD_MS; tpslSave(); }
+      else if (cur) { delete cur.claimed; delete cur.fired; cur.hold = 'the close was not sent. It tries again in a few minutes; Close it by hand if you want it now.'; cur.until = Date.now() + TPSL_HOLD_MS; tpslSave(); }
     });
     setTimeout(function () { tpsl.firing = null; }, 3000);
     return true;
@@ -13117,6 +13132,25 @@
     open: smOpen,
     /* a take profit / stop loss for that trade, by the ticket's own rule: '' when fine, else the sentence that refuses it */
     autoCheck: function (o, tp, sl) { return smWith(o, function (m) { var px = marketPrice(m); return tpslProblem(form.side === 'long', form.lev, px, px, tp, sl, m.szDecimals); }); },
+    /* the take profit / stop loss boxes of Simple's sheets (the owner, 2026-11-19: "just make it visible on screen", "on the
+       card"), by the code of Pro's own boxes. autoRead: one typed price, read for an open trade (its id) or for one not
+       opened yet ({ sym, isLong, margin, lev }): tpslRead's { n, fin | why | away, pnl, pct, margin }, plus now, the
+       price it was read at. autoSet: both levels of an open trade, the checks once more at the press ('' or the refusal);
+       neither level removes them. autoKept: false while this browser is not saving site data (the rule then lives
+       only as long as this tab). */
+    autoRead: function (who, kind, raw) {
+      if (who && typeof who === 'object') {
+        return smWith(who, function (m) { var now = marketPrice(m), r = tpslRead(tpslPseudo(m, form.side === 'long', form.lev, now), kind, raw, now); r.now = now; return r; });
+      }
+      var p = posById(who); if (!p) return null;
+      var now = tpslPhNow(p), r = tpslRead(p, kind, raw, now); r.now = now; return r;
+    },
+    autoSet: function (pid, tp, sl) {
+      pid = String(pid);
+      if (tp == null && sl == null) { tpslClear(pid); return ''; }
+      return tpslSet(pid, tp, sl);
+    },
+    autoKept: function () { return !tpsl.unsaved; },
     ticket: function () { return { phase: tk.phase, msg: tk.msg || '', sym: tk.sym, posId: tk.posId }; },
     ticketDone: function () { if (tk.phase && tk.phase !== 'wallet' && tk.phase !== 'req') tkReset(); },
     positions: function () {
@@ -13125,7 +13159,10 @@
         try { le = liveEstimate(p, e); } catch (x) { le = null; }
         return { id: it.pid, sym: m ? m.symbol : '', sz: m ? m.szDecimals : null, isLong: p.isLong, lev: p.leverage, margin: p.margin, entry: p.entry, px: it.px,
           endPx: it.room.liq, away: it.room.away, near: it.room.cls, share: it.share, pnl: le ? le.pnl : e.pnl, payout: le ? le.payout : e.payout, delayed: !!e.delayed,
-          status: closeStatus(it.pid, p), auto: rule ? { tp: rule.tp, sl: rule.sl } : null, est: !!le };      /* est: pnl / payout are the live estimate (the card's ≈), not the figure at the last print */
+          status: closeStatus(it.pid, p), est: !!le,      /* est: pnl / payout are the live estimate (the card's ≈), not the figure at the last print */
+          /* the take profit / stop loss rule: its levels, tpslStatus ('' while it waits; closing, held: why, ...) and, while
+             its close is on the way, which level fired */
+          auto: rule ? { tp: rule.tp, sl: rule.sl, status: tpslStatus(it.pid), fired: rule.claimed ? rule.fired || '' : '' } : null };
       });
     },
     openings: function () {
