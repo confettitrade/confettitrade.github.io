@@ -5,6 +5,7 @@
   "chainName": "HyperEVM",
   "rpcUrl": "https://hyperliquid.drpc.org",
   "logRpcUrl": "https://rpc.purroofgroup.com",
+  "blockfront": false,
   "rpcBatchMaxCount": 1,
   "explorerUrl": "https://hyperevmscan.io",
   "nativeCurrency": {
