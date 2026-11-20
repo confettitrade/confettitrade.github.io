@@ -392,6 +392,40 @@
   .sm-opts button[aria-pressed="true"] { font-weight: 600; }
   .sm-opts button[disabled] { color: var(--ink-faint); }
   .sm-opts button:active { background: var(--sunken); }
+  /* more ways to pay (2026-11-20): the rows a wallet can pay with come first; the rest wait behind one key */
+  .sm-ways { display: flex; flex-direction: column; }
+  .sm-seg2 { display: flex; gap: 8px; margin: 8px 0 4px; }
+  .sm-seg2 button { flex: 1; min-height: 48px; padding: 0 6px; font-size: 16px; border: 1px solid var(--sm-edge); background: var(--page); }
+  .sm-seg2 button[aria-pressed="true"] { background: var(--ink); color: var(--page); font-weight: 600; }
+  .sm-seg2 button:active { filter: brightness(0.92); }
+  .sm-seg2.is-net { margin-top: 4px; }
+  .sm-seg2.is-net button { min-height: 44px; font-size: 15px; }
+  .sm-morekey { order: 3; display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 16px; margin-top: 8px; border: 1px dashed var(--sm-edge); background: transparent; text-align: left; }
+  .sm-morekey b { font-size: 16px; font-weight: 600; flex: none; }
+  .sm-morekey span { font-size: 14px; color: var(--ink-muted); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sm-morekey:active { background: var(--sunken); }
+  .sm-morekey[disabled], .sm-seg2 button[disabled], .sm-field[disabled] { opacity: 0.45; }
+  .sm-opts.is-more { order: 3; border-top: 0; margin: 0; }
+  .sm-opts.is-more button span:first-child { font-weight: 600; }
+  .sm-opts.is-more button span:last-child { font-size: 14px; color: var(--ink-muted); text-align: right; }
+  .sm-ways .sm-links { margin: 0 0 4px; }
+  .sm-refbox { margin: 8px 0 4px; padding: 10px 16px 12px; border: 1px solid var(--sm-edge); background: var(--page); }
+  .sm-refbox .sm-fine { margin: 0 0 8px; }
+  .sm-field { display: block; width: 100%; min-height: 44px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 0; background: var(--raised); color: var(--ink); font-family: var(--font-mono); font-size: 16px; }
+  .sm-field:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+  .sm-field::placeholder { color: var(--ink-faint); }
+  /* pay to an address: the amount, the address, its QR code */
+  .sm-payrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .sm-big.sm-payamt { margin: 4px 0 0; min-height: 0; font-size: 32px; white-space: nowrap; }
+  .sm-big.sm-payamt small { font-size: 19px; font-weight: 600; letter-spacing: 0; }
+  .sm-refkey { font-size: 15px; margin: 0 0 2px; }
+  .sm-copy { flex: none; min-height: 44px; padding: 0 14px; border: 1px solid var(--sm-edge); background: var(--page); font-size: 16px; font-weight: 500; }
+  .sm-copy:active { background: var(--sunken); }
+  .sm-addr { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--rule-strong); background: var(--page); font-family: var(--font-mono); font-size: 15px; line-height: 1.45; word-break: break-all; user-select: all; -webkit-user-select: all; }
+  .sm-qr { display: block; width: 168px; height: 168px; margin: 14px auto 0; image-rendering: pixelated; }
+  .sm-steps.is-tight { margin-top: 18px; }
+  .sm-steps.is-tight .sm-st { min-height: 64px; padding-bottom: 14px; }
+  .sm-steps.is-tight .sm-st b { font-size: 17px; }
 
   /* the summary: three 44 px rows */
   .sm-sum { margin-top: 16px; border: 1px solid var(--rule-strong); background: var(--page); padding: 4px 16px; }
