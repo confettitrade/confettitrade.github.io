@@ -840,7 +840,7 @@
     /* a take profit or stop loss typed: what to know about it stands above the button (as on a phone) */
     var note = !why && !DK.orderErr && (tp != null || sl != null) ? (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open in this browser.' : '';
     show(DK.OR.autoFine, tp == null && sl == null);
-    txt(DK.OR.say, why || DK.orderErr || note); cls(DK.OR.say, 'sm-say' + (why || DK.orderErr ? ' is-bad' : ''));
+    txt(DK.OR.say, why || DK.orderErr || note); cls(DK.OR.say, 'sm-say' + ((why && !autoWait(why)) || DK.orderErr ? ' is-bad' : ''));
     var word = DK.busy ? (!api.demo && (!api.session().live || t.oneTap) ? CONFIRM : 'Opening…') : '';
     DK.OR.go._add = needMoney && !t.block && !DK.busy;
     txt(DK.OR.go, word || (DK.OR.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' · ' + usdS(amt2) + ' × ' + lev));
@@ -2148,28 +2148,26 @@
     renderSmHoverPnl(ps, Number(px), param.point);
   }
   function hoverPnlAt(p, px) {
-    /* P&L calculation: for long positions, pnl = margin * lev * (px/entry - 1)
-       for short positions, pnl = margin * lev * (1 - px/entry)
-       Liquidation: the trade is worth 0 if price passed the liquidation point */
-    var entry = p.entry, lev = p.lev, margin = p.margin, isLong = p.isLong, endPx = p.endPx;
-    var busted = endPx > 0 && (isLong ? px <= endPx : px >= endPx);
-    if (busted) return { pnl: -margin, worth: 0, busted: true };
-    var pnl = isLong ? margin * lev * (px / entry - 1) : margin * lev * (1 - px / entry);
-    var worth = margin + pnl;
-    return { pnl: pnl, worth: Math.max(0, worth), busted: false };
+    /* (amt2) the trade read at that price by the page's own close maths (api.worthAt, the Pro chart's hover): what a close
+       there gives back, and that against what went in; nothing back at or past the price where it closes itself. This
+       worked size x move itself before, which no close pays: a win read a sixth too high and more. */
+    var r = api.worthAt ? api.worthAt(p.id, px) : null;
+    return r && isFinite(r.pnl) && isFinite(r.worth) ? { pnl: r.pnl, worth: r.worth, busted: !!r.busted } : null;
   }
   function renderSmHoverPnl(ps, px, point) {
     var box = getSmHoverBox();
     if (!box) return;
+    var rs = ps.map(function (p) { return hoverPnlAt(p, px); });
+    if (rs.some(function (r) { return !r; })) { hideSmHoverPnl(); return; }      /* no figure rather than a wrong one */
     box.textContent = '';
     var totalPnl = 0, totalWorth = 0, totalMargin = 0;
-    ps.forEach(function (p) {
-      var r = hoverPnlAt(p, px);
+    ps.forEach(function (p, i) {
+      var r = rs[i];
       totalPnl += r.pnl; totalWorth += r.worth; totalMargin += p.margin;
     });
     var pxText = price(px, ps[0].sz);
     if (ps.length === 1) {
-      var p = ps[0], r = hoverPnlAt(p, px), pnlPct = p.margin > 0 ? r.pnl / p.margin : 0;
+      var p = ps[0], r = rs[0], pnlPct = p.margin > 0 ? r.pnl / p.margin : 0;
       add(box, h('span', null, (p.isLong ? 'Up' : 'Down') + ' at ' + pxText));
       add(box, h('b', r.pnl >= 0 ? 'sm-up' : 'sm-dn', usdP(r.pnl) + ' (' + pct(pnlPct) + ')'));
       add(box, h('span', null, r.busted ? 'Closes itself here' : 'Worth ' + usd(r.worth)));
@@ -2781,6 +2779,9 @@
     if ((m = /^That stop is past the liquidation price, ([\d.,]+): .* Set it (higher|lower)\.$/.exec(s))) return 'The trade closes itself at $' + m[1] + ' first. Set the stop ' + m[2] + '.';
     return plainPx(s);
   }
+  /* (amt4) the first second or two of a sheet, while the price a trade opens at is still being read: the boxes show nothing
+     yet and the button waits; a wait is a note, not a mistake (no red) */
+  function autoWait(s) { return /^One moment: reading the price/.test(s); }
   /* a reading (api.autoRead) under its box: the price a few digits probably mean, as a key to take it; or how far that
      price is from now and about what it brings (the words of Pro's own line). A refusal marks the box; the sentence
      stands above the button, where the reason a button is off always stands */
@@ -2991,7 +2992,7 @@
     /* a take profit or stop loss typed: the one thing to know about it stands right above the button, in view on every phone */
     else if (!why && !err && (tp != null || sl != null)) note = (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open ' + (isDesktop() ? 'in this browser.' : 'on this phone.');
     show(r.autoFine, ORD.limit || (tp == null && sl == null));      /* said above the button instead */
-    txt(r.say, why || err || note); cls(r.say, 'sm-say' + (why || err ? ' is-bad' : ''));      /* the reason the button is off comes first */
+    txt(r.say, why || err || note); cls(r.say, 'sm-say' + ((why && !autoWait(why)) || err ? ' is-bad' : ''));      /* the reason the button is off comes first */
     var word = ORD.busy ? (tk.phase === 'wallet' || t.oneTap ? CONFIRM : 'Opening…') : '';
     r.go._add = needMoney && !ORD.busy && !t.block;
     if (ORD.limit) {
