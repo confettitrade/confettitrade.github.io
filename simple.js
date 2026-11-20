@@ -2740,6 +2740,7 @@
     else if (a || (!x.status && COIN.closing !== x.id)) delete AUTO.fired[x.id];
     var f = AUTO.fired[x.id];
     if (f && (x.status || COIN.closing === x.id)) return 'The price reached your ' + (f === 'tp' ? 'take profit' : 'stop loss') + ': closing it for you.';
+    if (x.missed && !x.status && COIN.closing !== x.id && !(a && /^held: /.test(a.status || ''))) return autoMissed(x);
     if (!a || !a.status || a.status === 'closing') return '';
     if (/^held: /.test(a.status)) {
       var why = a.status.slice(6);
@@ -2749,6 +2750,14 @@
     }
     if (/wallet asks/.test(a.status) && !api.demo) return 'When it fires, your wallet asks you to confirm the close.';
     return '';
+  }
+  /* (amt5) a take profit or stop loss typed on the order sheet that could not go on the trade as it opened: the price moved
+     between the press and the open, and at the price it opened at that level could no longer fire, or would have closed
+     the trade at once (trade.js tpslFillCheck). The trade opened without it; its card says so, with the price that was
+     typed, until its Take profit / Stop loss key right under this line is pressed or a level is set */
+  function autoMissed(x) {
+    var m = x.missed, tp = m.tp != null ? 'take profit at ' + price(m.tp, x.sz) : '', sl = m.sl != null ? 'stop loss at ' + price(m.sl, x.sz) : '';
+    return 'The price moved before this trade opened, so your ' + (tp && sl ? tp + ' and ' + sl + ' were' : (tp || sl) + ' was') + ' not set. Set ' + (tp && sl ? 'new ones' : 'a new one') + ' below.';
   }
   /* a price box: its name above it, the box ($ and the number, the decimal keypad), and under it what that price does */
   function autoField(kind, onInput, short) {
@@ -2808,6 +2817,7 @@
   function openAuto(pid) {
     var x = autoOf(pid);
     if (!x || early() || sheets.length || x.status) return;
+    if (x.missed) { api.autoSeen(pid); kick(); }      /* (amt5) the card said a level was not set: said once, this is the key to set a new one */
     var sh = AUTO.sh || (AUTO.sh = makeSheet('Auto')), r = AUTO.R = {}, a = x.auto || {};
     AUTO.pid = pid; AUTO.err = ''; AUTO.was = { tp: a.tp != null ? a.tp : null, sl: a.sl != null ? a.sl : null };
     sh.title.textContent = ''; add(sh.title, [x.sym, sidePill(x.isLong, x.lev)]);
@@ -2837,9 +2847,11 @@
     var tp = num(r.tp.i.value), sl = num(r.sl.i.value), was = AUTO.was, had = was.tp != null || was.sl != null;
     var same = tp === was.tp && sl === was.sl, none = tp == null && sl == null, fin = r.tp.fin != null || r.sl.fin != null;
     var why = AUTO.err || r.tp.bad || r.sl.bad;
+    /* (amt5) the chain's price cannot be read just now: a typed level is not judged against the chart, the button waits */
+    if (!why && !same && !none && !fin && (rt.wait || rs.wait)) why = 'One moment: reading the price.';
     txt(r.go, same ? 'Done' : fin ? 'Take the price offered' : none ? 'Remove both' : had ? 'Save changes' : tp != null && sl != null ? 'Set both' : tp != null ? 'Set take profit' : 'Set stop loss');
     r.go.disabled = !same && !fin && !!why;
-    txt(r.say, why); cls(r.say, 'sm-say' + (why ? ' is-bad' : '')); show(r.say, !!why);
+    txt(r.say, why); cls(r.say, 'sm-say' + (why && !autoWait(why) ? ' is-bad' : '')); show(r.say, !!why);
     show(r.off, had && !none);
     var s = api.session(), fine = honest() + (!api.autoKept() ? ' This browser is not saving site data, so it lasts only while this tab is open.' : !s.live && !api.demo ? ' Your wallet asks you to confirm the close.' : '');
     txt(r.fine, fine);
@@ -2852,7 +2864,7 @@
     var tp = num(r.tp.i.value), sl = num(r.sl.i.value);
     if (tp === AUTO.was.tp && sl === AUTO.was.sl) { AUTO.sh.close(); return; }
     var w = api.autoSet(pid, tp, sl);       /* Pro's checks once more, at the press */
-    if (w) { AUTO.err = autoWhy(w); paintAuto(); return; }
+    if (w) { AUTO.err = autoWait(w) ? '' : autoWhy(w); paintAuto(); return; }      /* a wait is not a refusal: the line above the button says it */
     AUTO.sh.close(); kick();      /* the card under the sheet now shows the new levels: that is the answer */
   }
   function autoOff() {

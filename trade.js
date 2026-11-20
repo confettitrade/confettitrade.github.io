@@ -8762,7 +8762,7 @@
       var entry = px18ToNum(opened.args.entryPx18);
       if (mine) tkSet('opened', { entry: entry, posId: String(opened.args.positionId) });
       freshPosition(String(opened.args.positionId));
-      try { tpslAdopt(r.id, String(opened.args.positionId)); } catch (e) { /* the rule never blocks the result */ }
+      try { tpslAdopt(r.id, String(opened.args.positionId), opened.args); } catch (e) { /* the rule never blocks the result */ }
       resultToast(shows, 'Opened ' + sideWord(r.isLong) + ' ' + sym + ' ' + r.leverage + 'x at ' + fmtPrice(entry, sz) + '.', 'ok', link);
       tourEvent('opened');
     } else if (refunded) {
@@ -12674,21 +12674,22 @@
      as the same close request the Close button sends, through the session key when one-click is on. It works
      while this page is open; the ticket, the rows and the phone sheet say so. A rule typed before the open is
      parked under the request id and adopted when PositionOpened names the position. */
-  var tpsl = { rules: {}, pending: {}, firing: null, forKey: null, unsaved: false, editing: {}, confirm: {} };
+  var tpsl = { rules: {}, pending: {}, missed: {}, firing: null, forKey: null, unsaved: false, editing: {}, confirm: {} };
   var TPSL_CLAIM_MS = 60000;       // a claimed rule is closing from some tab for this long
   var TPSL_HOLD_MS = 5 * 60000;    // a refused close waits this long before it tries again
+  var TPSL_NEW_MS = 60000;         // a fill this fresh may not be among the read positions yet
   function tpslKey() { return wallet.account && !DEMO ? 'confetti.trade.tpsl.' + wallet.account.toLowerCase() : 'confetti.trade.tpsl.demo'; }
   function tpslLoad() {
     var k = tpslKey(), raw = lsGet(k);
     if (raw == null && tpsl.unsaved && tpsl.forKey === k) { tpslRedraw(); return; }   // storage blocked: this tab's rules stay
     tpsl.forKey = k;
     var d = null; try { d = JSON.parse(raw || 'null'); } catch (e) { d = null; }
-    tpsl.rules = (d && d.rules) || {}; tpsl.pending = (d && d.pending) || {};
+    tpsl.rules = (d && d.rules) || {}; tpsl.pending = (d && d.pending) || {}; tpsl.missed = (d && d.missed) || {};
     tpslRedraw();
   }
   function tpslSave() {
-    var s = JSON.stringify({ rules: tpsl.rules, pending: tpsl.pending }); lsSet(tpslKey(), s);
-    if ((Object.keys(tpsl.rules).length || Object.keys(tpsl.pending).length) && lsGet(tpslKey()) !== s && !tpsl.unsaved) {
+    var s = JSON.stringify(Object.keys(tpsl.missed).length ? { rules: tpsl.rules, pending: tpsl.pending, missed: tpsl.missed } : { rules: tpsl.rules, pending: tpsl.pending }); lsSet(tpslKey(), s);
+    if ((Object.keys(tpsl.rules).length || Object.keys(tpsl.pending).length || Object.keys(tpsl.missed).length) && lsGet(tpslKey()) !== s && !tpsl.unsaved) {
       tpsl.unsaved = true; tpsl.forKey = tpslKey();
       toast('This browser is not saving site data: the take profit / stop loss lives only until this tab closes.', 'err');
     }
@@ -12708,6 +12709,7 @@
     if (tp != null && !(tp > 0)) return 'Type a take profit price, or leave it empty.';
     if (sl != null && !(sl > 0)) return 'Type a stop loss price, or leave it empty.';
     if (tp == null && sl == null) return 'Type a take profit or a stop loss price.';
+    if (!(px > 0)) return TPSL_WAIT;   /* (amt5) no price read from the chain: nothing is accepted, the box waits */
     if (tp != null && px > 0 && (isLong ? tp <= px : tp >= px)) return 'A take profit for a ' + side + ' goes ' + (isLong ? 'above' : 'below') + ' the price, now ' + fmtPrice(px, sz) + '.';
     if (sl != null && px > 0 && (isLong ? sl >= px : sl <= px)) return 'A stop loss for a ' + side + ' goes ' + (isLong ? 'below' : 'above') + ' the price, now ' + fmtPrice(px, sz) + '.';
     if (sl != null && px > 0 && (isLong ? sl * (1 + LIM_TOL) >= px : sl * (1 - LIM_TOL) <= px)) return 'That stop is within 0.1% of the price: it would close right now. Use Close, or set it further away.';
@@ -12763,6 +12765,10 @@
     var id = m ? m.instrumentId : null, opx = id != null ? house.oraclePxById[id] : NaN, at = id != null ? house.oraclePxAt[id] : 0;
     return opx > 0 && at && Date.now() - at < PX_FRESH_MS ? opx : NaN;
   }
+  /* (amt5) "now" for an open trade's boxes: the chain's print as well, or NaN and the box waits. It was the cards' display
+     price, which falls back to the chart mid when chain reads fail for 15 s: with the mid 20 bps over the last print the
+     sheet took an Up x100 stop above that print. The chart never decides what is accepted. */
+  function tpslNow(p) { return printFor(p); }
   function tpslBust(p) { return p.bust > 0 ? p.bust : p.entryPx18 != null ? px18ToNum(posBust18(p)) : bustPriceNum(p.entry, p.isLong, p.leverage); }
   function tpslPseudo(m, isLong, lev, at) {
     var o18 = house.oraclePx18ById[m.instrumentId], bust = o18 != null && at === house.oraclePxById[m.instrumentId] ? px18ToNum(bustPrice18(o18, isLong, lev)) : bustPriceNum(at, isLong, lev);
@@ -12833,18 +12839,67 @@
     tpsl.pending[reqId] = { tp: want.tp, sl: want.sl, sym: m.symbol, isLong: isLong, lev: lev, at: Date.now() }; tpslSave();
     var ti = $('dkTpPx'), si = $('dkSlPx'); if (ti) ti.value = ''; if (si) si.value = ''; tpslTicketCheck();
   }
-  function tpslAdopt(reqId, pid) {
+  /* (amt5) THE CHECK AT THE FILL. The sheet took the levels against the print it had; the trade fills a few seconds later
+     at a newer print, and its closing price is worked from that one (bustPrice(id)). So each parked level is held once
+     more to the opened position, by the open trade's own rule: "now" is the print it filled at (its entry before the
+     spread, ImpactLib.rawEntry) and the closing price is the position's. A level that would fire at once (the trigger
+     itself is asked, tpslCrossed at the fill print: the wrong side of the fill, or a stop within the 0.1% it fires early
+     by) or can no longer fire (a stop at or past the closing price: the exchange liquidates there, ImpactLib.isBusted;
+     compared in the chain's 18 digits, the typed number read digit for digit) is NOT put on the trade: tpslFillCheck
+     gives it back under miss, the trade opens without it and its card says so once (tpsl.missed; Simple:
+     positions().missed, until the card's key is pressed or a level is set). A level that is still fine goes on
+     unchanged. The fill print is read digit for digit too (formatUnits), so a level typed exactly on it is seen as on
+     it (Number(x) / 1e18 is a float step under 62,071.3). Measured before: WIF Up x500, stop 0.133879 taken at 0.13404,
+     filled 5 bps higher: it closes itself at 0.1339058, the stop could never fire; 5 bps lower it fired at the open. */
+  function tpslFillCheck(p, w) {
+    var U = window.ethers, bust18 = posBust18(p), bust = px18ToNum(bust18), out = { tp: null, sl: null, miss: null };
+    var at = Number(U.formatUnits(rawEntry18(p.entryPx18, p.isLong, p.entryDeadbandBps), 18));
+    ['tp', 'sl'].forEach(function (k) {
+      var v = w[k]; if (v == null) return;
+      var rule = {}; rule[k] = v;
+      var bad = !(v > 0) || !(at > 0) || !!tpslCrossed(rule, p, at);
+      if (!bad && k === 'sl') {
+        var v18 = null; try { v18 = /e/i.test(String(v)) ? null : U.parseUnits(String(v), 18); } catch (e) { v18 = null; }
+        bad = v18 != null ? (p.isLong ? v18 <= bust18 : v18 >= bust18) : (p.isLong ? v <= bust * (1 + 1e-12) : v >= bust * (1 - 1e-12));
+      }
+      if (bad) (out.miss = out.miss || {})[k] = v; else out[k] = v;
+    });
+    return out;
+  }
+  function tpslMiss(pid, miss) {
+    var m = tpsl.missed[pid] || {};
+    tpsl.missed[pid] = { tp: miss.tp != null ? miss.tp : m.tp != null ? m.tp : null, sl: miss.sl != null ? miss.sl : m.sl != null ? m.sl : null, at: Date.now() };
+  }
+  function tpslSeen(pid) { if (tpsl.missed[pid]) { delete tpsl.missed[pid]; tpslSave(); } }
+  /* a: the PositionOpened event's own figures, for a fill whose position this page has not read yet */
+  function tpslAdopt(reqId, pid, a) {
     var w = tpsl.pending[reqId]; if (!w) return;
     delete tpsl.pending[reqId];
-    tpsl.rules[pid] = { tp: w.tp, sl: w.sl, at: Date.now() }; tpslSave();
-    toast('Take profit / stop loss set on your ' + sideWord(w.isLong) + ' ' + w.sym + '. It closes from this page while it is open.');
+    var p = posById(pid);
+    if (!p && a && a.entryPx18 != null) {
+      var inst = state.byInstId[Number(a.instrumentId)] || {};
+      p = { instrumentId: Number(a.instrumentId), isLong: !!a.isLong, leverage: Number(a.leverage), entryPx18: BigInt(a.entryPx18), entry: px18ToNum(a.entryPx18), entryDeadbandBps: inst.entryDeadbandBps || 0, provisional: true };
+    }
+    var c = p && p.entryPx18 != null ? tpslFillCheck(p, w) : { tp: w.tp, sl: w.sl, miss: null };
+    if (c.tp != null || c.sl != null) {
+      tpsl.rules[pid] = { tp: c.tp, sl: c.sl, at: Date.now() };
+      /* read from the event (the stamps are the market's as this page last read them): once more on positions(id) */
+      if (!p || p.provisional || p.entryPx18 == null) tpsl.rules[pid].fill = 1;
+    }
+    if (c.miss) tpslMiss(pid, c.miss);
+    tpslSave();
+    if (!c.miss) toast('Take profit / stop loss set on your ' + sideWord(w.isLong) + ' ' + w.sym + '. It closes from this page while it is open.');
+    else if (document.documentElement.getAttribute('data-mode') !== 'simple') {
+      var sz = szOf(w.sym), said = [c.miss.tp != null ? 'take profit ' + fmtPrice(c.miss.tp, sz) : '', c.miss.sl != null ? 'stop loss ' + fmtPrice(c.miss.sl, sz) : ''].filter(Boolean).join(' and ');
+      toast('Your ' + sideWord(w.isLong) + ' ' + w.sym + ' opened without the ' + said + ': the price moved before the fill. Set a new one on the position.', 'err');
+    }
   }
   function tpslDropPending(reqId) { if (tpsl.pending[reqId]) { delete tpsl.pending[reqId]; tpslSave(); } }
   function tpslSet(pid, tp, sl) {
     var p = posById(pid); if (!p) return 'That position is gone.';
-    var px = closePriceFor(p); if (!(px > 0)) px = marketPrice(positionMarket(p));
+    var px = tpslNow(p);   /* (amt5) the chain's print or nothing: never the chart */
     var why = tpslProblem(p.isLong, p.leverage, p.entry, px, tp, sl, tpslDec(p), tpslBust(p)); if (why) return why;
-    tpsl.rules[pid] = { tp: tp, sl: sl, at: Date.now() }; tpslSave();
+    tpsl.rules[pid] = { tp: tp, sl: sl, at: Date.now() }; delete tpsl.missed[pid]; tpslSave();
     return '';
   }
   function tpslClear(pid) { if (tpsl.rules[pid]) { delete tpsl.rules[pid]; tpslSave(); } }
@@ -12865,12 +12920,22 @@
     return '';
   }
   function checkTpSl() {
-    var pids = Object.keys(tpsl.rules); if (!pids.length) return;
+    var pids = Object.keys(tpsl.rules), said = Object.keys(tpsl.missed); if (!pids.length && !said.length) return;
     var now = Date.now();
-    /* rules of positions that are gone (closed by hand, liquidated, another tab) leave quietly */
+    /* rules of positions that are gone (closed by hand, liquidated, another tab) leave quietly; (amt5) so does the card's
+       note of a level not set at the fill. One just filled may not be among the read positions yet (TPSL_NEW_MS) */
     if (wallet.account && acct.loaded) {
       var changed = false;
-      pids.forEach(function (pid) { if (!posById(pid) && !acct.closeReqs[pid] && !ui.closing[pid] && !ui.checking[pid] && !ui.settling[pid]) { delete tpsl.rules[pid]; changed = true; } });
+      pids.forEach(function (pid) { if (!posById(pid) && !acct.closeReqs[pid] && !ui.closing[pid] && !ui.checking[pid] && !ui.settling[pid] && !(tpsl.rules[pid].fill && now - tpsl.rules[pid].at < TPSL_NEW_MS)) { delete tpsl.rules[pid]; changed = true; } });
+      said.forEach(function (pid) { if (!posById(pid) && !(now - tpsl.missed[pid].at < TPSL_NEW_MS)) { delete tpsl.missed[pid]; changed = true; } });
+      /* (amt5) a rule taken on the event's figures: held once more to the position as the chain gives it */
+      pids.forEach(function (pid) {
+        var r = tpsl.rules[pid], p = r && r.fill ? posById(pid) : null; if (!p || p.provisional || p.entryPx18 == null) return;
+        var c = tpslFillCheck(p, r); delete r.fill; r.tp = c.tp; r.sl = c.sl;
+        if (c.miss) tpslMiss(pid, c.miss);
+        if (r.tp == null && r.sl == null) delete tpsl.rules[pid];
+        changed = true;
+      });
       if (changed) { tpslSave(); pids = Object.keys(tpsl.rules); }
     }
     if (tpsl.firing || state.busy || tk.phase === 'wallet' || tk.phase === 'req') return;
@@ -12938,7 +13003,7 @@
      lines recomputed from the live price; Yes checks once more at the click, then stores. */
   function tpslEditor(pid, p) {
     var r = tpsl.rules[pid] || {}, box = el('div', 'tpsl-edit'), c = tpsl.confirm[pid];
-    var now = closePriceFor(p); if (!(now > 0)) now = marketPrice(positionMarket(p));
+    var now = tpslNow(p);
     if (c) {
       var why0 = tpslProblem(p.isLong, p.leverage, p.entry, now, c.tp, c.sl, tpslDec(p), tpslBust(p));
       box.classList.add('is-sure');
@@ -13034,7 +13099,7 @@
     note._said = true; note.textContent = t;
     setTimeout(function () { note._said = false; try { renderPhSheet(); } catch (e) { /* ignore */ } }, ms);
   }
-  function tpslPhNow(p) { var now = closePriceFor(p); return now > 0 ? now : marketPrice(positionMarket(p)); }
+  function tpslPhNow(p) { return tpslNow(p); }
   /* The readouts under the phone's two boxes, as they are typed. */
   function tpslPhRead(d) {
     var s = ui.phSheet, p = s && s.mode !== 'all' ? posById(s.pid) : null; if (!p) return;
@@ -13265,7 +13330,9 @@
         });
       }
       var p = posById(who); if (!p) return null;
-      var now = tpslPhNow(p), r = tpslRead(p, kind, raw, now); r.now = now;
+      var now = tpslNow(p);
+      if (!(now > 0)) return { n: tpslNum(raw), wait: true };   /* (amt5) as before an open: the print or a wait, never the chart */
+      var r = tpslRead(p, kind, raw, now); r.now = now;
       /* (amt2) an open trade's level, as money: with the borrow it owes so far (netPnl) */
       if (isFinite(r.back) && isFinite(r.pnl)) { r.pnl = netPnl({ payout: r.back }, p.margin); r.pct = r.pnl / p.margin; }
       return r;
@@ -13285,6 +13352,7 @@
       return tpslSet(pid, tp, sl);
     },
     autoKept: function () { return !tpsl.unsaved; },
+    autoSeen: function (pid) { tpslSeen(String(pid)); },   /* (amt5) the card's note of a level not set at the fill has been answered */
     ticket: function () { return { phase: tk.phase, msg: tk.msg || '', sym: tk.sym, posId: tk.posId }; },
     ticketDone: function () { if (tk.phase && tk.phase !== 'wallet' && tk.phase !== 'req') tkReset(); },
     positions: function () {
@@ -13296,7 +13364,9 @@
           status: closeStatus(it.pid, p), est: !!le,      /* est: pnl / payout are the live estimate (the card's ≈), not the figure at the last print */
           /* the take profit / stop loss rule: its levels, tpslStatus ('' while it waits; closing, held: why, ...) and, while
              its close is on the way, which level fired */
-          auto: rule ? { tp: rule.tp, sl: rule.sl, status: tpslStatus(it.pid), fired: rule.claimed ? rule.fired || '' : '' } : null };
+          auto: rule ? { tp: rule.tp, sl: rule.sl, status: tpslStatus(it.pid), fired: rule.claimed ? rule.fired || '' : '' } : null,
+          /* (amt5) a level typed on the order sheet that the fill left unable to fire, or firing at once: not set, said once */
+          missed: tpsl.missed[it.pid] ? { tp: tpsl.missed[it.pid].tp, sl: tpsl.missed[it.pid].sl } : null };
       });
     },
     openings: function () {
