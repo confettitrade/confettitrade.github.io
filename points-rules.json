@@ -1,7 +1,7 @@
 {
-  "version": 4,
-  "updated": "2026-10-23",
-  "note": "Points are recomputed from chain history whenever this file's version changes. Copy to site/points-rules.json (the indexer does).",
+  "version": 5,
+  "updated": "2026-11-20",
+  "note": "Points are recomputed from the stored chain history whenever this file changes (bump the version with every rule change). Copy to site/points-rules.json (the indexer does).",
   "relay": "",
   "relayBlock": 0,
   "transfer": {
@@ -177,8 +177,28 @@
   "holder": {
     "curve": [
       [
-        1000,
+        0.04,
         1
+      ],
+      [
+        0.05,
+        1.1
+      ],
+      [
+        0.5,
+        1.25
+      ],
+      [
+        3,
+        1.5
+      ],
+      [
+        15,
+        1.75
+      ],
+      [
+        1000,
+        1.9
       ],
       [
         5000,
@@ -210,6 +230,33 @@
       "market",
       "volume"
     ],
-    "note": "curve B (steep, chosen 2026-10-23), scaled to FETTI's 215,233 supply: points from the boosted sources are multiplied by the curve (log-interpolated on staked FETTI) times the time held (+10% a week, up to x2); house bots, losses, liquidations and referral shares are not boosted."
+    "note": "FETTI levels (2026-11-20): low rungs for the four FETTI levels, x1.1 at 0.05, x1.25 at 0.5, x1.5 at 3, x1.75 at 15 staked or locked FETTI, then up to the old top (curve B, 2026-10-23, scaled to FETTI's 215,233 supply): points from the boosted sources are multiplied by the curve (log-interpolated on staked FETTI) times the time held (+10% a week, up to x2); no stake earns less than under the old curve; house bots, losses, liquidations and referral shares are not boosted."
+  },
+  "fetti": {
+    "ignorePayers": [],
+    "ignoreFrom": 0,
+    "ignorePlainPayers": true,
+    "plainFrom": 51740000,
+    "pot": "",
+    "potBlock": 0,
+    "potEvents": {
+      "lock": {
+        "sig": "Locked(address,uint256,uint64)",
+        "topic": "0xeb70b889cfbcb8d507e59cdc8c4163505d3a4f597cb0edd649d3b13458353b5b"
+      },
+      "unlock": {
+        "sig": "Unlocked(address,uint256)",
+        "topic": "0x0f0bc5b519ddefdd8e5f9e6423433aa2b869738de2ae34d58ebc796fc749fa0d"
+      },
+      "burn": {
+        "sig": "Burned(address,uint256,uint256,address)",
+        "topic": "0xd5dafb37f752514b556576a6980d94e3469efa92c0288e78d5e0e254cddb9139"
+      }
+    },
+    "note": "ignorePayers: wallets whose depositFor scores nothing (the perks wallet, the prize draw's and the FETTI table's payout wallets; the pot is always one). ignoreFrom: the first block any of them can have paid (0 = the current Exchange's deployBlock). pot: the CreditPot; FETTI locked in it counts as staked FETTI from potBlock on (Locked adds, Unlocked and Burned take away). potEvents are ICreditPot's: the wallet is the first indexed address, the FETTI amount (18 decimals) the first data word; topic = keccak of sig, checked at start. ignorePlainPayers: a deposit paid in by another plain wallet (no contract code) scores nothing, from plainFrom on (the stored history before it keeps its points), so money back and prizes score nothing even before their wallets are listed here. potDrawn: the CreditPot's Drawn; a deposit paid in by a contract that emitted it for that wallet and amount in that block (a credit draw) scores nothing, pot listed or not.",
+    "potDrawn": {
+      "sig": "Drawn(address,uint256,uint256,uint256,uint64)",
+      "topic": "0xa6db8eba0b608a785a4d2fa54ac68678c42e392f49b559e827631efb62b64988"
+    }
   }
 }

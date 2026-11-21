@@ -1133,6 +1133,14 @@ body.cream-page .pts-bar { display: none; }
   .sm-ak-read > b { font-weight: 600; }
   .sm-ak-read > .sm-ak-hint { color: var(--ink-faint); }
   :is(.sm-root, .sm-sheet) .sm-ak-fin { --k-lip: 2px; --k-r: 8px; display: inline-flex; align-items: center; min-height: 36px; padding: 0 10px; font-size: 14px; font-weight: 600; }
+  /* (v6) the card sheet's quick picks: three keys under a price box, each a price to take (take profit +25% / +50% /
+     +100% of what went in; stop loss -25% / -50% / the furthest it can go) */
+  .sm-ak-picks { display: flex; gap: 8px; margin-top: 10px; }
+  .sm-ak-picks[hidden] { display: none; }
+  :is(.sm-root, .sm-sheet) .sm-ak-pick { --k-lip: 2px; --k-r: 8px; flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0 6px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  :is(.sm-root, .sm-sheet) .sm-ak-pick[disabled] { opacity: 0.4; }
+  /* (v6) under a result's card on a desktop: the link to the transaction that closed the trade */
+  .sm-res-link { margin-top: 10px; }
 
   /* the order sheet and the desktop order panel: the two boxes side by side, under the two outcomes */
   .sm-ak-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
@@ -1145,6 +1153,7 @@ body.cream-page .pts-bar { display: none; }
   .sm-ak-top > .sm-kv:first-child { border-top: 0; }
   .sm-ak-fields { display: grid; gap: 14px; margin-top: 18px; }
   .sm-sh-foot .sm-quiet { margin-top: 0; }
+}
 /* ---- HYPE in your wallet (the owner, 2026-11-19: "for add money can we make it so hype can be bridged automatically like eth can").
    Add money's third way to pay is a row like the others. When what the wallet can spare is under the smallest add, the row is
    greyed in the look every disabled choice here already has (half strength, no lip, no press) and stays focusable, so a tap or
@@ -1166,6 +1175,82 @@ body.cream-page .pts-bar { display: none; }
   .sm-panel-foot .sm-card-go { margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) { .sm-card canvas { transition: none; } }
 }
+/* ---- Close part and Add to this trade (v5; the owner, 2026-11-04: "can we make it so that you can close a % of your position",
+   2026-11-19: "we are still doing top ups and partial closes right").
+   On every trade card, under its take profit and stop loss: two paper keys of one size, side by side. Their sheets are made of
+   what the order sheet already has: the box sunk into the paper for what is typed (a percent here, with its sign right after the
+   number), the row of keys under it, the two outcome boxes with the figures that change, one black key, and a quiet line under
+   that key only when the wallet has to confirm. ---- */
+@media screen {
+  .sm-pks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 4px; }      /* 10 px: the gap between Up and Down, and between Add money and Withdraw */
+  /* what the last part gave back, or what was added: said under the keys, as the end screen says such things (quiet, the money in ink) */
+  .sm-pkb > .sm-pt-did { margin: 10px 0 2px; color: var(--ink-muted); }
+  .sm-pt-did b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .sm-pt-did b.sm-up { color: var(--sm-pos-t); } .sm-pt-did b.sm-dn { color: var(--sm-neg-t); }
+  :is(.sm-root, .sm-sheet) .sm-pk { --k-lip: 2px; --k-r: 9px; min-height: 46px; padding: 0 6px; font-size: 15px; font-weight: 600; line-height: 1.2; text-align: center; color: var(--ink); }
+  :is(.sm-root, .sm-sheet) .sm-pk[disabled] { opacity: 0.55; }
+
+  /* the percent box: the field is as wide as its number (simple.js pctFit), so the sign sits right after it */
+  #smPartAmt, #smPartPct { font-size: inherit !important; }
+  .sm-amt.is-pct { position: relative; cursor: text; }
+  .sm-amt.is-pct input { flex: none; width: 2ch; min-width: 0.7em; max-width: calc(100% - 1.2em); }
+  .sm-amt.is-pct > .sm-pct-m { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; white-space: pre; }
+
+  /* the two boxes: the order sheet's own outcome boxes, their figures a size up; a figure still on its way is a quiet word
+     of the same height, never a zero */
+  .sm-pt-out > div { padding: 10px 12px 11px; }
+  .sm-pt-out b { font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .sm-pt-out b.is-off { font-size: 15px; font-weight: 400; color: var(--ink-faint); }
+  .sm-pt-out.is-ba > div:first-child b { color: var(--ink-muted); }      /* now and after: the eye goes to after */
+  .sm-pt-out i { display: block; min-height: 19px; font-style: normal; font-size: 14px; line-height: 19px; font-variant-numeric: tabular-nums; }
+  .sm-pt-lab { margin-top: 18px; }
+  .sm-pt-lab + .sm-pt-out { margin-top: 8px; }
+  .sm-fine.sm-pt-from, .sm-fine.sm-pt-note { margin: -10px 0 0; font-size: 14px; }
+  .sm-fine.sm-pt-note + .sm-pt-out { margin-top: 14px; }
+  .sm-kvs.sm-pt-kv { margin-top: 8px; }
+  .sm-pt-kv > .sm-kv:first-child { border-top: 0; border-bottom: 1px solid var(--rule); }
+  .sm-pt-kv > .sm-kv > span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sm-fine.sm-pt-fine { margin-top: 12px; font-size: 14px; }
+  .sm-sh-foot .sm-fine.sm-pt-wal { margin: 0; font-size: 14px; text-align: center; }
+}
+
+/* ---- FETTI levels and money back (fetti.js; the owner, 2026-11-19 "i want fetti to be an exchange token", "yes on all";
+   PLAN.md 3.5): the Home key, the level sheet, the result's line, the wallet's steps. The paper and the keys are the page's
+   own: a row that opens something is a raised paper card, the one black key is the sheet's, the level picked is pressed in.
+   Nothing here names what a trade costs. ---- */
+@media screen {
+  /* the Home key: the note card with a round mark, green once money is coming back */
+  .sm-fx-note .sm-fx-ic { flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; font-size: 15px; font-weight: 700;
+    background: var(--pos-soft); color: var(--sm-pos-t); border: 1px solid color-mix(in srgb, var(--pos) 35%, transparent); font-variant-numeric: tabular-nums; }
+  .sm-fx-note .sm-t b { font-variant-numeric: tabular-nums; }
+  .sm-left .sm-fx-note { margin-top: 0; }
+
+  /* the level sheet: four level keys, each a raised row; the level and its share on one line, the FETTI and its price under it */
+  .sm-fx-lead { margin: 0 0 4px; }
+  .sm-fx-levels { margin: 4px 0 2px; }
+  .sm-fx-lv .sm-t b { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sm-fx-pct { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 14px; font-weight: 700; line-height: 1.5;
+    background: var(--pos-soft); color: var(--sm-pos-t); }
+  .sm-fx-lv .sm-t i { font-variant-numeric: tabular-nums; }
+  .sm-fx-tag { flex: none; font-style: normal; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--sm-pos-t); }
+  .sm-fx-tag[hidden] { display: none; }
+  .sm-fx-would { margin: 16px 0 0; padding: 10px 12px; border-left: 4px solid var(--pos); background: var(--pos-soft); font-size: 16px; line-height: 1.4; color: var(--ink); }
+  .sm-fx-would[hidden] { display: none; }
+  .sm-sheet .sm-fx-would + .sm-sum, .sm-sheet .sm-fx-levels + .sm-fx-would + .sm-sum { margin-top: 14px; }
+  .sm-sum .is-go { font-variant-numeric: tabular-nums; }
+  .sm-wait p .sm-fx-of { color: var(--ink); }
+
+  /* the result: one quiet line, and for a wallet with no level a small key to the levels */
+  .sm-fx-line { margin: 4px 0 14px; }
+  p.sm-fx-line, .sm-fx-line .sm-fine { color: var(--ink-muted); font-size: 15px; line-height: 1.45; }
+  .sm-fx-line .sm-fine { margin: 0 0 6px; }
+  :is(.sm-root, .sm-sheet, .sm-panel-body) .sm-fx-go { min-height: 44px; }
+
+  /* the cream pages' own top bar: a key the page hides stays hidden (the $FETTI page's Connect key showed beside the wallet
+     key and pushed the bar wider than a phone) */
+  body.cream-page .sm-page-top [hidden] { display: none !important; }
+}
+
 /* ---- (cf_BFNEWS) the Blockfront article's two small marks in Simple (the owner, 2026-11-19: "a little announcment somwhere", then
    "powered by block front", "on the position cards actually").
    .sm-news: one slim paper card under the coins on Home: the sentence, the article's link as a small key, and a close that hides

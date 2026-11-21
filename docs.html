@@ -14,7 +14,7 @@
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
   <link rel="stylesheet" href="paper.css?v=mono1">
-  <link rel="stylesheet" href="simple.css?v=ever1">
+  <link rel="stylesheet" href="simple.css?v=one1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Cream look for this page */
@@ -403,26 +403,123 @@
 
       <section id="paper">
         <h2>What happened to Paper</h2>
-        <p>Paper launched on October 10 with two markets, BTC and ETH, at 1000x. Every fill came off the Hyperliquid order book. Open interest ran to $3.3 billion. Then one wallet bought about 6,060 ETH on the Hyperliquid book, printed a price the contract believed, and closed its Paper longs into it for $1.28 million. It cost about $52,000 in fees. Opens never went dark; the caps came down the next day. Open interest fell to $400 million.</p>
+        <p>Paper launched on October 10 with two markets, BTC and ETH, at 1000x. Every fill came off the Hyperliquid order book. Open interest ran to $3.3 billion. Then one wallet bought about 6,060 ETH on the Hyperliquid book, printed a price the contract believed, and closed its Paper longs into it for $1.28 million. It cost about $52,000 in charges. Opens never went dark; the caps came down the next day. Open interest fell to $400 million.</p>
         <p>The contract was never wrong. It was reading the wrong number.</p>
       </section>
 
       <section id="fix">
         <h2>What Confetti reads instead</h2>
-        <p>Every fill here is the HyperCore oracle price, the validator median of external venues; the book settles nothing. You ask, and a keeper fills you a few seconds later at the print the oracle shows then. If no keeper comes, anyone may fill you at the worse of the two prints until the request expires, so the page asks your wallet to fill it the moment the keeper window closes. Leverage is set per coin: up to 1000x on BTC, ETH, DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE, up to 250x on TRUMP and PEPE.</p>
+        <p>Every fill here is a price from outside the order book; the book settles nothing. Most markets fill on a signed Pyth price, <span class="js-fill-range">a few seconds</span> after your order reaches the chain, each coin after its own short wait, at a moment the contract fixes: <a href="#prices">How prices work</a> has the rule and each coin's wait. If that fill does not come in time, an open is refunded and a close finishes on Hyperliquid's oracle price; the page offers your own wallet that way out the moment it opens. A close left waiting more than 3 seconds past that point can only be finished by your own wallet, at the worse for you of two oracle prices. Leverage is set per coin: up to 1000x on BTC, ETH, DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE, up to 250x on TRUMP and PEPE.</p>
         <p>Every limit is sized to the house's free cash and checked in the block you open: one position, one side of a coin, the whole book. The ticket shows the biggest position you can open right now. What a position can win is fixed when it opens: a multiple of its margin, or a share of the house's free cash if that is smaller. Anyone can liquidate it past its bust price for 0.5% of the margin. A breaker can pause new trades for the rest of an hour that drains house cash. The contracts cannot be upgraded.</p>
-        <p>On a win you pay the impact haircut, then the win fee on what is left. On a loss you pay nothing beyond the loss. An open fills a small spread past the oracle print; the bust price is measured from the print. Held past the free hours, a position pays a borrow fee for each whole hour, taken from its payout at close. The trade page shows every rate.</p>
-        <p>The fill keeper is run by the house. It fills inside its window, 5 to 8 seconds after you ask, at the oracle print it sees then; which print inside those 3 seconds is its call, worth about one oracle step. After the window anyone may fill you at the worse of the two prints until the request expires at 60 seconds, and the page offers your own wallet first. Late fills are logged.</p>
-        <p>Trade without popups: one wallet signature gives this browser a key that can open, close and cancel for you up to a cap per trade, for at most 30 days, and never withdraw. Revoke ends it.</p>
+        <p>Every trade pays a charge on its size: 0.045% of the position when it opens and 0.045% of what closes when it closes, never more than 10% of the stake each time. <a href="#fees">What a trade pays</a> has the numbers by leverage. On a win the impact haircut applies. An open fills a small spread past its fill price; the bust price is measured from the fill price. Held past the free hours, a position pays a borrow charge for each whole hour, taken from its payout at close.</p>
+        <p>The fill keeper is run by the house. In a Pyth market it never picks the price: the contract accepts one price for your order's moment, whoever sends the fill. It can be late by a few seconds, or not fill at all; then an open is refunded and a close finishes on Hyperliquid's oracle price. <a href="#prices">How prices work</a> says who may fill and when. In a market on Hyperliquid's oracle (PEOPLE) the keeper fills 5 to 8 seconds after you ask, at the oracle print it sees then; which print inside those 3 seconds is its call, worth about one oracle step. After that anyone may fill at the worse of the two oracle prints until the request expires at 60 seconds, and the page offers your own wallet first. Every fill logs whether it was priced on Pyth and the time of the price it used.</p>
+        <p>Take profit and stop loss live in the contracts: set them when you open or later on the trade's card, and they close the trade whether Confetti is open or not. <a href="#tpsl">Take profit and stop loss</a> has the rule.</p>
+        <p>Trade without popups: one wallet signature gives this browser a key that can open, close and cancel for you up to a cap per trade, set and move your take profit and stop loss, for at most 30 days, and never withdraw. Revoke ends it.</p>
         <p>USDC on Hyperliquid comes straight in: send it to the address in the Deposit dialog, then Sweep.</p>
-        <p>The price path is three hops. The Exchange asks the PriceOracle for the HyperCore oracle price, the PriceOracle asks the PrecompilePriceSource, and that reads the oracle precompile at 0x0807, the validator median of external venues. The source is fixed in the PriceOracle at deploy and has no setter; the precompile addresses are constants. A market's display clamp sits between 5 and 100 bps, nothing on the settlement path. Within fixed bounds, markets can be added and leverage, the fees, the spread, the borrow rate, the fill windows, the limits and the impact curve adjusted; opens can be paused and resumed, keepers named, and a market retired at the live print, or at its last settlement price once its feed is dead. A position keeps the terms it was opened with. Nobody can change a live price, touch a balance or upgrade the code.</p>
+        <p>The price path: the Exchange asks the PriceOracle. For a Pyth fill the PriceOracle hands the signed price to Pyth's contract on HyperEVM (0xe9d69CdD6Fe41e7B621B4A688C5D1a68cB5c8ADc), which checks the signatures and answers only with the price for the moment asked. For the HyperCore oracle price it asks the PrecompilePriceSource, and that reads the oracle precompile at 0x0807, the validator median of external venues. Both are fixed in the PriceOracle at deploy and have no setter; the precompile addresses are constants; a market's Pyth feed is set once and then locked. A market's display clamp sits between 5 and 100 bps, nothing on the settlement path. Within fixed bounds, markets can be added and leverage, the charges, the spread, the borrow rate, the fill windows, the price checks, the limits and the impact curve adjusted; opens can be paused and resumed, keepers named, and a market retired: a Pyth market at the last price it settled on, any other at the live print, or at its last settlement price once its feed is dead. A position keeps the charge and payout terms it was opened with. A change of a market's pricing rule, delay or windows applies at once, to requests already waiting and to open positions too. Nobody can change a price, touch a balance or upgrade the code.</p>
+      </section>
+
+      <section id="prices">
+        <h2>How prices work</h2>
+        <h3>The price</h3>
+        <p>Trades settle on Pyth, a price service that gathers prices from many large exchanges and trading firms every second and signs them. The Exchange checks those signatures itself, on chain, through Pyth's contract on HyperEVM. The Hyperliquid order book is not an input, so trading the book cannot move a fill.</p>
+        <p>Prices are in USDT terms, like Hyperliquid's and Binance's charts and Hyperliquid's own oracle. Pyth prices a coin in US dollars, so the contract divides that price by Pyth's price of USDT for the very same second, which it reads from the same signed update: one price scale for every fill, close, liquidation and check. If Pyth's USDT price for that second is missing, from another second, more than 1% away from a dollar or uncertain by more than 0.2% (both at launch, and settable only within fixed bounds), the fill waits as if Pyth had no price: an open is refunded, a close finishes on Hyperliquid's oracle price and a liquidation waits for a second with a good price.</p>
+        <h3 id="wait">Each coin's wait</h3>
+        <p>An order is a request. It records the second of the block it landed in, and it fills at the one Pyth price for a set wait after that: the first price Pyth published at or after that moment, and no later than 2 seconds past it. The contract asks Pyth for exactly that price and refuses every other, whoever sends the fill. That price is newer than anything you could have seen when you tapped, which is why the wait can be short.</p>
+        <p>The wait is set coin by coin, from measured prices, and each market's is on chain for anyone to read. <span id="fillWaits">The trade page says each coin's own time.</span></p>
+        <p>The wait counts from the block your request lands in, not from your tap. With one-tap trading that block comes about a second after the tap. A wallet that takes ten seconds to confirm adds its ten seconds. From the request, a fill usually lands about a second after the coin's wait, and the trade page shows the time of the price each fill used ("price at 12:03:05, Pyth").</p>
+        <h3>Who fills, and when</h3>
+        <p>A fill can land in the 6 seconds that start at your order's moment. In the first 3 only the house's keepers may send it. In the last 3 anyone may, your own wallet included, if they hold Pyth's signed price for that moment. The price is the same whoever sends it and whenever in those seconds it lands.</p>
+        <p>Pyth gives its signed prices to key holders only, and this page has no key. So today the keeper is, in practice, the one that fills. That leaves it one choice: fill late inside those 6 seconds, or not at all. If nobody fills, an open is refunded and a close finishes on Hyperliquid's oracle price (see "If no fill comes in time"). Either way it shows on chain: a refund marked as a missed price, or a close not priced on Pyth, in a second for which Pyth had a price.</p>
+        <h3>The checks</h3>
+        <p>Hyperliquid's own oracle, the validator median of external venues, stays as the check on every fill. A fill is refused while the Pyth price sits further than the market's limit from that oracle (3% at launch), or while Pyth's own publishers disagree by more than the market's limit (1% at launch). The keeper tries again each second; the price it has to use does not change. An open is refunded if the price jumped too far between your request and its fill (10% at launch), or if it no longer fits the market's limits when it fills. Each market's limits are on chain for anyone to read.</p>
+        <p>One thing a Pyth market does not check: whether the price has already moved past a new trade's liquidation price by the time its fill lands. The trade opens at the price of its moment and can close itself 2 seconds later. At 1000x that point is 0.05% away.</p>
+        <h3>If no fill comes in time</h3>
+        <p>From the 7th second after your order's moment the Pyth fill is over. An open is then refunded in full, the charge included; the keeper sends the refund, or your own wallet can from the page. A close then fills at Hyperliquid's oracle price in the block that fill lands in, for 3 seconds: the keeper sends it, the page does with one-tap trading on, or your own wallet can. That price is a few seconds newer than the Pyth price would have been, so it can be better or worse for you.</p>
+        <p>After those 3 seconds nobody but you can finish that close. Only the wallet that owns the trade can send it (a one-tap key cannot), and it fills at the worse for you of two prices: Hyperliquid's oracle price in the block it lands in, and Hyperliquid's oracle price when you asked to close. So a close that was left waiting can never be timed to beat the price it was asked at. The page shows this as "Close now". Or leave it: at 60 seconds it expires and you can ask again.</p>
+        <p>After 60 seconds a request that is still waiting has expired. An open's money comes back; a close leaves the trade open, and you can ask again. Liquidations in these markets need a Pyth price and wait while Pyth is away; a loss is never more than what you put in. If Hyperliquid's oracle itself is down, everything waits.</p>
+        <h3>Liquidations</h3>
+        <p>A trade closes itself when the price reaches its liquidation price. In a Pyth market each block checks one price: the Pyth price for the second 2 seconds before that block. No other price can be used in that block, so nobody can pick an older or a newer one. A trade can first be liquidated 2 seconds after it opens, on the price of its own opening second.</p>
+        <p>In a Pyth market, margin added to a trade counts from the next second's price on. A Pyth price is judged against what the trade held before that price's second: margin added in that second or later does not save the trade from it. If the trade is liquidated on such a price, the margin that came too late was never at stake: it goes back to your balance in the same transaction, and what is lost is what the trade held before. Margin added before the price's second counts in full. If you add twice within 2 seconds, a price from between the two is judged without either, and both come back. In a market on Hyperliquid's oracle (PEOPLE) added margin counts at once and nothing is returned.</p>
+        <p>Pyth moves every second. A wick that touches your liquidation price for a single second can end the trade if someone calls it in that second's block; if nobody does, that price is gone and the next one decides. Anyone can call it, for 0.5% of the stake. At very high leverage a short wick can end a trade.</p>
+        <h3>PEOPLE</h3>
+        <p>PEOPLE has no Pyth price. It keeps the older rule: Hyperliquid's oracle price, nobody fills for 5 seconds, about 6 seconds in all, and it is liquidated on that oracle price.</p>
+        <h3>Who can change what</h3>
+        <p>A market's Pyth feed is set once and locked. Within fixed bounds the owner can change a market's delay (1 to 10 seconds) and its limits, the length of the fill window (5 to 60 seconds), the keepers' head start (1 to 10 seconds) and the age of the liquidation price (1 to 10 seconds), or move a market back to the older rule in one transaction. These changes apply at once: a request already waiting is filled under the new setting, and open trades are priced on the new rule from that block.</p>
+        <p>No setting lets anyone hand the contract a price other than Pyth's for the moment it asks for. Pyth's contract is run by Pyth and can be changed by Pyth, not by Confetti; the checks against Hyperliquid's oracle bound what a wrong Pyth price could do. No setting moves, removes or fires your take profit or stop loss for you either.</p>
+      </section>
+
+      <section id="tpsl">
+        <h2>Take profit and stop loss</h2>
+        <h3>What they do</h3>
+        <p>A take profit closes your trade once the price reaches a level above it (below it for a Down trade); a stop loss closes it once the price reaches a level on the losing side, before the price where the trade would close itself. They are kept by a contract of the exchange, the TriggerBook, not by this page, so they close the trade whether Confetti is open or not, on your phone or anywhere else. Set either or both in the order sheet, and they go in with the open in the same transaction; or set, move or remove them later from the trade's card. With one-tap trading on, no wallet popup; without it, one confirmation.</p>
+        <h3>The price it closes at</h3>
+        <p>The price is checked once a second: the first Pyth price of each second, in USDT terms like every fill. A level fires at the first such price that is at or past it, and the whole trade closes at that price, as a stop or take-profit market order does on Hyperliquid or Binance, not at your level. A move that touches your level inside a second and is back by the next second's first price fires nothing. A sudden jump can close a trade past your price: a stop at $1.000 crossed by a price of $0.998 closes at $0.998.</p>
+        <p>If that price is also at or past the trade's liquidation price, the trade is liquidated there, as it would be without a stop. At high leverage one second can jump past both: at 250x the liquidation price is 0.35% away, at 1000x 0.05%.</p>
+        <h3>Who fires them, and when</h3>
+        <p>Anyone may fire a crossed level, with Pyth's signed prices of that second and the second before it: the house's keepers do it, and so can any bot that holds those prices. Pyth gives its signed prices to key holders only, and this page has no key, so today the keepers are, in practice, the ones that fire. Everyone gets the same price, because it is the first price past the level after a price that was not, and Pyth signs exactly one first price per second. A fire usually lands a block or two after the price crossed.</p>
+        <p>A stop loss fired more than 5 seconds after its price closes at your own level instead, which is better for you than the price that crossed it: a late stop never pays the house. While a stop loss sits on the safe side of the liquidation price, nobody can liquidate the trade on a price past it either: such a trade ends through its stop. A take profit fired late still closes at the price that crossed it. A crossed take profit that nobody fires stays fireable at the price that crossed it for as long as the trade is open.</p>
+        <p>While the trade page is open it also watches. About 12 seconds after it sees your take profit reached and not fired, it sends the close itself, at the market price then, so a take profit nobody fired does not slip away while the page is open; the card says when, and a close the page sent says so on the trade's result. It never does this for a stop loss. A stop fired late closes at your own level, which is better for you than the market price once the price is past it, and a close sent by the page would give that up. So the card says when your stop was reached, that it has not closed the trade yet, and the price a late stop closes at; Close stays yours to press if you would rather take the market price now. If the price comes back before anyone fires that stop, the card keeps saying it: a stop that was reached can still close the trade at your level for as long as the trade and those levels stand. If a level the page saw reached never closed the trade, the result says that too. The page judges by the price it shows, which is not Pyth's signed price, so it can be a few hundredths of a percent off.</p>
+        <p>One thing to know before you press Close on a trade whose level was already reached and has not fired. Your close is priced a few seconds after you ask, which is later than the level's own price. Until one of the two lands, the keepers can send either: the fire (a late stop at your level, a take profit at the price that crossed it) or the fill of your close at its own price. They can pay differently, so count on the lower of the two. The page's own close of a take profit is such a close: it trades the risk that nobody ever fires the take profit for the lower of those two prices. Every such case is on chain for anyone to check: a close filled after a level's crossing second, with no fire.</p>
+        <h3>When they fire while Confetti is closed</h3>
+        <p>The trade closes on chain and the money is in your trading balance at once. The next time you open Confetti in the same browser, each trade that ended while you were away has its own card on the first screen: closed by your take profit or your stop loss, the result, and inside it the price, the second the level was crossed, the second it closed and a link to the transaction. In another browser or on another device the trade is simply no longer open and the balance has what it paid back; History in Pro view lists every close.</p>
+        <h3>Changing them</h3>
+        <p>A change counts after the market's delay: 2 seconds on most markets at launch, 3 on ETH and XRP, 4 on FARTCOIN, WIF, kFLOKI and PENGU. The card counts it down ("start in 4 s"). Until then the levels it replaces still count, so a level is never set or moved on a price that was already public. A second change within that delay replaces the first. For 5 seconds after a change starts to count the next one has to wait, unless no level was set before that change: the page holds it and sends it when it can land ("Saving… keep this page open a few seconds"). Levels set with an open start the same delay after the trade fills; in those first 2 to 4 seconds the trade has no stop.</p>
+        <p>Only the trade's own wallet, or its one-tap key, can set, move or remove its levels. The owner of the exchange cannot. Closing part of a trade keeps the levels for the rest; adding margin moves the liquidation price, never the levels.</p>
+        <h3>Where it is different</h3>
+        <p>PEOPLE has no Pyth price, and a market the owner moves back to Hyperliquid's oracle pauses its levels: there, and for every trade opened before the move to v5 (those are closed on their own page, v4), take profit and stop loss are kept by the page, and close the trade only while that page is open in your browser. The trade's card says which kind it has. A close you asked for yourself before the level was crossed goes first; one asked for later is cancelled by the fire.</p>
+        <h3>What they cost</h3>
+        <p>A take profit or stop loss that fires is a close: it pays the same closing charge as any close (0.045% of the position, never more than 10% of the stake), from what the close pays back. Nobody is paid to fire it. A fire past the liquidation price is a liquidation: no closing charge, 0.5% of the stake to whoever sends it, as any liquidation.</p>
+      </section>
+
+      <section id="fees">
+        <h2>What a trade pays</h2>
+        <h3>The charge on a trade</h3>
+        <p>Every trade pays a charge on its size: 0.045% of the position when it opens, and 0.045% of what closes when it closes. The position is your stake times the leverage, so the same charge is a bigger share of the stake at higher leverage. It is capped: one side never takes more than 10% of the stake.</p>
+        <p>What one side costs, as a share of the stake: 0.045% at 1x, 0.45% at 10x, 2.25% at 50x, 4.5% at 100x, and 10% (the cap) from 223x up. On $100 staked that is $0.045, $0.45, $2.25, $4.50 and $10. Opening and closing together cost twice that: at 1000x, up to $20 of every $100.</p>
+        <h3>How it is taken</h3>
+        <p>The opening charge is taken on top of your stake when the trade opens. The stake backs the trade whole, so the liquidation price is where it would be without the charge. If the trade does not open, the charge comes back with the stake.</p>
+        <p>The closing charge comes out of what the close pays back, and never more than that: a trade that lost almost everything pays what is left. A trade that is liquidated pays no closing charge. Closing part of a trade pays the charge on that part.</p>
+        <p>On the trade page the amount you type is everything that leaves your trading money: the page works out the stake so that the stake and its opening charge add up to that amount. What an open trade is worth there is what closing it would pay back.</p>
+        <h3>The rate</h3>
+        <p>The rate is fixed when you ask to open and stays with the trade; a later change touches new trades only. Each market has its own rate and cap, on chain for anyone to read (<code>tradeFee</code>). The owner can set the rate between 0 and 0.1% and the cap between 1% and 25% of the stake. The exchange can also take a cut of a win (up to 10%) or of a loss (up to 5%, from the house's side); both are set to 0.</p>
+        <h3>Where it goes</h3>
+        <p>Into the revenue pool. If you were referred, 15% of what your trade pays goes to your referrer. Of the rest, 20% goes to FETTI stakers and 80% to the exchange's own wallet; both shares are settings. The entry spread, the haircut on wins and the borrow stay with the house. Wallets the house runs itself pay no trade charge. FETTI stakers can get part of what their own trades paid back: <a href="#fetti">FETTI levels</a>.</p>
+      </section>
+
+      <section id="fetti" data-fx hidden>
+        <h2>FETTI levels: money back</h2>
+        <p>Stake FETTI and part of what your own trades paid in comes back to you as trading money. There are four levels, counted in FETTI staked, never in dollars, so no price move can change one: 0.05 FETTI for 10% back, 0.5 for 20%, 3 for 30% and 15 for 40%. The $FETTI page shows your level and what a level costs today; the trade page gets one in three steps in your wallet (buy FETTI with HYPE on HyperSwap, let Staking take it, stake it).</p>
+        <h3>What counts</h3>
+        <p>What each trade put into the revenue pool when it opened and when it closed, after any referral share. A trade at a boost where the 10% cap applies (from about 223x at launch) is left out: the cap already made it cheaper. Only trades on the current version of the exchange count, from its first trade. The house's own wallets and the owner's are left out, and so is a wallet flagged for trading against the program, until it is cleared.</p>
+        <h3>When it lands</h3>
+        <p>Seven days after each trade, at the lowest level your wallet held in every hourly check of those seven days, paid once a day at 00:30 UTC straight into your trading money. Staked FETTI counts after its one-hour warm-up. Stake for an hour and nothing comes; unstake and what was on its way for the last seven days is gone. One lot of FETTI serves one wallet at a time.</p>
+        <h3>Limits</h3>
+        <p>At most $10 a day for each FETTI that counts, so splitting a stake between wallets gains nothing. At most $300 a day for all wallets together: on a day that limit is reached, every payment of that day is cut by the same share, and the rest is not owed later. Under $0.05 waits for the next day.</p>
+        <h3>Who pays it</h3>
+        <p>A wallet of its own, which the owner fills from the exchange's income after it has left the Exchange. It holds no role on the Exchange and pays only into trading balances. The house's money is never touched: to the house, money back is a deposit like any other.</p>
+        <h3>Public</h3>
+        <p>The bot publishes <a href="perks.json">perks.json</a>: every wallet's level, what is on its way, what was paid in the last 30 days, and what each level would have paid on its last 30 days of trades. Every payment can be worked out again from the chain's own events.</p>
+        <h3>Add money keeps more</h3>
+        <p>The page's own part of an Add money order is halved at Level 1 and nothing from Level 2, going by the level your wallet held for the last seven days (not the stake of the moment).</p>
+        <h3>The daily buy</h3>
+        <p>Every day a tenth of the revenue pool's income of the day before, at most $50, buys FETTI on HyperSwap in one or two small pieces, and the pool sends the FETTI straight to the dead address 0x000000000000000000000000000000000000dEaD, where nobody can move it. The $FETTI page counts what is there. A piece never buys while the price is far above its own day-long median. It is a buyer by a published rule, not a price floor.</p>
+        <p>Every number here is a setting and can change; changes show on this page. Money back is a share of what your trades paid in, never a promise about FETTI's price. FETTI's price moves: what you stake can be worth less later.</p>
+        <div id="draw-docs" data-fx="draw" hidden>
+          <h3>The weekly draw</h3>
+          <p>Once a week one wallet may win a prize paid into its trading money: 5% of what all trades paid into the revenue pool that week, never more than 5% of what the entrants' own trades paid together and never more than $200, shown on the $FETTI page before the draw. Every wallet that kept a FETTI level staked for the whole week and traded that week takes part; each dollar its trades paid that week, after any referral share, is one share of the chances. Points never count and no share can be bought. After the week ends the list of entrants is fixed on chain, and the winner is then picked from a HyperEVM block hash and a public random beacon (drand) made only after that, so anyone can check the draw. The full rules are in the <a href="terms.html#draw">terms</a>.</p>
+        </div>
+        <div id="table-docs" data-fx="table" hidden>
+          <h3>The FETTI table</h3>
+          <p>Stake FETTI and win FETTI from a bank of its own, never from the house's trading money. Winnings unlock over 7 days, and the table pays out at most 1% of the pool's FETTI a day in all.</p>
+        </div>
       </section>
 
       <section id="up">
         <h2>Up</h2>
-        <p>The house adds and withdraws its money at any time, down to what it owes queued winners and fees already earned. A win the house cash cannot cover waits in the queue.</p>
+        <p>The house adds and withdraws its money at any time, down to what it owes queued winners and income already earned. A win the house cash cannot cover waits in the queue.</p>
         <p>The queue is paid first in, first out, from losses and house deposits; while it is not empty, every new win joins it. The House page shows free cash, the queue and every house deposit and withdrawal.</p>
-        <p>FETTI is the same token as before, and losses here mint none. Staked FETTI earns the stakers' share of the fees. A v3 stake moves over with one button on the $FETTI page. Claims land in your wallet. Refer someone and a share of their fees is yours.</p>
+        <p>FETTI is the same token as before, and losses here mint none. Staked FETTI earns the stakers' share of what trades pay. A v3 stake moves over with one button on the $FETTI page. Claims land in your wallet. Refer someone and a share of what their trades pay is yours.</p>
         <p>The house runs market-activity bots of its own, from its own wallets with house money.</p>
         <p>They count in volume, open interest and the leaderboard. Not in points.</p>
         <p>The team also runs market-maker bots on FETTI's HyperSwap pool. Their wallets are listed on the <a href="confetti.html#mmWallets">$FETTI page</a>.</p>
@@ -496,6 +593,29 @@
     })();
   </script>
   <script>
+    (function () {
+      /* FILL TIMES PER COIN: how long a fill takes is each coin's own (its wait, set on the exchange, and a block). config.json
+         restates each market's wait (fastDelay); this writes them into "Each coin's wait" and the range into the sentence
+         above it. Without them the page keeps its general words: no time is typed into this page. */
+      var list = document.getElementById('fillWaits'), spans = document.querySelectorAll('.js-fill-range');
+      if (!window.fetch || (!list && !spans.length)) return;
+      function names(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
+      function secs(n) { return n + (n === 1 ? ' second' : ' seconds'); }
+      fetch('config.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }).then(function (c) {
+        var by = {}, all = [];
+        (c.markets || []).forEach(function (m) {
+          var d = Math.round(Number(m.fastDelay));
+          if (!m.launch || !(d >= 1 && d <= 10)) return;
+          (by[d] = by[d] || []).push(m.symbol); all.push(d);
+        });
+        if (!all.length) return;
+        var lo = Math.min.apply(null, all) + 1, hi = Math.max.apply(null, all) + 1;
+        Array.prototype.forEach.call(spans, function (s) { s.textContent = 'about ' + (lo === hi ? secs(lo) : lo + ' to ' + secs(hi)); });
+        if (list) list.textContent = 'From the request to the fill: ' + Object.keys(by).map(Number).sort(function (a, b) { return a - b; }).map(function (d) { return names(by[d]) + ' about ' + secs(d + 1); }).join('; ') + '.';
+      }).catch(function () { /* the general words stay */ });
+    })();
+  </script>
+  <script>
     /* Header: load house LP and handle menu */
     (function () {
       var RPC = 'https://rpc.hyperliquid.xyz/evm';
@@ -518,7 +638,24 @@
       setTimeout(loadHouse, 100);
     })();
   </script>
-  <script src="points.js?v=prm1" defer></script>
+  <script>
+    (function () {
+      /* FETTI levels and money back (PLAN.md 3.5): these sections show while config.json says the program is on (fetti.moneyBack,
+         a v5 config); the weekly draw's and the FETTI table's only while their own switch is on too (fetti.draw.on, fetti.table.on).
+         Without config.json, or with a switch off, they stay hidden. */
+      var secs = document.querySelectorAll('[data-fx]');
+      if (!secs.length || !window.fetch) return;
+      fetch('config.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }).then(function (c) {
+        var f = c && c.fetti || {}, on = Number(c.version) >= 5 && f.moneyBack === true;
+        Array.prototype.forEach.call(secs, function (n) {
+          var k = n.getAttribute('data-fx'), sw = k === 'draw' ? f.draw : k === 'table' ? f.table : null;
+          n.hidden = !(on && (!k || (sw && sw.on === true)));
+        });
+        if (on && location.hash) { var t = document.getElementById(location.hash.slice(1)); if (t && !t.hidden && t.scrollIntoView) t.scrollIntoView(); }
+      }).catch(function () { /* hidden stays hidden */ });
+    })();
+  </script>
+  <script src="points.js?v=one1" defer></script>
   <script src="house-chip.js?v=ever1" defer></script>
 </body>
 </html>

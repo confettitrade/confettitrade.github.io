@@ -1,7 +1,7 @@
 /* ==========================================================================
    confetti_  —  tabs.js
    Drives the Portfolio, House, Confetti, Leaderboard, v2 and v3 pages (body
-   data-page="portfolio" | "house" | "confetti" | "leaderboard" | "v2" | "v3"). Contract addresses are
+   data-page="portfolio" | "house" | "confetti" | "leaderboard" | "v2" | "v3" | "v4"). Contract addresses are
    pinned (CONTRACTS, as in trade.js) and checked against the Exchange's own getters
    over a plain RPC, Exchange events over eth_getLogs, and the points engine
    (points.js) for the points board. The only transactions are the Confetti
@@ -29,22 +29,41 @@
      The Exchange's own getters (EX_GETTERS) are compared with the pins once it is readable. */
   /* ---- BEGIN PINNED CONTRACTS (ops/write_config.py) ---- */
   var CONTRACTS = {
-    exchange: '0x533d0bc51bafeb1519f1bac93d48c175b1496063',
-    exchangeExt: '0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0',
+    exchange: '0xed8ee016b5684816cfff550f202e211db1d2cdd9',
+    exchangeExt: '0xf296441c94736296845bbc7832d3b96c7fccf3cf',
     usdc: '0xb88339CB7199b77E23DB6E890353E22632Ba630f',
-    oracle: '0x1fa6c831868527c65c33e14fd2456855458e03ba',
+    oracle: '0x0158c92b46d042a6ee916573756af0e30a93a4a6',
     confetti: '0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2',
-    staking: '0x2bf4976eb70cdcc03871ab60977fc4292587ce9a',
-    referrals: '0x1dcdbe02568169a777ad6d2b3c5edcf5058780da',
+    staking: '0x2Bf4976EB70cdcC03871Ab60977Fc4292587CE9a',
+    referrals: '0x7b366431e67f5964b67378c807870d9e2cc72d23',
     priceSource: '0xFaF573187824D176fc74d1de91a072eb6ffa8494',
-    marketRules: '0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d',
-    sessionRouter: '0x5477ab941a551874596aeeb16d3bcf79a120351d',
-    depositFactory: '0xe5bb8b4703787f428aaa6a3755add72b9c82fb75',
+    marketRules: '0x28e632860ef8d52f56a1950868a06c4ff1587414',
+    sessionRouter: '0x3cd25cf3ac32fd4e0455094d7ee5fa2c035daba6',
+    depositFactory: '0xbcafdc548c9c922cb1e132dcb8c29a06d0b940e4',
     v2Exchange: '0x257d667a52b282ac0b4c001fd437522bf6b9cbe2',
     v3Exchange: '0x723943c8fdd71e0e670b18d15be737222f3a0810',
     v3Staking: '0x167549bb697f96ee19e0ffbfa5ab5f6487f10051',
     v3Referrals: '0xdf0c59514877f38a7b59bd7db1422217ab25714b',
-    codeVaultFactory: '0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d'
+    codeVaultFactory: '0x99a64dbee205defe571fe427970009ee80a2fa3f',
+    v4Exchange: '0x533d0bc51bafeb1519f1bac93d48c175b1496063',
+    v4ExchangeExt: '0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0',
+    v4Staking: '0x2bf4976eb70cdcc03871ab60977fc4292587ce9a',
+    v4Referrals: '0x1dcdbe02568169a777ad6d2b3c5edcf5058780da',
+    v4Oracle: '0x1fa6c831868527c65c33e14fd2456855458e03ba',
+    v4MarketRules: '0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d',
+    v4SessionRouter: '0x5477ab941a551874596aeeb16d3bcf79a120351d',
+    v4DepositFactory: '0xe5bb8b4703787f428aaa6a3755add72b9c82fb75',
+    v4CodeVaultFactory: '0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d',
+    v5Exchange: '',
+    v5ExchangeExt: '',
+    v5Staking: '',
+    v5Referrals: '',
+    v5Oracle: '',
+    v5MarketRules: '',
+    v5SessionRouter: '',
+    v5DepositFactory: '',
+    v5CodeVaultFactory: '',
+    triggerBook: '0xf4D5eBBeB7f4d2fC47497Df23FB38071C625b8D7'
   };
   /* ---- END PINNED CONTRACTS ---- */
   /* HyperSwap V2's FETTI / WHYPE pool for the Confetti page's buy / sell box. External contracts,
@@ -251,7 +270,7 @@
   }
 
   /* A position's liquidation price, as bustPrice(positionId) works it. */
-  function posBust18(p) { return bustPrice18(rawEntry18(p.entryPx18, p.isLong, p.entryDeadbandBps), p.isLong, p.leverage); }
+  function posBust18(p) { return p.bust18 != null ? p.bust18 : bustPrice18(rawEntry18(p.entryPx18, p.isLong, p.entryDeadbandBps), p.isLong, p.leverage); }
 
   /* A position's liquidation price, how far the price now is from it, and its colour: amber
      under half of the full liquidation move, red under a fifth. */
@@ -353,6 +372,14 @@
   function deployBlock() { return Number(cfg.deployBlock) > 0 ? Number(cfg.deployBlock) : 0; }
   function v2DeployBlock() { return Number(cfg.v2DeployBlock) > 0 ? Number(cfg.v2DeployBlock) : 0; }
   function v3DeployBlock() { return Number(cfg.v3DeployBlock) > 0 ? Number(cfg.v3DeployBlock) : 0; }
+  function v4DeployBlock() { return Number(cfg.v4DeployBlock) > 0 ? Number(cfg.v4DeployBlock) : 0; }
+  function v5DeployBlock() { return Number(cfg.v5DeployBlock) > 0 ? Number(cfg.v5DeployBlock) : 0; }
+  /* a v5 config: contracts.exchange is the v5 Exchange and v4 lives on as contracts.v4Exchange (ops/write_config.py) */
+  function isV5() { return !!cfg && Number(cfg.version) >= 5; }
+  /* a version-6 config: contracts.exchange is the launch Exchange (the one with the TriggerBook). The launch is one move from
+     v4 (MIGRATION_ONE): the config carries v4 for its run-off (v4.html) and NO v5 generation; the v5* pins stay empty and the
+     read.v5 below is made only for a config that names a v5 Exchange, which the launch's never does. There is no v5 page. */
+  function isV6() { return !!cfg && Number(cfg.version) >= 6; }
 
   /* ---- house bots (config.json "houseBots"): left out of every public number when listed ---- */
 
@@ -549,8 +576,73 @@
     'error CloseAlreadyPending()'
   ];
 
-  var read = { provider: null, logProvider: null, ex: null, staking: null, confetti: null, v3Staking: null, v2: null, v3: null };
-  var exIface = null, stIface = null, cfIface = null, v2Iface = null, v3Iface = null;
+  /* The v4 Exchange once the site is on v5 (config contracts.v4Exchange, written by ops/write_config.py --version 5):
+     what the v4 page needs to close out and withdraw, and Portfolio's three balance reads for its link. v4's own
+     struct shapes, frozen here (v4 is immutable): the same fragments EXCHANGE_ABI carried while v4 was the live
+     exchange. To be checked by ops/check_site_abi.js against the v4 build (ops/abi/v4). */
+  var V4_EXCHANGE_ABI = [
+    'function balanceOf(address user) view returns (uint256 availableUsdc)',
+    'function marginInUse(address user) view returns (uint256 usdc)',
+    'function pendingOf(address user) view returns (uint256 usdc)',
+    'function positionIdsOf(address user) view returns (uint256[])',
+    'function positions(uint256 positionId) view returns (tuple(address owner, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint96 maxProfitUsdc, uint256 entryPx18, uint64 openedAt, uint16 deadbandBps, uint16 payoutCapX, uint16 winFeeBps, uint16 lossFeeBps, uint16 entryDeadbandBps, uint16 borrowRateX10, uint16 borrowFreeHours))',
+    'function previewClose(uint256 positionId) view returns (int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc)',
+    'function execPrice(uint32 instrumentId, bool isLong, bool isOpen) view returns (uint256 px18)',
+    'function openRequest(uint256 requestId) view returns (tuple(address trader, uint32 instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint64 requestedAt, uint256 px0, address referrer))',
+    'function closeRequest(uint256 positionId) view returns (tuple(uint64 requestedAt, uint256 px0))',
+    'function instrument(uint32 instrumentId) view returns (tuple(uint32 hlAssetIndex, uint8 szDecimals, uint8 tier, uint32 maxLeverage, uint16 deadbandBps, uint16 clampBps, uint16 baseRateBps, uint64 rateMultiplier, uint128 referenceNotionalUsd, uint128 positionMultiplierE6, uint128 longOiCapUsd, uint128 shortOiCapUsd, uint128 maxNotionalUsd, uint16 payoutCapX, uint16 posX10, uint16 sideX10, uint16 stressBps, uint16 entryDeadbandBps, uint16 borrowRateX10, bool opensPaused, bool retired, uint256 lastPx18))',
+    'function instrumentCount() view returns (uint32)',
+    'function minDelay() view returns (uint32)',
+    'function grace() view returns (uint32)',
+    'function expiry() view returns (uint32)',
+    'function usdc() view returns (address)',
+    'function withdraw(uint256 amountUsdc)',
+    'function requestClose(uint256 positionId)',
+    'function executeClose(uint256 positionId) returns (uint256 payoutUsdc, uint256 queuedUsdc)',
+    'function cancelClose(uint256 positionId)',
+    'function cancelOpen(uint256 requestId)',
+    'event OpenRequested(uint256 indexed requestId, address indexed trader, uint32 indexed instrumentId, bool isLong, uint128 marginUsdc, uint32 leverage, uint256 px0, address referrer)',
+    'error ZeroAmount()',
+    'error InsufficientBalance(uint256 availableUsdc, uint256 requestedUsdc)',
+    'error UnknownPosition(uint256 positionId)',
+    'error NotPositionOwner(uint256 positionId, address caller)',
+    'error UnknownRequest()',
+    'error TooEarly()',
+    'error KeeperWindow()',
+    'error RequestExpired()',
+    'error RequestNotExpired()',
+    'error CloseAlreadyPending()',
+    'error SafeERC20FailedOperation(address token)'
+  ];
+
+  /* v5 (a config with "version" 5 or more): what Portfolio and the leaderboard need on top of EXCHANGE_ABI. The
+     size fee each fill charged (TradeFeeCharged: kind 0 an open, 1 a close), a position's stamp (tradeFeeOf, tenths
+     of a bp of the stake a side) and a share close (PositionPartiallyClosed). Joined to the exchange's ABI on v5 only
+     (exchangeAbi); V5P_SPEC section 13. After the second review (16.1): margin added to a position (MarginAdded), and
+     the part of it a liquidation gave back because it was added too late for the liquidating price (MarginReturned,
+     right after PositionLiquidated in the same transaction). Wave 4 (V5P_SPEC 17): which markets fill on Pyth
+     (fastPricing): Portfolio marks their open P&L as an estimate (FAST_NOTE). */
+  var EXCHANGE_V5_ABI = [
+    'function tradeFeeOf(uint256 positionId) view returns (uint16 shareX10)',
+    'function fastPricing(uint32 instrumentId) view returns (tuple(bool on, uint32 delay, uint16 maxDevBps, uint16 maxConfBps))',
+    'function bustPrice(uint256 positionId) view returns (uint256 px18)',
+    'event TradeFeeCharged(uint256 indexed positionId, address indexed trader, uint8 indexed kind, uint256 notionalUsdc, uint256 feeUsdc)',
+    'event MarginAdded(uint256 indexed positionId, address indexed owner, uint256 amountUsdc, uint64 addedMarginUsdc, uint256 bustPx18)',
+    'event MarginReturned(uint256 indexed positionId, address indexed owner, uint256 amountUsdc)',
+    'event PositionPartiallyClosed(uint256 indexed positionId, address indexed owner, uint256 exitPx18, int256 pnlUsdc, uint256 feeUsdc, uint256 payoutUsdc, uint256 queuedUsdc, uint256 borrowUsdc, bool keeperFill, uint16 bps, uint128 closedMarginUsdc, uint128 marginUsdc, uint64 addedMarginUsdc, uint96 maxProfitUsdc)'
+  ];
+  function exchangeAbi() { return isV5() ? EXCHANGE_ABI.concat(EXCHANGE_V5_ABI) : EXCHANGE_ABI; }
+  /* v5, a fast market (V5P_SPEC 17): Portfolio's open P&L is the contract's own figure at the HyperCore price (previewClose),
+     the scale its close settles on, but a close there fills at the market price of its own second (a Pyth print the
+     page cannot read), a few bps away: the figure says "≈" and its title says why. The trade page prices these
+     positions on the latest print the exchange logged (trade.js fastPx18). */
+  var FAST_NOTE = ' This market closes at the market price of its own second, which can differ from this a little.';
+  function pnlText(p) { return (p.fast ? '≈ ' : '') + fmtUsd(p.pnl, true); }
+  /* v5: the fee on a stake at a stamp, as Exchange._sizeFee works it: floor(stake x share / 100000), in micro-dollars */
+  function sizeFee6(shareX10, margin6) { return shareX10 > 0 ? BigInt(margin6) * BigInt(shareX10) / 100000n : 0n; }
+
+  var read = { provider: null, logProvider: null, ex: null, staking: null, confetti: null, v3Staking: null, v2: null, v3: null, v4: null };
+  var exIface = null, stIface = null, cfIface = null, v2Iface = null, v3Iface = null, v4Iface = null, v5Iface = null;
 
   function makeProvider(url) {
     return new window.ethers.JsonRpcProvider(url, { chainId: CHAIN_ID, name: 'hyperevm' }, {
@@ -562,12 +654,12 @@
 
   function initRead() {
     var E = window.ethers;
-    exIface = new E.Interface(EXCHANGE_ABI);
+    exIface = new E.Interface(exchangeAbi());
     stIface = new E.Interface(STAKING_ABI);
     cfIface = new E.Interface(CONFETTI_ABI);
     read.provider = makeProvider(cfg.rpcUrl);
     read.logProvider = cfg.logRpcUrl && cfg.logRpcUrl !== cfg.rpcUrl ? makeProvider(cfg.logRpcUrl) : read.provider;
-    read.ex = cfg.contracts.exchange ? new E.Contract(cfg.contracts.exchange, EXCHANGE_ABI, read.provider) : null;
+    read.ex = cfg.contracts.exchange ? new E.Contract(cfg.contracts.exchange, exchangeAbi(), read.provider) : null;
     if (cfg.contracts.v2Exchange) {
       v2Iface = new E.Interface(V2_EXCHANGE_ABI);
       read.v2 = new E.Contract(cfg.contracts.v2Exchange, V2_EXCHANGE_ABI, read.provider);
@@ -575,6 +667,18 @@
     if (cfg.contracts.v3Exchange) {
       v3Iface = new E.Interface(V3_EXCHANGE_ABI);
       read.v3 = new E.Contract(cfg.contracts.v3Exchange, V3_EXCHANGE_ABI, read.provider);
+    }
+    /* only a v5 config names a v4 Exchange apart from contracts.exchange */
+    if (isV5() && cfg.contracts.v4Exchange) {
+      v4Iface = new E.Interface(V4_EXCHANGE_ABI);
+      read.v4 = new E.Contract(cfg.contracts.v4Exchange, V4_EXCHANGE_ABI, read.provider);
+    }
+    /* only a v6 config names a v5 Exchange apart from contracts.exchange. The run-off page reads and sends to it with
+       the very fragments of the v4 page: every one of them is on v5 under the same selector (v5 adds to the v4
+       interface; positions and closeRequest gain a last field, which these leave unread) */
+    if (isV6() && cfg.contracts.v5Exchange) {
+      v5Iface = new E.Interface(V4_EXCHANGE_ABI);
+      read.v5 = new E.Contract(cfg.contracts.v5Exchange, V4_EXCHANGE_ABI, read.provider);
     }
     bindContracts();
   }
@@ -975,7 +1079,8 @@
     var wc = $('walletChip'), wa = $('walletAddr'), cb = $('connectBtn');
     if (wc && wa && cb) {
       if (wallet.account) {
-        wa.textContent = shortAddr(wallet.account);
+        /* a phone's bar holds the House key, this one and Menu: the dot and the last 4 under 400 px (as the trade page's bar) */
+        wa.textContent = window.innerWidth < 400 ? String(wallet.account).slice(-4) : shortAddr(wallet.account);
         wc.hidden = false;
         wc.classList.remove('is-off');
         cb.hidden = true;
@@ -1187,7 +1292,9 @@
   /* Error(string) reverts worth a plain line (HyperSwap's router reverts with strings). */
   var REVERT_TEXT = [
     [/INSUFFICIENT_OUTPUT_AMOUNT/, 'Price moved, raise slippage or try again.'],
-    [/Router: EXPIRED/, 'Deadline passed, try again.']
+    [/Router: EXPIRED/, 'Deadline passed, try again.'],
+    /* a call the chain would not run, with no reason given (ethers' words): said plainly, nothing was sent */
+    [/missing revert data|CALL_EXCEPTION|could not coalesce error/i, "That didn't go through just now, and nothing moved."]
   ];
 
   function walkError(err, fn) {
@@ -1206,7 +1313,7 @@
     var data = null, text = null;
     walkError(err, function (e) { if (typeof e.data === 'string' && /^0x[0-9a-f]{8}/i.test(e.data)) { data = e.data; return true; } return false; });
     if (data) {
-      var ifs = [stIface, cfIface, exIface, v2Iface, v3Iface];
+      var ifs = [stIface, cfIface, exIface, v2Iface, v3Iface, v4Iface, v5Iface];
       for (var i = 0; i < ifs.length; i++) {
         try {
           var p = ifs[i] && ifs[i].parseError(data);
@@ -1223,7 +1330,7 @@
     if (!text) text = String(err.message || err);
     for (var j = 0; j < REVERT_TEXT.length; j++) if (REVERT_TEXT[j][0].test(text)) return REVERT_TEXT[j][1];
     text = text.replace(/\s*\(.*action=.*$/s, '').replace(/^execution reverted:?\s*/i, "That didn't go through: ");
-    if (/insufficient funds/i.test(text)) return 'You need a little HYPE on HyperEVM to pay network fees (about 0.01).';
+    if (/insufficient funds/i.test(text)) return 'You need a little HYPE on HyperEVM for the network (about 0.01).';
     return text.length > 220 ? text.slice(0, 220) + '…' : text;
   }
 
@@ -1349,11 +1456,18 @@
         addr: addr, acct: null, positions: [], conf: null,
         rows: [], seen: {}, opened: {}, scannedTo: null, scanning: false, shown: HIST_PAGE,
         agg: { realised: 0, fees: 0, closed: 0, won: 0, liq: 0 },
-        old: { v2: false, v3: false }, oldAt: 0
+        old: { v2: false, v3: false, v4: false }, oldAt: 0,
+        /* v5: fees (position id -> { open, close: { tx hash -> fee } }, from TradeFeeCharged) and the stake each
+           position still has open after its part closes (position id -> USD) */
+        fees: {}, left: {},
+        /* v5: what a liquidation gave back of margin added too late ('position id:tx hash' -> USD) */
+        back: {}
       };
     }
 
     function who() { return forcedAddr() || wallet.account || null; }
+    /* what went into an open position: its stake, the margin added and, on v5, the open fee (readAccount) */
+    function putIn(p) { return p.putIn != null ? p.putIn : p.margin; }
 
     function readAccount() {
       var ex = read.ex, a = pf.addr;
@@ -1363,27 +1477,38 @@
       ]).then(function (r) {
         var ids = Array.from(r[3]).map(function (x) { return BigInt(x); });
         return Promise.all(ids.map(function (id) {
-          return Promise.all([ex.positions(id), ex.previewClose(id).catch(none)]);
+          /* v5: the chain's own liquidation price too; it is used when margin was added (the price moves with it) */
+          return Promise.all([ex.positions(id), ex.previewClose(id).catch(none), isV5() ? ex.tradeFeeOf(id).catch(none) : null, isV5() ? ex.bustPrice(id).catch(none) : null]);
         })).then(function (rows) {
           var positions = [];
           rows.forEach(function (row, i) {
             var p = row[0], pv = row[1];
             if (!p || p.owner === ZERO) return;
+            /* v5: the open fee this stake paid and the close fee its payout already carries (previewClose is after
+               it; the stamped one unless less than that was left). P&L and "put in" are counted against
+               everything that went in: the stake, the margin added and the open fee. */
+            var share = row[2] != null ? Number(row[2]) : 0, coll = usd6(p.marginUsdc) + (p.length > 15 ? usd6(p[15]) : 0);
+            var openFee = usd6(sizeFee6(share, p.marginUsdc)), gross = pv ? usd6(pv[0]) : null;
+            var closeFee = gross == null ? 0 : Math.min(openFee, Math.max(0, coll + gross));
             positions.push({
               id: ids[i], instrumentId: Number(p.instrumentId), isLong: !!p.isLong, margin: usd6(p.marginUsdc),
               leverage: Number(p.leverage), entry: px18(p.entryPx18),
               /* the 1e18 entry and its spread, for the liquidation price (the phone rows) */
               entryPx18: BigInt(p.entryPx18), entryDeadbandBps: Number(p.entryDeadbandBps) || 0,
-              pnl: pv ? usd6(pv[0]) : null, fee: pv ? usd6(pv[1]) : null, payout: pv ? usd6(pv[2]) : null
+              bust18: coll > usd6(p.marginUsdc) && row[3] != null && BigInt(row[3]) > 0n ? BigInt(row[3]) : null,
+              openFee: openFee, putIn: coll + openFee,
+              pnl: gross != null ? gross - closeFee - openFee : null, fee: pv ? usd6(pv[1]) : null, payout: pv ? usd6(pv[2]) : null
             });
           });
           positions.sort(function (x, y) { return x.id < y.id ? -1 : 1; });
           var instIds = [];
           positions.forEach(function (p) { if (instIds.indexOf(p.instrumentId) < 0) instIds.push(p.instrumentId); });
-          return Promise.all(instIds.map(function (id) { return ex.execPrice(id, true, true).then(px18).catch(none); })).then(function (pxs) {
-            var px = {};
-            instIds.forEach(function (id, i) { px[id] = pxs[i]; });
-            positions.forEach(function (p) { p.px = px[p.instrumentId]; });
+          /* v5: and whether each market fills on Pyth (a read that fails counts as not: the plain figure) */
+          var fastReads = isV5() ? instIds.map(function (id) { return ex.fastPricing(id).then(function (f) { return !!(f && f[0]); }, function () { return false; }); }) : [];
+          return Promise.all(instIds.map(function (id) { return ex.execPrice(id, true, true).then(px18).catch(none); }).concat(fastReads)).then(function (pxs) {
+            var px = {}, fast = {};
+            instIds.forEach(function (id, i) { px[id] = pxs[i]; fast[id] = !!pxs[instIds.length + i]; });
+            positions.forEach(function (p) { p.px = px[p.instrumentId]; p.fast = fast[p.instrumentId]; });
             if (!pf || pf.addr !== a) return;
             pf.acct = { available: usd6(r[0]), margin: usd6(r[1]), pending: usd6(r[2]) };
             pf.positions = positions;
@@ -1397,10 +1522,10 @@
        margin or a pending open request (a pending close keeps its position's margin in use). */
     function readOld() {
       var s = pf, a = s.addr;
-      if (!wallet.account || !sameAddr(a, wallet.account)) { s.old = { v2: false, v3: false }; return Promise.resolve(); }
+      if (!wallet.account || !sameAddr(a, wallet.account)) { s.old = { v2: false, v3: false, v4: false }; return Promise.resolve(); }
       if (Date.now() - s.oldAt < V2_EVERY_MS) return Promise.resolve();
       s.oldAt = Date.now();
-      return Promise.all(['v2', 'v3'].map(function (k) {
+      return Promise.all(['v2', 'v3', 'v4'].map(function (k) {
         var ex = read[k];
         if (!ex) { s.old[k] = false; return null; }
         return Promise.all([ex.balanceOf(a), ex.marginInUse(a), ex.pendingOf(a)]).then(function (r) {
@@ -1420,16 +1545,54 @@
           margin: usd6(a.marginUsdc), entry: px18(a.entryPx18), block: p.block
         };
       }
+      /* v5: a size fee. It is money the trader paid, so it comes off the realised result and joins the fees
+         paid at once (rows arrive in chain order: an open's fee right after its open, a close's right after its
+         close). Kept against its position for the rows; not a row of its own. */
+      if (p.name === 'TradeFeeCharged') {
+        var fk = String(a.positionId), hf = pf.fees[fk] || (pf.fees[fk] = { open: 0, close: {} }), fee = usd6(a.feeUsdc);
+        if (Number(a.kind) === 0) hf.open = fee; else hf.close[String(p.tx).toLowerCase()] = fee;
+        pf.agg.realised -= fee; pf.agg.fees += fee;
+        return;
+      }
+      if (p.name === 'PositionOpened') pf.left[String(a.positionId)] = usd6(a.marginUsdc);
+      /* v5: margin a liquidation returned. Not a result: the liquidation's own marginUsdc is already without it. */
+      if (p.name === 'MarginReturned') pf.back[String(a.positionId) + ':' + String(p.tx).toLowerCase()] = usd6(a.amountUsdc);
       if (p.name === 'PositionClosed') {
         var pnl = usd6(a.pnlUsdc);
         pf.agg.realised += pnl; pf.agg.fees += usd6(a.feeUsdc); pf.agg.closed += 1;
-        if (pnl > 0) pf.agg.won += 1;
+        /* a win is a close that paid back more than went in (v5: after both size fees) */
+        p.feeOpen = feeShare(p, null);
+        if (pnl - rowFees(p).close - p.feeOpen > 0) pf.agg.won += 1;
+      }
+      /* v5: a share close; the position stays open with the rest */
+      if (p.name === 'PositionPartiallyClosed') {
+        pf.agg.realised += usd6(a.pnlUsdc); pf.agg.fees += usd6(a.feeUsdc);
+        p.feeOpen = feeShare(p, usd6(a.closedMarginUsdc));
+        pf.left[String(a.positionId)] = usd6(a.marginUsdc);
       }
       if (p.name === 'PositionLiquidated') {
         pf.agg.realised -= usd6(a.marginUsdc); pf.agg.fees += usd6(a.feeUsdc); pf.agg.closed += 1; pf.agg.liq += 1;
+        p.feeOpen = feeShare(p, null);
       }
       pf.rows.push(p);
     }
+
+    /* v5: the share of a position's open fee that the stake leaving in this row paid: by stake for a part close
+       (closed: its stake), what is left of it for a whole close or a liquidation. 0 on v4 and when no fee was
+       charged; when the open is older than what was read, a close takes it as equal to its own close fee. */
+    function feeShare(p, closed) {
+      if (!isV5()) return 0;
+      var pid = String(p.args.positionId), hf = pf.fees[pid], o = pf.opened[pid], left = pf.left[pid];
+      if (!hf || !(hf.open > 0) || !o || !(o.margin > 0)) return hf && p.name !== 'PositionLiquidated' ? hf.close[String(p.tx).toLowerCase()] || 0 : 0;
+      return hf.open * (closed != null ? closed : left != null ? left : o.margin) / o.margin;
+    }
+    /* v5: { open, close } the size fees of one closing row (close: what that fill charged) */
+    function rowFees(p) {
+      var hf = isV5() ? pf.fees[String(p.args.positionId)] : null;
+      return { open: p.feeOpen || 0, close: hf && p.name !== 'PositionLiquidated' ? hf.close[String(p.tx).toLowerCase()] || 0 : 0 };
+    }
+    /* a closing row's result against what went in */
+    function rowNet(p) { var rf = rowFees(p); return usd6(p.args.pnlUsdc) - rf.close - rf.open; }
 
     /* Every Exchange event naming the address, from deployBlock on, read once and then followed. */
     function scanHistory() {
@@ -1444,13 +1607,15 @@
       var t = function (n) { return topic(exIface, n); };
       return scanLogs([
         { address: ex, topics: [[t('Deposited'), t('Withdrawn')], user] },
-        { address: ex, topics: [[t('PositionOpened'), t('PositionClosed'), t('PositionLiquidated'), t('OpenRequestCancelled'), t('QueueAppended'), t('QueuePaid')], null, user] }
+        { address: ex, topics: [[t('PositionOpened'), t('PositionClosed'), t('PositionLiquidated'), t('OpenRequestCancelled'), t('QueueAppended'), t('QueuePaid')].concat(isV5() ? [t('TradeFeeCharged'), t('PositionPartiallyClosed'), t('MarginAdded'), t('MarginReturned')] : []), null, user] }
       ], from, to).then(function (logs) {
         s.scanning = false;
         if (pf !== s) return;
-        logs.map(function (l) { return parseLog(exIface, l); }).filter(Boolean)
-          .sort(function (x, y) { return x.block - y.block || x.index - y.index; })
-          .forEach(addRow);
+        var parsed = logs.map(function (l) { return parseLog(exIface, l); }).filter(Boolean)
+          .sort(function (x, y) { return x.block - y.block || x.index - y.index; });
+        /* v5: the fee logs first (a close's fee is logged right after its close, and the close's row needs it) */
+        parsed.filter(function (p) { return p.name === 'TradeFeeCharged'; }).forEach(addRow);
+        parsed.filter(function (p) { return p.name !== 'TradeFeeCharged'; }).forEach(addRow);
         s.rows.sort(function (x, y) { return y.block - x.block || y.index - x.index; });
         s.scannedTo = to;
       }, function (e) { s.scanning = false; throw e; });
@@ -1462,14 +1627,14 @@
     function dkPositionLine(p) {
       var sz = szOf(p.instrumentId), sym = symOf(p.instrumentId);
       var line = el('div', 'pos-line dk-row ' + (p.isLong ? 'is-long' : 'is-short'));
-      line.title = 'Position #' + p.id + ' · size ' + fmtUsd(p.margin * p.leverage) + ' · put in ' + fmtUsd(p.margin);
+      line.title = 'Position #' + p.id + ' · size ' + fmtUsd(p.margin * p.leverage) + ' · put in ' + fmtUsd(putIn(p));
       var who = dkCell('dk-who');
       who.appendChild(el('span', 'pc-side', p.isLong ? 'LONG' : 'SHORT'));
       who.appendChild(el('span', 'pc-sym', sym));
       who.appendChild(el('span', 'pc-lev', p.leverage + 'x'));
       line.appendChild(who);
       line.appendChild(dkCell('dk-num', fmtUsd(p.margin * p.leverage)));
-      line.appendChild(dkCell('dk-num', fmtUsd(p.margin)));
+      line.appendChild(dkCell('dk-num', fmtUsd(putIn(p))));
       line.appendChild(dkCell('dk-num', fmtPrice(p.entry, sz)));
       line.appendChild(dkCell('dk-num', fmtPrice(p.px, sz)));
       var room = liqRoom(p, p.px);
@@ -1486,10 +1651,10 @@
       if (room.cls === 'is-red') line.classList.add('is-near');
       var known = p.pnl != null && isFinite(p.pnl);
       var cls = known ? signCls(p.pnl) : '';
-      var pnl = dkCell('dk-num' + (cls ? ' ' + cls : ''), known ? fmtUsd(p.pnl, true) : '—');
-      if (p.payout != null) pnl.title = 'a close now pays about ' + fmtUsd(p.payout) + (p.fee ? ' · fee ' + fmtUsd(p.fee) : '');
+      var pnl = dkCell('dk-num' + (cls ? ' ' + cls : ''), known ? pnlText(p) : '—');
+      if (p.payout != null) pnl.title = 'a close now pays about ' + fmtUsd(p.payout) + (p.fast ? '.' + FAST_NOTE : '');
       line.appendChild(pnl);
-      line.appendChild(dkCell('dk-num dk-pct' + (cls ? ' ' + cls : ''), known ? fmtPct1(p.pnl / p.margin) : ''));
+      line.appendChild(dkCell('dk-num dk-pct' + (cls ? ' ' + cls : ''), known ? fmtPct1(p.pnl / putIn(p)) : ''));
       var act = dkCell('dk-act');
       var go = el('a', 'btn btn-sm btn-ghost', 'Trade');
       go.href = 'trade.html#' + encodeURIComponent(sym);
@@ -1511,8 +1676,8 @@
       line.appendChild(e);
       var x = el('span', 'faint', '→ ' + fmtPrice(p.px, sz)); x.title = 'oracle now';
       line.appendChild(x);
-      var pnl = el('span', signCls(p.pnl), p.pnl != null ? fmtUsd(p.pnl, true) : '—');
-      if (p.payout != null) pnl.title = 'a close now pays ' + fmtUsd(p.payout) + (p.fee ? ' · fee ' + fmtUsd(p.fee) : '');
+      var pnl = el('span', signCls(p.pnl), p.pnl != null ? pnlText(p) : '—');
+      if (p.payout != null) pnl.title = 'a close now pays ' + fmtUsd(p.payout) + (p.fast ? '.' + FAST_NOTE : '');
       line.appendChild(pnl);
       line.appendChild(el('span', 'grow'));
       var go = el('a', 'btn btn-sm btn-ghost', 'Trade');
@@ -1538,8 +1703,8 @@
       var known = p.pnl != null && isFinite(p.pnl);
       var cls = known ? signCls(p.pnl) : '';
       var money = el('span', 'ph-money');
-      money.appendChild(el('span', 'ph-pnl-n' + (cls ? ' ' + cls : ''), known ? fmtUsd(p.pnl, true) : '—'));
-      money.appendChild(el('span', 'ph-pct' + (cls ? ' ' + cls : ''), known ? fmtPct1(p.pnl / p.margin) : ''));
+      money.appendChild(el('span', 'ph-pnl-n' + (cls ? ' ' + cls : ''), known ? pnlText(p) : '—'));
+      money.appendChild(el('span', 'ph-pct' + (cls ? ' ' + cls : ''), known ? fmtPct1(p.pnl / putIn(p)) : ''));
       a.appendChild(money);
       var room = liqRoom(p, p.px);
       var full = bustMovePct(p.leverage) / 100;
@@ -1553,12 +1718,12 @@
       liq.appendChild(el('span', 'ph-away' + tone, isFinite(room.away) ? fmtAway(room.away) + ' away' : 'Liquidation —'));
       a.appendChild(liq);
       if (room.cls === 'is-red') a.classList.add('is-near');
-      if (p.payout != null) a.title = 'a close now pays about ' + fmtUsd(p.payout) + (p.fee ? ' · fee ' + fmtUsd(p.fee) : '');
+      if (p.payout != null) a.title = 'a close now pays about ' + fmtUsd(p.payout) + (p.fast ? '.' + FAST_NOTE : '');
       a.setAttribute('aria-label', (p.isLong ? 'Long' : 'Short') + ' ' + sym + ' ' + p.leverage + 'x. ' +
-        (known ? 'P&L ' + fmtUsd(p.pnl, true) + ', ' + fmtPct1(p.pnl / p.margin) + '. ' : '') +
+        (known ? 'P&L ' + (p.fast ? 'about ' : '') + fmtUsd(p.pnl, true) + ', ' + fmtPct1(p.pnl / putIn(p)) + '. ' : '') +
         'Entry ' + fmtPrice(p.entry, sz) + ', now ' + fmtPrice(p.px, sz) +
         (isFinite(room.liq) ? ', liquidation ' + fmtPrice(room.liq, sz) + (isFinite(room.away) ? ', ' + fmtAway(room.away) + ' away' : '') : '') +
-        '. Put in ' + fmtUsd(p.margin) + ', size ' + fmtUsd(p.margin * p.leverage) + '.' +
+        '. Put in ' + fmtUsd(putIn(p)) + ', size ' + fmtUsd(p.margin * p.leverage) + '.' +
         (p.payout != null ? ' A close now pays about ' + fmtUsd(p.payout) + '.' : '') + ' Opens this position on the trade page.');
       return a;
     }
@@ -1589,19 +1754,33 @@
           break;
         case 'PositionOpened':
           d.label = 'opened'; d.id = String(a.positionId); d.market = symOf(Number(a.instrumentId));
-          d.side = sideLev(a.isLong, a.leverage); d.amount = usd6(a.marginUsdc); d.signed = false;
-          d.details = 'margin ' + fmtUsd(usd6(a.marginUsdc)) + ' · entry ' + fmtPrice(px18(a.entryPx18));
+          /* what went in: the stake and, on v5, the open fee taken with it */
+          var of0 = isV5() && pf.fees[d.id] ? pf.fees[d.id].open : 0;
+          d.side = sideLev(a.isLong, a.leverage); d.amount = usd6(a.marginUsdc) + of0; d.signed = false;
+          d.details = (of0 > 0 ? 'put in ' + fmtUsd(d.amount) + ' · ' : '') + 'margin ' + fmtUsd(usd6(a.marginUsdc)) + ' · entry ' + fmtPrice(px18(a.entryPx18));
           break;
         case 'PositionClosed':
-          d.label = 'closed'; byPid(); d.amount = usd6(a.pnlUsdc);
+        case 'PositionPartiallyClosed':
+          d.label = r.name === 'PositionClosed' ? 'closed' : 'closed ' + (Number(a.bps) / 100) + '%'; byPid(); d.amount = rowNet(r);
           d.details = 'exit ' + fmtPrice(px18(a.exitPx18)) + ' · paid ' + fmtUsd(usd6(a.payoutUsdc));
           if (a.queuedUsdc > 0n) d.details += ' · queued ' + fmtUsd(usd6(a.queuedUsdc));
-          if (a.feeUsdc > 0n) d.details += ' · fee ' + fmtUsd(usd6(a.feeUsdc));
           if (a.borrowUsdc > 0n) d.details += ' · borrow ' + fmtUsd(usd6(a.borrowUsdc));
           break;
         case 'PositionLiquidated':
-          d.label = 'liquidated'; byPid(); d.amount = -usd6(a.marginUsdc);
-          d.details = 'exit ' + fmtPrice(px18(a.exitPx18)) + ' · fee ' + fmtUsd(usd6(a.feeUsdc));
+          /* what was put in and is gone: the collateral and, on v5, the open fee paid at the fill */
+          d.label = 'liquidated'; byPid(); d.amount = -(usd6(a.marginUsdc) + rowFees(r).open);
+          d.details = 'exit ' + fmtPrice(px18(a.exitPx18));
+          /* v5: margin added too late for that price was not at stake and came back (MarginReturned) */
+          d.back = pf.back[d.id + ':' + String(r.tx).toLowerCase()] || 0;
+          if (d.back > 0) d.details += ' · ' + fmtUsd(d.back) + ' of late margin returned';
+          break;
+        case 'MarginAdded':
+          d.label = 'margin added'; byPid(); d.amount = usd6(a.amountUsdc); d.signed = false;
+          d.details = 'liquidation now ' + fmtPrice(px18(a.bustPx18));
+          break;
+        case 'MarginReturned':
+          d.label = 'margin returned'; byPid(); d.amount = usd6(a.amountUsdc); d.signed = false;
+          d.details = 'added too late for the price that liquidated it';
           break;
         case 'QueueAppended':
           d.label = 'queued'; d.amount = usd6(a.amountUsdc); d.signed = false; d.details = 'entry #' + a.index + ' · owed';
@@ -1626,7 +1805,7 @@
        sentence, the row's tone. o: the position's open (pf.opened), sz its size decimals. */
     function detailParts(r, d, o, sz) {
       var a = r.args;
-      var what = { deposit: 'Deposit', dividend: 'Dividend', withdraw: 'Withdrawal', opened: 'Opened', closed: 'Closed', liquidated: 'Liquidated', queued: 'Win owed', 'queue paid': 'Owed win paid', refunded: 'Refunded' }[d.label] || d.label;
+      var what = { deposit: 'Deposit', dividend: 'Dividend', withdraw: 'Withdrawal', opened: 'Opened', closed: 'Closed', liquidated: 'Liquidated', 'margin added': 'Margin added', 'margin returned': 'Margin returned', queued: 'Win owed', 'queue paid': 'Owed win paid', refunded: 'Refunded' }[d.label] || d.label.charAt(0).toUpperCase() + d.label.slice(1);
       var side = d.side ? d.side.charAt(0).toUpperCase() + d.side.slice(1) : null;
       var parts = [], sentence = null, cls = '';
       switch (r.name) {
@@ -1635,17 +1814,24 @@
         case 'PositionClosed':
           parts.push((o ? fmtPrice(o.entry, sz) + ' → ' : 'at ') + fmtPrice(px18(a.exitPx18), sz));
           parts.push(fmtUsd(usd6(a.payoutUsdc)) + ' back');
-          if (a.feeUsdc > 0n && a.pnlUsdc > 0n) parts.push('fee ' + fmtUsd(usd6(a.feeUsdc)));
           if (a.borrowUsdc > 0n) parts.push('borrow ' + fmtUsd(usd6(a.borrowUsdc)));
           if (a.queuedUsdc > 0n) parts.push(fmtUsd(usd6(a.queuedUsdc)) + ' owed');
           cls = d.amount > 0 ? ' is-win' : d.amount < 0 ? ' is-loss' : '';
           break;
+        case 'PositionPartiallyClosed':
+          parts.push((o ? fmtPrice(o.entry, sz) + ' → ' : 'at ') + fmtPrice(px18(a.exitPx18), sz));
+          parts.push(fmtUsd(usd6(a.payoutUsdc)) + ' back');
+          parts.push('the rest stays open');
+          cls = d.amount > 0 ? ' is-win' : d.amount < 0 ? ' is-loss' : '';
+          break;
         case 'PositionLiquidated':
           parts.push('at ' + fmtPrice(px18(a.exitPx18), sz));
-          if (a.feeUsdc > 0n) parts.push('fee ' + fmtUsd(usd6(a.feeUsdc)));
-          sentence = 'You lost the ' + fmtUsdShort(usd6(a.marginUsdc)) + ' you put in. Nothing more is owed.';
+          sentence = d.back > 0 ? 'You lost the ' + fmtUsdShort(-d.amount) + ' that was in it. The ' + fmtUsdShort(d.back) + ' you added came too late for that price and is back in your balance. Nothing more is owed.'
+            : 'You lost the ' + fmtUsdShort(-d.amount) + ' you put in. Nothing more is owed.';
           cls = ' is-liq';
           break;
+        case 'MarginAdded': parts.push('liquidation now ' + fmtPrice(px18(a.bustPx18), sz)); break;
+        case 'MarginReturned': parts.push('added too late for the price that liquidated it'); break;
         case 'QueueAppended': parts.push('paid automatically'); break;
         case 'QueuePaid': if (a.remainingUsdc > 0n) parts.push(fmtUsd(usd6(a.remainingUsdc)) + ' still owed'); break;
         case 'OpenRequestCancelled': parts.push("didn't open"); break;
@@ -1775,7 +1961,7 @@
         return {
           id: String(r.args.positionId), sym: symOf(o.instrumentId), coin: inst ? inst.coin : null, szDecimals: inst ? inst.szDecimals : null,
           side: o.isLong ? 'long' : 'short', lev: o.leverage, margin: o.margin, entry: o.entry,
-          exit: px18(r.args.exitPx18), pnl: usd6(r.args.pnlUsdc), openTs: ts[0], closeTs: ts[1], account: addr
+          exit: px18(r.args.exitPx18), pnl: rowNet(r), openTs: ts[0], closeTs: ts[1], account: addr
         };
       });
     }
@@ -1790,8 +1976,8 @@
           if (forcedAddr() && (!wallet.account || wallet.account.toLowerCase() !== pf.addr.toLowerCase())) sub.appendChild(document.createTextNode(' · viewing'));
         }
       }
-      ['v2', 'v3'].forEach(function (k) {
-        var l = $(k === 'v2' ? 'pfV2' : 'pfV3');
+      ['v2', 'v3', 'v4'].forEach(function (k) {
+        var l = $(k === 'v2' ? 'pfV2' : k === 'v3' ? 'pfV3' : 'pfV4');
         if (l) l.hidden = !(pf && pf.old[k] && wallet.account && sameAddr(pf.addr, wallet.account));
       });
       var ids = ['pfAvail', 'pfMargin', 'pfOpenPnl', 'pfEquity', 'pfRealised', 'pfFees', 'pfClosed', 'pfConf', 'pfStaked', 'pfEarned'];
@@ -1824,7 +2010,7 @@
         valCell('pfEarned', fmtUsd(pf.conf.earned), '', 'USDC; claims land in your wallet');
       }
       var done = pf.scannedTo != null;
-      valCell('pfRealised', done ? fmtUsd(pf.agg.realised, true) : '…', done ? signCls(pf.agg.realised) : '', 'closes and liquidations, after fees');
+      valCell('pfRealised', done ? fmtUsd(pf.agg.realised, true) : '…', done ? signCls(pf.agg.realised) : '', 'closes and liquidations, after everything they cost');
       valCell('pfFees', done ? fmtUsd(pf.agg.fees) : '…');
       valCell('pfClosed', done ? fmtInt(pf.agg.closed) + ' · ' + fmtInt(pf.agg.won) + ' won' + (pf.agg.liq ? ' · ' + fmtInt(pf.agg.liq) + ' liquidated' : '') : '…');
 
@@ -2145,8 +2331,8 @@
       var v = h.v;
       if (v) {
         valCell('hsLp', fmtUsd(v.lp), '', 'USDC the house pays from');
-        valCell('hsFeePool', fmtUsd(v.feePool), '', 'fees not yet pushed to stakers and the fee recipient');
-        valCell('hsFree', fmtUsd(v.free), '', 'house cash less the queue and the fee pool');
+        valCell('hsFeePool', fmtUsd(v.feePool), '', 'revenue not yet pushed to stakers and the recipient');
+        valCell('hsFree', fmtUsd(v.free), '', 'house cash less the queue and the revenue pool');
         valCell('hsExposure', fmtUsd(v.exposure));
         valCell('hsRoom', fmtUsd(v.room), v.room > 0 ? '' : 'neg', 'exposure allowed: ' + (v.rhoBps / 100).toFixed(v.rhoBps % 100 ? 2 : 0) + '% of free cash');
         valCell('hsMaxPayout', v.maxPayout != null ? fmtUsd(v.maxPayout) : '—', v.maxPayout != null ? '' : 'faint',
@@ -2205,12 +2391,22 @@
   var confettiPage = (function () {
     var c = { pool: null, me: null, pushes: [], seen: {}, scannedTo: null, deployTs: null, busy: false, note: null };
     var NOTE_MS = 20000;
+    /* FETTI levels and money back (fetti.js, PLAN.md 3.5): the "Your level" card, the counters, the unstake line, and the
+       weekly draw and the FETTI table while their switches are on. null: the page as it was. */
+    var FX = null;
+    function fx() {
+      var f = window.ConfettiFetti;
+      if (!f || !cfg) return null;
+      if (!FX) { FX = f; f.setup(cfg, { demo: !!DEMO }); f.subscribe(function () { renderLevel(); renderCounters(); renderCard(); renderGiveUp(); }); }
+      return f.on() ? f : null;
+    }
 
     function readPool() {
       return Promise.all([
-        read.staking.totalStake(), read.staking.totalRewardsUsdc(), read.confetti.totalSupply()
+        read.staking.totalStake(), read.staking.totalRewardsUsdc(), read.confetti.totalSupply(),
+        read.confetti.balanceOf(DEAD_ADDR).catch(function () { return null; })
       ]).then(function (r) {
-        c.pool = { stake: tok18(r[0]), rewards: usd6(r[1]), supply: tok18(r[2]) };
+        c.pool = { stake: tok18(r[0]), rewards: usd6(r[1]), supply: tok18(r[2]), burned: r[3] == null ? null : tok18(r[3]) };
       });
     }
 
@@ -2292,7 +2488,7 @@
     function pushLine(p) {
       var line = el('div', 'pos-line');
       line.appendChild(timeSpan(p.block));
-      var src = p.from === String(cfg.contracts.exchange).toLowerCase() ? 'fees' : shortAddr(p.from);
+      var src = p.from === String(cfg.contracts.exchange).toLowerCase() ? 'the exchange' : shortAddr(p.from);
       line.appendChild(el('span', null, src));
       line.appendChild(el('span', 'pos', fmtUsd(p.usdc)));
       line.appendChild(el('span', 'grow'));
@@ -2319,12 +2515,99 @@
       renderCard();
     }
 
+    /* ---- FETTI levels and money back: what counts for a level is the active stake and a warm-up that is over ---- */
+    var DEAD_ADDR = '0x000000000000000000000000000000000000dEaD';
+    function countedNow() {
+      var me = c.me;
+      if (!me) return NaN;
+      var warmLeft = me.warmingRaw > 0n && me.activatesAt > chainNow();
+      return tok18(me.stakedRaw - (warmLeft ? me.warmingRaw : 0n));
+    }
+    /* "Your level": the level, what it brings, what is on its way, the next level and a key to the level sheet on the trade page */
+    function renderLevel() {
+      var box = $('cfLevel'), F = fx();
+      if (!box) return;
+      box.hidden = !F;
+      if (!F) return;
+      var l1 = F.level(1), go = $('cfLvGo'), a = wallet.account, me = c.me, m = a ? F.mine(a) : null;
+      var n = 0, cnt = NaN, next = l1, nextS = '', big = 'No level yet', tag = '', sub = '', pend = '—', paid = '—', fine = 'It lands ' + F.holdDays() + ' days after each trade if your FETTI stayed staked.';
+      if (!a) sub = 'Connect a wallet to see your level. Stake ' + F.fmt.fetti(l1.fetti) + ' for Level 1: ' + l1.pct + '% of what your trades pay in comes back.';
+      else if (!me) sub = 'Looking in your wallet…';
+      else {
+        cnt = countedNow(); n = F.levelFor(cnt); next = F.level(n + 1);
+        var warm = me.warmingRaw > 0n && me.activatesAt > chainNow() ? tok18(me.warmingRaw) : 0;
+        if (n > 0) { big = 'Level ' + n; tag = F.pctOf(n) + '% back'; }
+        sub = n > 0 ? fmtTok(cnt) + ' FETTI staked counts.' : 'Stake ' + F.fmt.fetti(l1.fetti) + ' for Level 1: ' + l1.pct + '% of what your trades pay in comes back.';
+        if (warm > 0) sub += ' ' + fmtTok(warm) + ' more counts at ' + fmtTime(me.activatesAt) + '.';
+        if (n > 0) sub += next ? ' ' + F.fmt.fetti(Math.max(0, next.fetti - cnt - warm)) + ' more for Level ' + next.n + ', ' + next.pct + '% back.' : ' That is the top level.';
+        if (m && m.skip) { sub = 'This wallet is one of the house wallets: money back leaves it out.'; next = null; }
+        pend = m && (m.pending >= 0.01 || n > 0) ? fmtUsd(m.pending) : n > 0 ? 'from your next trade' : '—';
+        nextS = m && m.next && m.next.usd >= 0.01 ? fmtUsd(m.next.usd) + ' on ' + F.fmt.day(m.next.at) : '';
+        paid = m ? fmtUsd(m.paid30) : '—';
+      }
+      setText('cfLvBig', big); setText('cfLvTag', tag); var t = $('cfLvTag'); if (t) t.hidden = !tag;
+      setText('cfLvSub', sub); setText('cfLvPend', pend); setText('cfLvNext', nextS); var nr = $('cfLvNextRow'); if (nr) nr.hidden = !nextS; setText('cfLvPaid', paid); setText('cfLvFine', fine);
+      if (go) {
+        go.hidden = !next;
+        if (next) {
+          var q = F.quote(Math.max(0, next.fetti - (isFinite(cnt) ? cnt : 0)));
+          go.textContent = 'Get Level ' + next.n + (q && q.usd > 0 ? ' · about ' + F.fmt.about(q.usd) : '');
+          go.href = 'trade.html?levels=' + next.n;
+        }
+      }
+      if (a) { F.loadPerks(); F.loadPool(120000); }
+      renderExtras(F);
+    }
+    /* the weekly draw and the FETTI table: drawn only while their switch is on (config.json fetti.draw.on / fetti.table.on) */
+    function renderExtras(F) {
+      var dbox = $('cfDraw'), tbox = $('cfTable'), d = F && F.drawOn() ? F.draw() : null;
+      if (dbox) dbox.hidden = !(F && F.drawOn());
+      if (F && F.drawOn()) {
+        F.loadDraw();
+        var mineT = d && wallet.account ? d.tickets[String(wallet.account).toLowerCase()] || 0 : 0;
+        setText('cfDrawPrize', d ? fmtUsd(d.prize) : '—');
+        setText('cfDrawWhen', d && d.drawAt ? F.fmt.day(d.drawAt) + ', ' + F.fmt.clock(d.drawAt) : '—');
+        setText('cfDrawMine', d ? fmtInt(mineT) + ' of ' + fmtInt(d.total) : '—');
+      }
+      var href = F ? F.tableHref() : '';
+      if (tbox) tbox.hidden = !href;
+      var tl = $('cfTableGo'); if (tl && href) tl.href = href;
+    }
+    /* the pool's counters: paid to stakers and money back over 30 days, and the FETTI at the dead address */
+    function renderCounters() {
+      var p = c.pool, F = fx(), a = apr(), t = F ? F.totals() : null, row = $('cfBack30Row');
+      if (a) valCell('cfPaid30', fmtUsd(a.sum), '', 'last ' + Math.max(1, Math.round(a.days)) + ' days');
+      if (row) row.hidden = !F;
+      if (F) valCell('cfBack30', t && t.paid30 != null ? fmtUsd(t.paid30) : '—', '', t && t.wallets ? fmtInt(t.wallets) + ' wallets' : '');
+      if (p) valCell('cfBurned', p.burned != null ? fmtTok(p.burned) + ' FETTI' : '—', '', p.burned != null && p.supply > 0 ? fmtPct(p.burned / p.supply) + ' of all FETTI' : '');
+    }
+    /* Unstaking: what of the money on its way it gives up (the level it leaves behind pays less, or nothing). Said on the
+       card while Unstake is picked, and under the desktop's Unstake. */
+    function giveUpText() {
+      var F = fx(), a = wallet.account, m = F && a ? F.mine(a) : null;
+      if (!m || !(m.pending >= 0.01) || !c.me) return '';
+      var cnt = countedNow(), cur = F.levelFor(cnt);
+      if (!(cur > 0)) return '';
+      var raw = parseAmount(isPhone() ? phInputId() : 'unstakeAmount');
+      if (raw == null) return 'Unstaking gives up what is on its way to you: up to ' + fmtUsd(m.pending) + '.';
+      var after = F.levelFor(Math.max(0, cnt - tok18(raw)));
+      if (after >= cur) return 'You keep Level ' + cur + ': the ' + fmtUsd(m.pending) + ' on its way still comes.';
+      var lost = after > 0 ? m.pending * (1 - F.pctOf(after) / F.pctOf(cur)) : m.pending;
+      return 'Unstaking this gives up ' + fmtUsd(lost) + ' that is on its way to you.';
+    }
+    function renderGiveUp() {
+      var text = giveUpText(), ph1 = $('cfGiveUp'), dk = $('cfGiveUpDk');
+      if (ph1) { ph1.textContent = ph.mode === 'unstake' ? text : ''; ph1.hidden = !ph1.textContent; }
+      if (dk) { dk.textContent = text; dk.hidden = !text; }
+    }
+
     function render() {
       var p = c.pool, me = c.me;
       if (p) {
         valCell('cfTotal', fmtTok(p.stake), '', p.supply > 0 ? fmtPct(p.stake / p.supply) + ' of ' + fmtTok(p.supply) + ' FETTI' : '');
         valCell('cfRewards', fmtUsd(p.rewards), '', 'USDC paid to stakers');
       }
+      renderLevel(); renderCounters();
       var a = apr();
       if (a) {
         valCell('cfPushed', fmtUsd(a.sum) + ' · ' + fmtInt(a.n) + ' push' + (a.n === 1 ? '' : 'es'), '', 'last ' + Math.max(1, Math.round(a.days)) + ' days');
@@ -2399,6 +2682,7 @@
         c.busy = false;
         say('Done.');
         renderForms();
+        if (FX && wallet.account) FX.loadMe(wallet.account, true);
         return refresh();
       }).catch(function (e) {
         c.busy = false;
@@ -2705,7 +2989,7 @@
       var E = window.ethers;
       var noon = new Date(); noon.setHours(12, 0, 0, 0);
       var day = Math.floor(noon.getTime() / 1000), block = 50500000;
-      c.pool = { stake: 1250000, rewards: 18400, supply: 10000000 };
+      c.pool = { stake: 1250000, rewards: 18400, supply: 10000000, burned: 6.13 };
       c.deployTs = day - 120 * 86400;
       c.pushes = [];
       for (var i = 0; i < 12; i++) {
@@ -2733,6 +3017,12 @@
           warmingRaw: E.parseUnits('500', 18), activatesAt: day + 86400,
           v3StakedRaw: v3 ? E.parseUnits('2500', 18) : 0n, v3EarnedRaw: v3 ? 1100000n : 0n, v3BalanceRaw: v3 ? 4200000n : 0n
         };
+        /* with money back on, the pretend holder is fetti.js's (its ?fx= state): a small stake, as a trader would have */
+        var F = fx(), fs = F && F.demoMe ? F.demoMe(wallet.account) : null;
+        if (fs) {
+          c.me.walletRaw = fs.wallet + E.parseUnits('0.4', 18); c.me.stakedRaw = fs.active + fs.warming; c.me.warmingRaw = fs.warming;
+          c.me.activatesAt = fs.warmAt; c.me.allowanceRaw = 0n; c.me.earned = 0.04;
+        }
         sw.me = { fetti: c.me.walletRaw, hype: E.parseUnits('3.25', 18) };
       }
       renderWallet();
@@ -2859,6 +3149,7 @@
           : two ? 'Your wallet asks twice: approve, then stake.' : 'Your wallet asks you to confirm.';
         hint.classList.remove('is-err');
       }
+      renderGiveUp();
     }
 
     function initCard() {
@@ -2880,6 +3171,8 @@
 
     function init() {
       var bind = function (id, fn) { var b = $(id); if (b) b.addEventListener('click', fn); };
+      var ua = $('unstakeAmount'); if (ua) ua.addEventListener('input', renderGiveUp);
+      fx();
       bind('stakeBtn', stake);
       bind('unstakeBtn', unstake);
       bind('claimBtn', claim);
@@ -2933,15 +3226,24 @@
       var from = lb.scannedTo != null ? lb.scannedTo + 1 : deployBlock();
       var to = head.block;
       if (to == null || from > to) return Promise.resolve();
-      return scanLogs([{ address: cfg.contracts.exchange, topics: [[topic(exIface, 'PositionClosed'), topic(exIface, 'PositionLiquidated')]] }], from, to).then(function (logs) {
-        logs.map(function (l) { return parseLog(exIface, l); }).filter(Boolean).forEach(function (p) {
+      /* v5: with the size fees (TradeFeeCharged) and the share closes (PositionPartiallyClosed). A fee comes off
+         the trader's total as it is paid; a close counts as won when its pnl is above the close fee of its own
+         transaction. */
+      var names = ['PositionClosed', 'PositionLiquidated'].concat(isV5() ? ['TradeFeeCharged', 'PositionPartiallyClosed'] : []);
+      return scanLogs([{ address: cfg.contracts.exchange, topics: [names.map(function (n) { return topic(exIface, n); })] }], from, to).then(function (logs) {
+        var parsed = logs.map(function (l) { return parseLog(exIface, l); }).filter(Boolean), closeFee = {};
+        parsed.forEach(function (p) { if (p.name === 'TradeFeeCharged' && Number(p.args.kind) === 1) closeFee[String(p.tx).toLowerCase() + ':' + String(p.args.positionId)] = usd6(p.args.feeUsdc); });
+        parsed.forEach(function (p) {
           var key = p.tx + ':' + p.index;
           if (lb.seen[key]) return;
           lb.seen[key] = true;
-          var a = String(p.args.owner).toLowerCase();
+          var a = String(p.name === 'TradeFeeCharged' ? p.args.trader : p.args.owner).toLowerCase();
           var r = lb.pnl[a] || (lb.pnl[a] = { a: a, v: 0, n: 0, won: 0 });
-          var d = p.name === 'PositionClosed' ? usd6(p.args.pnlUsdc) : -usd6(p.args.marginUsdc);
-          r.v += d; r.n += 1; if (d > 0) r.won += 1;
+          if (p.name === 'TradeFeeCharged') { r.v -= usd6(p.args.feeUsdc); return; }
+          var d = p.name === 'PositionLiquidated' ? -usd6(p.args.marginUsdc) : usd6(p.args.pnlUsdc);
+          r.v += d;
+          if (p.name === 'PositionPartiallyClosed') return;
+          r.n += 1; if (d - (closeFee[String(p.tx).toLowerCase() + ':' + String(p.args.positionId)] || 0) > 0) r.won += 1;
         });
         lb.scannedTo = to;
       });
@@ -3008,8 +3310,9 @@
   })();
 
   /* ==========================================================================
-     v2 / v3: close out and withdraw on an earlier Exchange (config contracts.v2Exchange /
-     contracts.v3Exchange, the page's setting o below). No opens, no deposits. The request windows
+     v2 / v3 / v4: close out and withdraw on an earlier Exchange (config contracts.v2Exchange /
+     contracts.v3Exchange / contracts.v4Exchange, the page's setting o below; v4 only once the site's config is
+     v5, where MIGRATION_V5.md's run-off counts on this page). No opens, no deposits. The request windows
      are that exchange's, on the chain clock from the request: minDelay, then a keeper-only grace
      window; from there until expiry anyone may fill a request at the trader-worse of the
      request-time and fill-time oracle prints (the page offers the wallet fill of a close: Fill);
@@ -3151,6 +3454,71 @@
 
     function writer() { return new window.ethers.Contract(cfg.contracts[o.exchange], o.abi, wallet.signer); }
 
+    /* ---- one-tap on the v4 run-off (o.tpsl, under the launch config): the close a v4 trader with one-tap on gets
+       today, with no popup. The live v4 trade page sends a close (the Close button, and a take profit or stop loss
+       reached while it is open) through the v4 SessionRouter with the session key this browser keeps for the account
+       ('confetti.trade.session.' + the account; the launch trade page keeps the same key and only authorises it on its
+       own router as well, so it is still the v4 router's key). This page does the same when that session is live on
+       chain: the router is the pinned v4SessionRouter and names the v4 Exchange, the session is this browser's key, it
+       has more than a minute left and the key holds gas for a close. Anything else (no key, another browser's key,
+       expired, out of gas, the router refuses): the wallet, as before. The key can only file and cancel the account's
+       requests (SessionRouter); it never moves money. ---- */
+    var OT_ABI = [
+      'function requestClose(uint256 positionId)',
+      'function sessionOf(address trader) view returns (tuple(address key, uint64 expiry, uint128 maxMarginPerTrade, address referrer))',
+      'function exchange() view returns (address)',
+      'error NoSession()', 'error SessionExpired(uint64 expiry)', 'error NotYours()'
+    ];
+    var OT_MIN_GAS = 1000000000000000n, OT_TX_GAS = 400000n;   /* the trade page's SESSION_MIN_GAS and SESSION_TX_GAS */
+    var ot = { router: null, routerOk: null, key: null, live: false, addr: null };
+    function otAddr() { return o.tpsl && isV6() ? addrOrNull(cfg.contracts.v4SessionRouter) : null; }
+    function otLive() { return !!(ot.live && ot.key && v && wallet.account && sameAddr(ot.addr, v.addr) && sameAddr(v.addr, wallet.account) && !refused && window.ethers); }
+    /* read with every refresh: the router once (it must name this page's Exchange), then the session, the key's gas */
+    function otRead(s) {
+      var ra = otAddr(), E = window.ethers;
+      if (!ra || !E || !read.provider || !s) { ot.live = false; return Promise.resolve(); }
+      if (!ot.router) ot.router = new E.Contract(ra, OT_ABI, read.provider);
+      var check = ot.routerOk != null ? Promise.resolve(ot.routerOk) : ot.router.exchange().then(function (x) {
+        ot.routerOk = sameAddr(x, cfg.contracts[o.exchange]);
+        if (!ot.routerOk) console.error('v4SessionRouter.exchange() ' + x + ' is not the ' + o.name + ' Exchange; one-tap closes are off on this page.');
+        return ot.routerOk;
+      });
+      return check.then(function (ok) {
+        var pk = lsGet('confetti.trade.session.' + String(s.addr).toLowerCase());
+        if (!ok || !pk) { ot.live = false; ot.key = null; return; }
+        if (!ot.key || ot.key.privateKey !== pk) { try { ot.key = new E.Wallet(pk, read.provider); } catch (e) { ot.key = null; ot.live = false; return; } }
+        var key = ot.key;
+        return Promise.all([ot.router.sessionOf(s.addr), read.provider.getBalance(key.address), read.provider.getFeeData().catch(none)]).then(function (r) {
+          if (v !== s || ot.key !== key) return;
+          var ses = r[0], gas = BigInt(r[1]), fd = r[2], fee = fd ? BigInt(fd.maxFeePerGas != null ? fd.maxFeePerGas : fd.gasPrice || 0n) : 0n;
+          var need = fee * OT_TX_GAS > OT_MIN_GAS ? fee * OT_TX_GAS : OT_MIN_GAS;
+          ot.addr = s.addr;
+          ot.live = !!(ses && sameAddr(ses.key, key.address) && Number(ses.expiry) > chainNow() + 60 && gas >= need);
+        });
+      }).catch(function () { /* transient RPC trouble: keep the last answer */ });
+    }
+    /* a close request for p: through the session when it is live, else from the wallet. Falls back to the wallet once
+       when the router turns the key away (the session ended or the key ran dry between the read and the send). */
+    function sendClose(p, desc) {
+      if (otLive()) {
+        var r = new window.ethers.Contract(otAddr(), OT_ABI, ot.key);
+        return sendTx(desc, r.requestClose, [p.id]).catch(function (e) {
+          var oi = new window.ethers.Interface(OT_ABI);
+          var soft = /NoSession|SessionExpired|insufficient funds/i.test(String(e && (e.shortMessage || e.message))) ||
+            walkError(e, function (x) {
+              if (typeof x.data !== 'string' || !/^0x[0-9a-f]{8}/i.test(x.data)) return false;
+              try { var pe = oi.parseError(x.data); return !!pe && (pe.name === 'NoSession' || pe.name === 'SessionExpired'); } catch (er) { return false; }
+            });
+          if (!soft) throw e;
+          ot.live = false;
+          if (!canSend()) throw e;
+          return sendTx(desc, writer().requestClose, [p.id]);
+        });
+      }
+      requireSigner();
+      return sendTx(desc, writer().requestClose, [p.id]);
+    }
+
     function say(text, err) {
       note = { text: text, err: !!err, at: Date.now() };
       renderForm();
@@ -3171,7 +3539,12 @@
     function label(instId, id) { return '#' + id + ' ' + symOf(instId); }
 
     function requestClose(p) {
-      run('Close', function (ex) { return sendTx('Close ' + label(p.instrumentId, p.id), ex.requestClose, [p.id]); });
+      if (!otLive()) { run('Close', function (ex) { return sendTx('Close ' + label(p.instrumentId, p.id), ex.requestClose, [p.id]); }); return; }
+      if (busy) return;
+      busy = true; render();
+      sendClose(p, 'Close ' + label(p.instrumentId, p.id)).catch(function (e) {
+        toast('Close failed: ' + describeError(e), 'err');
+      }).then(function () { busy = false; return refresh(); });
     }
 
     function fillClose(p) {
@@ -3213,6 +3586,120 @@
       return b;
     }
 
+    /* ---- the v4 run-off (o.tpsl, under the launch config, version 6): the take profit and stop loss set on a v4
+       trade stay this browser's rule, as they always were (v4 has no trigger contract; V5P_SPEC 18.12, MIGRATION_ONE).
+       They live where the v4 trade page kept them ('confetti.trade.tpsl.' and the account; the launch trade page keeps
+       its own under 'tpsl6.', so neither touches the other's ids), are shown under
+       each position with Remove and Change, and fire while this page is open: once the price crosses a level, the close
+       request the Close button sends, from the wallet (this page signs with the wallet; the wallet asks to confirm).
+       The checks are the trade page's (a take profit beyond the price, a stop between it and the liquidation price).
+       The price is the one this page reads every 5 s (execPrice, the HyperCore oracle's, in USDT terms like Pyth's);
+       a stop fires 0.1% early, as on the trade page. A claim in storage keeps two tabs from both sending. ---- */
+    var TPSL_TOL = 0.001, TPSL_CLAIM_MS = 60000, TPSL_HOLD_MS = 5 * 60000;
+    var tp = { editing: null, err: '', firing: null };
+    function tpOn() { return !!o.tpsl && isV6(); }
+    function tpKey() { return v ? 'confetti.trade.tpsl.' + String(v.addr).toLowerCase() : null; }
+    function tpLoad() {
+      var raw = tpKey() ? lsGet(tpKey()) : null, d = null;
+      try { d = JSON.parse(raw || 'null'); } catch (e) { d = null; }
+      return { rules: (d && d.rules) || {}, pending: (d && d.pending) || {} };
+    }
+    function tpSave(d) { if (tpKey()) lsSet(tpKey(), JSON.stringify(d)); }
+    function tpNum(x) { x = String(x == null ? '' : x).trim(); if (x === '') return null; var n = Number(x); return isFinite(n) ? n : NaN; }
+    /* the trade page's liquidation price for a position (ImpactLib's bust move: the smaller of 95% of 1/lev and 1/lev - 5
+       bps), from the entry: the stop must sit before it */
+    function tpBust(p) {
+      var lev = p.leverage, move = Math.min(9500, Math.max(0, 10000 - 5 * lev)) / (lev * 10000);
+      return p.isLong ? p.entry * (1 - move) : p.entry * (1 + move);
+    }
+    function tpProblem(p, t, s) {
+      var px = p.px, sz = szOf(p.instrumentId), side = p.isLong ? 'long' : 'short', bust = tpBust(p);
+      if (t != null && !(t > 0)) return 'Type a take profit price, or leave it empty.';
+      if (s != null && !(s > 0)) return 'Type a stop loss price, or leave it empty.';
+      if (t == null && s == null) return 'Type a take profit or a stop loss price.';
+      if (t != null && px > 0 && (p.isLong ? t <= px : t >= px)) return 'A take profit for a ' + side + ' goes ' + (p.isLong ? 'above' : 'below') + ' the price, now ' + fmtPrice(px, sz) + '.';
+      if (s != null && px > 0 && (p.isLong ? s >= px : s <= px)) return 'A stop loss for a ' + side + ' goes ' + (p.isLong ? 'below' : 'above') + ' the price, now ' + fmtPrice(px, sz) + '.';
+      if (s != null && px > 0 && (p.isLong ? s * (1 + TPSL_TOL) >= px : s * (1 - TPSL_TOL) <= px)) return 'That stop is within 0.1% of the price: it would close right now. Use Close, or set it further away.';
+      if (s != null && bust > 0 && (p.isLong ? s <= bust : s >= bust)) return 'That stop is past the liquidation price, ' + fmtPrice(bust, sz) + ': the position would be liquidated first.';
+      return '';
+    }
+    function tpCrossed(r, p) {
+      var px = p.px;
+      if (!(px > 0)) return '';
+      if (r.tp != null && r.tp > 0 && (p.isLong ? px >= r.tp : px <= r.tp)) return 'tp';
+      if (r.sl != null && r.sl > 0 && (p.isLong ? px <= r.sl * (1 + TPSL_TOL) : px >= r.sl * (1 - TPSL_TOL))) return 'sl';
+      return '';
+    }
+    /* every tick: a crossed rule of a position this page shows sends its close (one at a time, once per claim) */
+    function tpCheck() {
+      if (!tpOn() || !v || !v.acct || busy || tp.firing || !(canSend() || otLive())) return;
+      var d = tpLoad(), now = Date.now(), changed = false;
+      var have = {};
+      v.positions.forEach(function (p) { have[String(p.id)] = p; });
+      /* rules of positions that are gone (closed, liquidated) leave quietly once this page has read the account */
+      Object.keys(d.rules).forEach(function (pid) { if (!have[pid] && !v.closes[pid]) { delete d.rules[pid]; changed = true; } });
+      if (changed) tpSave(d);
+      var pids = Object.keys(d.rules);
+      for (var i = 0; i < pids.length; i++) {
+        var pid = pids[i], r = d.rules[pid], p = have[pid];
+        if (!p || v.closes[pid] || (r.claimed && now - r.claimed < TPSL_CLAIM_MS) || (r.until && r.until > now)) continue;
+        var which = tpCrossed(r, p);
+        if (!which) continue;
+        r.claimed = now; r.fired = which; tpSave(d);
+        tpFire(p, which);
+        return;
+      }
+    }
+    function tpFire(p, which) {
+      var pid = String(p.id);
+      tp.firing = pid; busy = true; render();
+      var what = which === 'tp' ? 'take profit' : 'stop loss';
+      var one = otLive();
+      toast('Your ' + what + ' on ' + label(p.instrumentId, p.id) + ' was reached: ' + (one ? 'closing it with one-tap, no popup.' : 'your wallet asks to confirm the close.'), 'warn');
+      Promise.resolve().then(function () { return sendClose(p, 'Close ' + label(p.instrumentId, p.id) + ' (' + what + ')'); }).then(function () {
+        var d = tpLoad(); delete d.rules[pid]; tpSave(d);
+      }, function (e) {
+        var d = tpLoad(), r = d.rules[pid];
+        if (r) { delete r.claimed; delete r.fired; r.hold = 'the close was not sent'; r.until = Date.now() + TPSL_HOLD_MS; tpSave(d); }
+        var why = String(describeError(e)).replace(/\s+$/, ''); if (!/[.!?…)]$/.test(why)) why += '.';
+        toast('Your ' + what + ' did not close ' + label(p.instrumentId, p.id) + '. ' + why + ' It tries again in a few minutes, or press Close.', 'err');
+      }).then(function () { tp.firing = null; busy = false; return refresh(); });
+    }
+    /* under a position: its levels and Remove / Change, or Set; the two boxes while it is being changed */
+    function tpLine(p) {
+      var pid = String(p.id), r = tpLoad().rules[pid], sz = szOf(p.instrumentId), box = el('div', 'pos-line tpsl-sub');
+      if (tp.editing === pid) {
+        var ti = el('input', 'input'), si = el('input', 'input');
+        [[ti, 'Take profit', r && r.tp], [si, 'Stop loss', r && r.sl]].forEach(function (x) {
+          x[0].type = 'text'; x[0].setAttribute('inputmode', 'decimal'); x[0].setAttribute('autocomplete', 'off'); x[0].placeholder = x[1];
+          x[0].setAttribute('aria-label', x[1]); if (x[2] != null) x[0].value = String(x[2]);
+          box.appendChild(x[0]);
+        });
+        box.appendChild(button('Save', function () {
+          var t = tpNum(ti.value), s = tpNum(si.value), d = tpLoad();
+          if (t == null && s == null) { delete d.rules[pid]; tpSave(d); tp.editing = null; tp.err = ''; render(); return; }
+          var why = tpProblem(p, t, s);
+          if (why) { tp.err = why; render(); return; }
+          d.rules[pid] = { tp: t, sl: s, at: Date.now() }; tpSave(d); tp.editing = null; tp.err = ''; render();
+        }));
+        box.appendChild(button('Cancel', function () { tp.editing = null; tp.err = ''; render(); }));
+        if (tp.err) box.appendChild(el('span', 'neg', tp.err));
+        return box;
+      }
+      if (r && (r.tp != null || r.sl != null)) {
+        box.appendChild(el('span', null, [r.tp != null ? 'Take profit ' + fmtPrice(r.tp, sz) : '', r.sl != null ? 'Stop loss ' + fmtPrice(r.sl, sz) : ''].filter(Boolean).join(' \u00b7 ')));
+        box.appendChild(el('span', 'faint', r.claimed ? 'closing' : r.until > Date.now() ? 'waits: ' + r.hold : 'closes from this page while it is open; ' + (otLive() ? 'one-tap, no popup' : 'your wallet asks to confirm')));
+        box.appendChild(el('span', 'grow'));
+        box.appendChild(button('Change', function () { tp.editing = pid; tp.err = ''; render(); }));
+        box.appendChild(button('Remove', function () { var d = tpLoad(); delete d.rules[pid]; tpSave(d); render(); }));
+      } else {
+        box.appendChild(el('span', 'faint', 'No take profit or stop loss'));
+        box.appendChild(el('span', 'grow'));
+        box.appendChild(button('Set', function () { tp.editing = pid; tp.err = ''; render(); }));
+      }
+      return box;
+    }
+
     function positionLine(p) {
       var sz = szOf(p.instrumentId);
       var line = el('div', 'pos-line');
@@ -3226,11 +3713,11 @@
       var x = el('span', 'faint', '→ ' + fmtPrice(p.px, sz)); x.title = 'oracle now';
       line.appendChild(x);
       var pnl = el('span', signCls(p.pnl), p.pnl != null ? fmtUsd(p.pnl, true) : '—');
-      if (p.payout != null) pnl.title = 'a close now pays ' + fmtUsd(p.payout) + (p.fee ? ' · fee ' + fmtUsd(p.fee) : '');
+      if (p.payout != null) pnl.title = 'a close now pays ' + fmtUsd(p.payout);
       line.appendChild(pnl);
       line.appendChild(el('span', 'grow'));
       if (v.closes[String(p.id)]) line.appendChild(el('span', 'faint', 'closing'));
-      else line.appendChild(button('Close', function () { requestClose(p); }));
+      else { var cb = button('Close', function () { requestClose(p); }); if (!busy && otLive()) cb.disabled = false; line.appendChild(cb); }
       return line;
     }
 
@@ -3285,6 +3772,9 @@
 
     function render() {
       var sub = $(o.key + 'Who'), addr = cfg.contracts[o.exchange];
+      /* (the run-off page) what it says of a new trade's take profit and stop loss is true only once the trigger screens are on */
+      var tl = tpOn() ? $(o.key + 'TrigLive') : null;
+      if (tl) tl.hidden = cfg.triggersLive !== true;
       if (sub) {
         sub.textContent = '';
         if (o.read()) sub.appendChild(explorerLink('address', addr, 'exchange ' + shortAddr(addr)));
@@ -3309,7 +3799,9 @@
         cells.forEach(function (id) { valCell(id, '—'); });
       }
       setText(o.key + 'OpenCount', v.positions.length ? String(v.positions.length) : '');
-      fillLines($(o.key + 'Open'), v.positions.map(positionLine), v.acct ? 'No open positions.' : 'Loading…');
+      var lines = [];
+      v.positions.forEach(function (p) { lines.push(positionLine(p)); if (tpOn()) lines.push(tpLine(p)); });
+      fillLines($(o.key + 'Open'), lines, v.acct ? 'No open positions.' : 'Loading…');
 
       var reqs = [];
       v.positions.forEach(function (p) { var cr = v.closes[String(p.id)]; if (cr) reqs.push(closeLine(p, cr)); });
@@ -3322,6 +3814,7 @@
 
     /* Countdowns between reads; a request that changes window is redrawn with its new button. */
     function tick() {
+      if (tpOn()) { try { tpCheck(); } catch (e) { /* never stops the countdowns */ } }
       var spans = document.querySelectorAll('#' + o.key + 'Pending [data-at]');
       for (var i = 0; i < spans.length; i++) {
         var ph = phase(Number(spans[i].getAttribute('data-at')));
@@ -3337,7 +3830,7 @@
         return readAccount(s).catch(function (e) {
           if (!s.acct && !s.warned) { s.warned = true; toast('Could not read the ' + o.name + ' account: ' + describeError(e), 'err'); }
         }).then(function () {
-          return readOpens(s).catch(none);
+          return Promise.all([readOpens(s).catch(none), o.tpsl ? otRead(s) : null]);
         });
       }).catch(none).then(render);
     }
@@ -3366,6 +3859,11 @@
     read: function () { return read.v2; }, iface: function () { return v2Iface; } });
   var v3Page = closeOutPage({ key: 'v3', name: 'v3', exchange: 'v3Exchange', abi: V3_EXCHANGE_ABI, deployBlock: v3DeployBlock,
     read: function () { return read.v3; }, iface: function () { return v3Iface; } });
+  var v4Page = closeOutPage({ key: 'v4', name: 'v4', exchange: 'v4Exchange', abi: V4_EXCHANGE_ABI, deployBlock: v4DeployBlock,
+    /* the launch (one move, MIGRATION_ONE): v4 is the generation that runs off, with the browser rule for the take
+       profit and stop loss set on v4 (tpsl; it acts under the launch config only, where the trade page no longer
+       runs those rules). There is no v5 generation and no v5 page. */
+    read: function () { return read.v4; }, iface: function () { return v4Iface; }, tpsl: true });
 
   /* ---- theme, header, start ------------------------------------------------------- */
 
@@ -3383,7 +3881,7 @@
     if (btn) btn.addEventListener('click', function () { apply(root.getAttribute('data-theme') !== 'night', true); });
   }
 
-  var PAGES = { portfolio: portfolio, house: housePage, confetti: confettiPage, leaderboard: leaderboard, v2: v2Page, v3: v3Page };
+  var PAGES = { portfolio: portfolio, house: housePage, confetti: confettiPage, leaderboard: leaderboard, v2: v2Page, v3: v3Page, v4: v4Page };
 
   /* Nothing is read or sent until the exchange's getters have been checked; retried while the RPC is down. */
   function prepareExchange() {

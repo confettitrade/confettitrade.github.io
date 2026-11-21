@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — terms</title>
-  <meta name="description" content="What confetti.trade is, who the counterparty is, how fills, fees, the haircut, the cap and the payout queue work, and who it is not for.">
+  <meta name="description" content="What confetti.trade is, who the counterparty is, how fills, charges, the haircut, the cap and the payout queue work, and who it is not for.">
   <meta name="theme-color" content="#f4ecd8">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
@@ -14,7 +14,7 @@
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
   <link rel="stylesheet" href="paper.css?v=mono1">
-  <link rel="stylesheet" href="simple.css?v=ever1">
+  <link rel="stylesheet" href="simple.css?v=one1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Cream look for this page */
@@ -65,7 +65,7 @@
       <header>
         <h1>Terms</h1>
         <p class="lede">Using confetti.trade means you accept these.</p>
-        <p class="dated">Last changed 18 October 2026.</p>
+        <p class="dated">Last changed 20 November 2026.</p>
       </header>
 
       <section id="what">
@@ -82,19 +82,40 @@
       <section id="house">
         <h2>The house is the counterparty</h2>
         <p>Every position is against the house. There is no order book and no other trader on the other side. Your gain is the house's loss, and the other way round.</p>
-        <p>The house adds and withdraws its money at any time, down to what it owes queued winners and fees already earned. A win the house cash cannot cover waits in the queue.</p>
+        <p>The house adds and withdraws its money at any time, down to what it owes queued winners and income already earned. A win the house cash cannot cover waits in the queue.</p>
       </section>
 
       <section id="pricing">
         <h2>Pricing and fills</h2>
-        <p>Every fill, close and liquidation settles on the HyperCore oracle price, never on a book. A trade is a request: it records the oracle price when you ask, nobody can fill it for 5 seconds, then for 3 seconds only the house's keeper may fill it, at the print it sees. After that anyone may fill it, at the worse of the two prints, until it expires at 60 seconds; then anyone may cancel it and the margin returns. You cannot cancel early. An open whose price jumped too far before the fill is refunded, as is one that would already be busted or no longer fits the limits.</p>
-        <p>A close fills 5 to 8 seconds after you request it; house cash can change in that time.</p>
-        <p>A position is liquidated once the oracle price touches its bust price, 5 bps away at 1000x. The whole margin is lost, 0.5% of it to whoever liquidates.</p>
+        <p>Every fill, close and liquidation settles on a price from outside any order book, never on a book. In most markets that price is a signed Pyth price, in USDT terms: Pyth's US dollar price of the coin divided by Pyth's US dollar price of USDT for the same second, both from the same signed update; in a market without one (PEOPLE) it is the HyperCore oracle price, which is in USDT terms too. A trade is a request: it records the time of the block it lands in and the HyperCore oracle price then. Every time below counts from that block, not from your tap; the time your wallet takes to confirm comes on top. You cannot cancel early. A request expires at 60 seconds; then anyone may cancel it: an open's money returns, a close leaves the position open.</p>
+        <p>In a Pyth market a request fills at the one Pyth price for a set delay after it lands (set market by market: 2 to 4 seconds at launch; 1 to 10 by setting): the first price published at or after that moment and no more than 2 seconds past it. The contract accepts no other price, whoever sends the fill. The fill can land from that moment until 5 seconds after it (5 to 60 by setting). For the first 3 seconds (1 to 10 by setting) only the house's keepers may send it; after that anyone who holds Pyth's signed price for that moment may. Pyth gives signed prices to key holders only, so in practice the house's keeper fills, and it may fill late within that time or not at all. The fill is refused while that price is further than the market's limit from the HyperCore oracle price, or while Pyth's publishers disagree by more than the market's limit. It is also refused, as if Pyth had no price for that second, while Pyth's USDT price for that second is missing, from another second, further from a dollar than its band (1% at launch; 0.5% to 5% by setting) or more uncertain than its limit (0.2% at launch; 0.05% to 1% by setting).</p>
+        <p>If a Pyth market's request is not filled in that time, anyone may end an open: it is refunded in full. A close can then be filled by anyone for 3 seconds (a fixed number, not a setting), at the HyperCore oracle price of the block it lands in, which may be better or worse for you than the Pyth price would have been. After those 3 seconds and until the request expires, only the account that owns the position can fill it, from its own wallet and not through a one-tap session key, at the worse for you of that block's HyperCore oracle price and the HyperCore oracle price recorded when you asked to close.</p>
+        <p>In a market on the HyperCore oracle price nobody can fill a request for 5 seconds, then for 3 seconds only the house's keeper may fill it, at the print it sees. After that anyone may fill it, at the worse of the two prints.</p>
+        <p>An open whose price jumped too far before the fill is refunded, as is one that no longer fits the limits. In a market on the HyperCore oracle price an open that would already be busted is refunded too. In a Pyth market it is not: an open there fills at the price of its moment even if the price has since passed its bust price, and can be liquidated 2 seconds later.</p>
+        <p>A close usually fills about a second after its market's delay in a Pyth market (3 to 5 seconds after your request lands, at launch; the trade page says each market's own time) and 5 to 8 seconds in a HyperCore market; it can take up to 60 seconds. House cash can change in that time.</p>
+        <p>A position is liquidated once its market's price touches its bust price, 5 bps away at 1000x. In a Pyth market each block has one such price: the Pyth price for the second 2 seconds before that block (1 to 10 by setting), and never one from before the position opened; a price that touches the bust for a single second is enough. Otherwise it is the HyperCore oracle price. In a Pyth market, margin you add to a position counts only for Pyth prices published after the block of the add: a price published in or before that second is judged on the margin the position had before it (when several adds follow each other within 2 seconds, before the first of them). If the position is liquidated on such a price, the margin added too late is returned to your balance in the same transaction and is not lost; the loss, the 0.5% and the house's gain are taken on the margin from before. The whole margin is lost, 0.5% of it to whoever liquidates. While Pyth is unavailable, positions in Pyth markets are not liquidated and new trades there are refunded.</p>
+        <p>Pyth is run by third parties, who can change its contract. Within fixed bounds the owner can move a market between the two rules and change the delays, windows and limits. Such a change applies at once, to requests already waiting and to open positions too.</p>
+      </section>
+
+      <section id="tpsl">
+        <h2>Take profit and stop loss</h2>
+        <p>In a Pyth market a position's take profit and stop loss are held by the exchange's TriggerBook contract and can close the position whether the site is open or not. Only the position's own account, or its one-tap session key, can set, change or remove them; a change counts from that market's delay after the block it lands in (2 to 4 seconds at launch, by market; 1 to 10 by setting), the levels it replaces count until then, and a change sent in the 5 seconds after the last one began to count is refused unless no level was set before that one. Levels set with an open count from the same delay after the open fills; until then the position has no stop loss.</p>
+        <p>Prices are checked once a second: only the first Pyth price of each second counts, in USDT terms. A level fires at the first such price at or past it, following one that was not, and closes the whole position at that price, which can be past your level. If that price is at or past the position's bust price it is liquidated instead, with the 0.5% to whoever sends it. A stop loss fired more than 5 seconds after its price closes at the stop's own level; a take profit always closes at the price that crossed it. While a stop loss sits inside the bust price, the position is not liquidated on a Pyth price past it except through that stop. Anyone holding Pyth's signed prices may send a fire; in practice the house's keepers do, and no one is obliged to. A crossed level that nobody fires does not close the position; it stays fireable while the position is open. While the site is open in your browser it may send an ordinary close request for a take profit it has seen reached and not fired, about 12 seconds after: that close fills at the market price then, not at your level, and the site judges by the price it shows, not by Pyth's signed price. The site sends no close request of its own for a stop loss. A close you asked for before the level was crossed goes first; one asked for later is cancelled by a fire that lands before it fills. Until one of them lands, whoever sends transactions (in practice the house's keepers) may send either the fire or the fill of that later close, and the two can pay differently: a close requested after a level was crossed and before it fired, by you or by the site for a take profit, can pay the lower of the two.</p>
+        <p>A fire is a close and pays the closing charge of any close; a fire past the bust price is a liquidation. In PEOPLE, in a market moved back to the HyperCore oracle price, and for positions opened before the move to v5 (closed on the v4 page), take profit and stop loss are kept by your browser and send an ordinary close request only while that page is open there.</p>
       </section>
 
       <section id="fees">
-        <h2>Fees</h2>
-        <p>On a win you pay the impact haircut, then the win fee on what is left. On a loss you pay nothing beyond the loss. An open fills a small spread past the oracle print. Held past the free hours, a position pays a borrow fee for each whole hour, taken from its payout at close. Every rate is stamped on the position when it opens; the trade page shows them. A share of a referred trader's fees goes to the referrer. A swap through the site's swap carries a 1% Confetti fee, taken inside the swap; bringing ETH in through Bring ETH carries a 3% Confetti fee, paid in ETH on the chain it leaves. Both show in the quote before you confirm.</p>
+        <h2>What a trade pays</h2>
+        <p>Every trade pays a charge on its size, to the revenue pool: at launch 0.045% of the position (the margin times the leverage) when it opens and 0.045% of what closes when it closes, each never more than 10% of the margin. That is 0.45% of the margin a side at 10x, 4.5% at 100x and 10% from 223x up. The opening charge is taken on top of the margin when the open fills and comes back with it if the open is refunded. The closing charge is taken from what the close pays back and never exceeds it. A liquidated position pays no closing charge. The rate is fixed when you request the open and stays with the position. Each market's rate and cap are on chain; the owner can set the rate between 0 and 0.1% and the cap between 1% and 25% of the margin, for new trades only. House-run wallets pay no trade charge.</p>
+        <p>On a win you also pay the impact haircut. The exchange can take a cut of a win (up to 10%) or of a loss (up to 5%, from the house's side); both are set to 0. An open fills a small spread past its fill price. Held past the free hours, a position pays a borrow charge for each whole hour, taken from its payout at close. These rates are stamped on the position when it opens and can be read on chain. A share of what a referred trader's trades pay goes to the referrer. A swap through the site's swap carries a 1% Confetti charge, taken inside the swap; bringing ETH in through Bring ETH carries a 3% Confetti charge, paid in ETH on the chain it leaves. Both show in the quote before you confirm.</p>
+      </section>
+
+      <section id="fetti" data-fx hidden>
+        <h2>FETTI levels and money back</h2>
+        <p>Staking FETTI can bring back part of what your own trades paid in, as trading money: 10, 20, 30 or 40% at 0.05, 0.5, 3 or 15 FETTI staked. It is paid from a separate wallet funded from the exchange's income, seven days after each trade, at the lowest level your wallet held through those seven days, within daily limits ($10 for each FETTI that counts, $300 for all wallets together; on a day the limit is reached every payment is cut alike and the rest is not owed). It is a discretionary program, not a right and not a return on FETTI: every number is a setting, and the program can be changed or ended at any time, for trades from then on, with the change shown on the docs page. The owner may leave out any wallet, the house's own and his own among them, and any that trades against the program's purpose. Unstaking gives up what is on its way. FETTI's price moves, and what you stake can be worth less later. Nothing here promises a price, a floor or a yield.</p>
+        <p>Each day a tenth of the previous day's revenue pool income, at most $50, buys FETTI on HyperSwap and sends it to the dead address. It is a rule the owner can change or stop, not a promise to support any price.</p>
+        <p id="draw" data-fx="draw" hidden><strong>The weekly draw for stakers who trade.</strong> Each week (Monday 00:00 UTC to the next Monday 00:00 UTC) confetti may give one prize to one wallet. To be in it, a wallet must keep at least 0.05 FETTI staked for the whole week (from one staking warm-up, one hour today, before the week starts to its end) and must trade on confetti during that week. Each dollar your trades paid that week, after any referral share, is one share of the chances; points do not count, and no share can be bought or passed to another wallet. The prize is 5% of what all trades paid into the revenue pool that week, never more than 5% of what the entrants' own trades paid together, and never more than $200; if it would be under $1 there is no draw that week. After the week ends, the list of every entrant and their share is fixed on chain. The winner is then picked by a published rule from a HyperEVM block hash and a public random beacon (drand), both made only after that, and anyone can check the result. The prize is added to the winner's confetti balance. confetti's own wallets and any wallet it has flagged for abuse cannot enter. confetti may change or end the draw at any time; changes are shown on this page before the week they apply to. The draw is not open where the law does not allow it, and it is your job to know whether it is allowed where you live.</p>
+        <p id="table" data-fx="table" hidden>The FETTI table. Staking FETTI at the table can win FETTI from the table's own bank, never from the house's trading money; it can also lose it. Winnings unlock over seven days, and the table pays out at most a set share of the pool's FETTI a day in all. You may play only where such a game is allowed for you.</p>
       </section>
 
       <section id="caps">
@@ -114,7 +135,7 @@
 
       <section id="risk">
         <h2>No guarantees</h2>
-        <p>You can lose every dollar you deposit, quickly. The contracts are immutable and have not been audited by a third party. The site, the chain, the oracle feed and the keeper can all fail or fall behind; opens can be paused and a market retired. Everything is provided as is, with no warranty of any kind, and what the house owes you is what the contracts pay out, nothing more.</p>
+        <p>You can lose every dollar you deposit, quickly. The contracts are immutable and have not been audited by a third party. The site, the chain, the price feeds and the keeper can all fail or fall behind; opens can be paused and a market retired. Everything is provided as is, with no warranty of any kind, and what the house owes you is what the contracts pay out, nothing more.</p>
       </section>
 
       <section id="changes">
@@ -170,7 +191,24 @@
       setTimeout(loadHouse, 100);
     })();
   </script>
-  <script src="points.js?v=prm1" defer></script>
+  <script>
+    (function () {
+      /* FETTI levels and money back (PLAN.md 3.5): these sections show while config.json says the program is on (fetti.moneyBack,
+         a v5 config); the weekly draw's and the FETTI table's only while their own switch is on too (fetti.draw.on, fetti.table.on).
+         Without config.json, or with a switch off, they stay hidden. */
+      var secs = document.querySelectorAll('[data-fx]');
+      if (!secs.length || !window.fetch) return;
+      fetch('config.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }).then(function (c) {
+        var f = c && c.fetti || {}, on = Number(c.version) >= 5 && f.moneyBack === true;
+        Array.prototype.forEach.call(secs, function (n) {
+          var k = n.getAttribute('data-fx'), sw = k === 'draw' ? f.draw : k === 'table' ? f.table : null;
+          n.hidden = !(on && (!k || (sw && sw.on === true)));
+        });
+        if (on && location.hash) { var t = document.getElementById(location.hash.slice(1)); if (t && !t.hidden && t.scrollIntoView) t.scrollIntoView(); }
+      }).catch(function () { /* hidden stays hidden */ });
+    })();
+  </script>
+  <script src="points.js?v=one1" defer></script>
   <script src="house-chip.js?v=ever1" defer></script>
 </body>
 </html>

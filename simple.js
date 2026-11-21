@@ -40,9 +40,19 @@
      and cleanupErc20s(tokens, recipients, amounts, metadata), read to check the order before the wallet opens. */
   var HYPE_ROUTER = '0x0729e2a4716d9f7dd17858d5d504426d228697f7', HYPE_SLIP = '50', HYPE_GAS = 1000000n, MC = '0xcd6e13f7', SWEEP = '0x9bb43718';
 
-  var S = { flag: 'optin', mode: 'pro', place: 'home', sym: null, pid: null, done: null, seen: {}, res: null, sig: '', homeY: 0, claim: false, lastErr: null, snackT: null };
+  /* away: the results of trades that ended while Confetti was closed (v6: a take profit or stop loss fires on chain), each
+     its own card on Home until it is opened */
+  var S = { flag: 'optin', mode: 'pro', place: 'home', sym: null, pid: null, done: null, seen: {}, res: null, away: [], sig: '', homeY: 0, claim: false, lastErr: null, snackT: null };
   var el = {}, R = {};
   var sheets = [], H = { depth: 0, skip: 0 };
+  /* FETTI levels and money back (fetti.js): null unless the page has it and config.json's fetti.moneyBack is on (v5) */
+  var FXS = { set: false };
+  function fx() {
+    var f = window.ConfettiFetti;
+    if (!f || !api) return null;
+    if (!FXS.set) { FXS.set = true; f.setup(api.cfg(), { demo: !!api.demo }); f.subscribe(kick); }
+    return f.on() ? f : null;
+  }
 
   /* ---- small things ---- */
 
@@ -390,6 +400,8 @@
       if (ORD.sh && ORD.sh.isOpen) paintOrder();
     }
     if (AUTO.sh && AUTO.sh.isOpen) paintAuto();      /* the take profit / stop loss sheet, on a phone and on a desktop */
+    if (PART.sh && PART.sh.isOpen) paintPart();      /* Close part / Add to this trade, the same */
+    if (LV.sh && LV.sh.isOpen) paintLevels();        /* FETTI levels (fetti.js), on a phone and on a desktop */
     addr();
   }
   /* The list scrolls under the bottom bar, never behind it: while more is below, the bar has an edge (so a row cut at the
@@ -407,8 +419,10 @@
     var w = api.wallet(), a = api.account(), mk = api.markets();
     var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? api.openings() : [];
     var st = homeState(w, a), p = ADD.pend;
-    var sig = ['dkLeft', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
-      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0, S.sym].join('|');
+    /* the result card also says which price the trade ended at once that is known (v5: "price at 12:03:05, Pyth") */
+    var resAt = S.res ? ((api.result(S.res.pid) || {}).at || '') : '';
+    var sig = ['dkLeft', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key + resAt : '', S.away.map(x => x.key).join(','), ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
+      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0, S.sym, old4Sig(), fxShow(w, st)].join('|');
 
     if (DK.leftSig !== sig) {
       DK.leftSig = sig;
@@ -431,6 +445,11 @@
         add(head, h('div', 'sm-links', [btn('sm-link', 'Add money', () => { openAddDesktop(); }), a.available > 0 ? btn('sm-link', 'Withdraw', withdraw) : null]));
       }
 
+      /* money back for stakers (fetti.js): the same key as on a phone */
+      DK.R.fx = fxShow(w, st) ? fxCard() : null; if (DK.R.fx) add(scroll, h('div', 'sm-sec', DK.R.fx.n));
+      /* money still on the earlier version (v5 only): one key to the page that closes it out */
+      var o4d = old4Card(); if (o4d) add(scroll, h('div', 'sm-sec', o4d));
+
       /* pending add note */
       if (p) {
         DK.R.pend = noteCard();
@@ -441,12 +460,13 @@
       /* result card */
       if (S.res) {
         var res = S.res, c = noteCard(), win = res.pnl > 0;
-        txt(c.b, res.liq ? res.sym + ' closed itself' : res.sym + ' closed: ' + usdP(res.pnl));
-        txt(c.i, res.liq ? 'The ' + usdS(res.lost) + ' you put in is gone.' : usd(res.paid) + ' is back in your trading money.');
+        txt(c.b, resTitle(res));
+        txt(c.i, resLine(res, false));
         c.icon.className = 'sm-pill ' + (win ? 'is-up' : 'is-dn'); c.icon.textContent = win ? '✓' : '×';
         c.n.addEventListener('click', () => { openDoneDesktop(res); });
-        add(scroll, h('div', 'sm-sec', c.n));
+        add(scroll, h('div', 'sm-sec', [c.n, resLink(res)]));
       }
+      awayCards(d => { S.sym = d.sym; S.place = 'done'; S.sig = ''; paint(); }, true).forEach(n => add(scroll, h('div', 'sm-sec', n)));
 
       /* open trades */
       if (ps.length || os.length) {
@@ -474,12 +494,14 @@
     if (DK.R.sub && st === 'money') txt(DK.R.sub, a.inTrades > 0 ? usd(a.inTrades) + ' more is in your open trades.' : '');
     if (p && p.final && p.state === 'done' && !DK.panel && Date.now() - (p.at || 0) > 60000) { dropPend(); return; }
     if (DK.R.pend && p) fillPend(p, DK.R.pend);
+    if (DK.R.fx) fxFill(DK.R.fx);
 
     /* update trade rows */
     var ps2 = w.account && a.loaded ? api.positions() : [], os2 = w.account ? api.openings() : [];
     ps2.forEach(x => {
       var r = DK.R.rows['p' + see(x)]; if (!r) return;
       var st2 = x.status;
+      txt(r.pill, pillText(x.isLong, boostOf(x)));
       txt(r.sub, st2 ? plainStatus(st2.text) : usdS(x.margin) + ' in');
       roomShort(r.room, x, ' · ', !!st2);
       txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
@@ -590,9 +612,9 @@
         allPs.forEach(x => {
           var c = DK.AT.cards[x.id] = { pnl: h('span', 'sm-all-pnl', '—'), close: h('button', 'sm-all-close', 'Close'), room: h('span', 'sm-room-s') };
           var coin = h('span', 'sm-all-coin', x.sym); coin.addEventListener('click', () => { selectCoin(x.sym, x.id); });
-          var pill = h('span', 'sm-all-pill ' + (x.isLong ? 'sm-pill is-up' : 'sm-pill is-dn'), (x.isLong ? '▲ ' : '▼ ') + x.lev + '×');
-          var inAmt = h('span', 'sm-all-in', usdS(x.margin) + ' in');
-          c.close.addEventListener('click', () => { closeGo(x.id); });
+          var pill = c.pill = h('span', 'sm-all-pill ' + (x.isLong ? 'sm-pill is-up' : 'sm-pill is-dn'), (x.isLong ? '▲ ' : '▼ ') + boostOf(x) + '×');
+          var inAmt = c.inAmt = h('span', 'sm-all-in', usdS(x.margin) + ' in');
+          c.close.addEventListener('click', () => { if (c.close._act) { if (!early()) c.close._act(); return; } closeGo(x.id); });
           c.auto = h('span', 'sm-all-auto', ''); c.auto.hidden = true;      /* its take profit and stop loss once set (kept current below) */
           var card = h('div', 'sm-all-card', [coin, pill, inAmt, c.room, c.pnl, c.close, c.auto]);
           allTr.appendChild(card);
@@ -628,16 +650,30 @@
       var mine = COIN.closing === x.id, err = COIN.errs[x.id] || '';
       txt(c.pnl, (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(c.pnl, 'sm-pnl ' + tone(x.pnl));
       roomSet(c.room, x);
+      /* a close held up past its window, or out of time: the card's one key finishes it or asks again, as on a phone */
+      var sb = x.status && !x.status.final && x.status.btn ? x.status.btn : '', again = /again/i.test(sb);
+      var own = !!(sb && !again && x.status.own);
       /* a close on its way that this page did not start here (a take profit / stop loss, another tab) is said too */
-      var going = mine || !!(x.status && !x.status.final);
-      txt(c.go, going ? 'Closing…' : x.status ? 'Closed' : 'Close · take about ' + usd(x.payout)); c.go.disabled = !!COIN.closing || !!x.status;
-      var as = err ? '' : autoSay(x);
-      txt(c.say, err || as); cls(c.say, 'sm-say' + (err ? ' is-bad' : ' is-warn')); show(c.say, !!(err || as));
+      var going = !sb && (mine || !!(x.status && !x.status.final));
+      txt(c.go, sb ? (again ? 'Try closing again' : own ? 'Close now from your wallet' : 'Finish closing now') : going ? 'Closing' + partOf(x) + '…' : x.status ? 'Closed' : 'Close · take about ' + usd(x.payout));
+      c.go.disabled = !sb && (!!COIN.closing || !!x.status); c.go._act = sb ? () => { heldCloseGo(x.id, own); } : null;
+      var say = err || (sb ? (again ? 'It did not close. Your trade is still open.' : own ? OWN_SAY : 'It is taking longer than usual. One press finishes it.') : '');
+      var as = say ? '' : autoSay(x);      /* else: a take profit / stop loss that fired, or waits on hold */
+      txt(c.say, say || as); cls(c.say, 'sm-say' + (say ? ' is-bad' : ' is-warn')); show(c.say, !!(say || as));
       txt(c.entry, price(x.entry, x.sz)); txt(c.end, price(x.endPx, x.sz));
+      txt(c.in, usdS(x.margin) + ' × ' + boostOf(x));
       autoKeySet(c.ak, x, !!(x.status || mine));
+      partKeysSet(c.pk, x, !!(x.status || mine));
       poweredSet(c.pb);
     });
-    os.forEach(o => { var c = DK.CR.cards && DK.CR.cards['o' + o.key]; if (c) txt(c.say, plainStatus(o.say)); });
+    /* an order held up: its key gets the money back (or finishes it), as on a phone */
+    os.forEach(o => {
+      var c = DK.CR.cards && DK.CR.cards['o' + o.key]; if (!c) return;
+      txt(c.say, plainStatus(o.say));
+      var ob = o.kind === 'end' ? '' : o.btn;
+      show(c.go, !!ob); txt(c.go, ob ? (/back/.test(ob) ? ob : 'Finish opening now') : '');
+      c.go._act = ob ? () => { api.openingAct(o.key); } : null;
+    });
 
     /* all trades section: update P&L */
     if (DK.AT && DK.AT.cards) {
@@ -646,10 +682,15 @@
         var ok = !x.delayed && isFinite(x.pnl);
         txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-all-pnl ' + (ok ? tone(x.pnl) : ''));
         roomShort(c.room, x, '', false);
-        c.close.disabled = !!COIN.closing || !!x.status;      /* a close on its way from anywhere (a take profit / stop loss too) */
-        c.close.textContent = COIN.closing === x.id || (x.status && !x.status.final) ? 'Closing…' : x.status ? 'Closed' : 'Close';
+        /* a close held up past its time: this row's key finishes it, closes it from the wallet, or asks again */
+        var st = x.status, sb = st && !st.final && st.btn ? st.btn : '', again = /again/i.test(sb), own = !!(sb && !again && st.own);
+        c.close._act = sb ? () => { heldCloseGo(x.id, own); } : null;
+        c.close.disabled = !sb && (!!COIN.closing || !!st);
+        c.close.textContent = sb ? (again ? 'Close again' : own ? 'Close now' : 'Finish now') : st && st.final ? 'Closed' : st || COIN.closing === x.id ? 'Closing…' : 'Close';
+        if (sb) c.close.title = again ? 'It did not close. Your trade is still open.' : own ? OWN_SAY : 'It is taking longer than usual. One press finishes it.'; else c.close.removeAttribute('title');
         var a = x.auto || {}, at = [a.tp != null ? 'Take profit ' + price(a.tp, x.sz) : '', a.sl != null ? 'Stop loss ' + price(a.sl, x.sz) : ''].filter(Boolean).join(' · ');
         txt(c.auto, at); show(c.auto, !!at);
+        txt(c.pill, (x.isLong ? '▲ ' : '▼ ') + boostOf(x) + '×'); txt(c.inAmt, usdS(x.margin) + ' in');      /* both move when part closes or money is added */
       });
     }
 
@@ -664,19 +705,23 @@
 
   function buildPosCardDesktop(x, isOpening) {
     var card = h('div', 'sm-pos' + (isOpening ? ' is-quiet' : ''));
-    var hdr = h('div', 'sm-pos-h', [h('span', null, [sidePill(x.isLong), h('span', 'sm-in', usdS(x.margin) + ' × ' + x.lev)])]);
-    add(card, hdr);
     var c = { pnl: h('div', 'sm-pnl'), say: h('p', 'sm-say is-bad') };
+    c.in = h('span', 'sm-in', usdS(x.margin) + ' × ' + (isOpening ? x.lev : boostOf(x)));
+    var hdr = h('div', 'sm-pos-h', [h('span', null, [sidePill(x.isLong), c.in])]);
+    add(card, hdr);
     if (!isOpening) {
       c.room = roomNew();
-      c.go = btn('sm-btn is-primary', '', () => { if (!COIN.closing && !early()) closeGo(x.id); });
-      /* the phone card's figures under the key: where it opened, where it closes itself, its take profit and stop loss */
-      c.entry = h('span', null, '—'); c.end = h('span', 'sm-dn', '—'); c.ak = autoKey(x); c.pb = poweredRow();
+      c.go = btn('sm-btn is-primary', '', () => { if (c.go._act) { if (!early()) c.go._act(); return; } if (!COIN.closing && !early()) closeGo(x.id); });
+      /* the phone card's figures under the key: where it opened, where it closes itself, its take profit and stop loss,
+         then Close part and Add to this trade (v5) */
+      c.entry = h('span', null, '—'); c.end = h('span', 'sm-dn', '—'); c.ak = autoKey(x); c.pk = partKeys(x); c.pb = poweredRow();
       c.say.hidden = true; add(card, [c.pnl, c.room.n, c.go, c.say,
-        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.ak.n, c.pb])]);
+        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.ak.n, c.pk ? c.pk.n : null, c.pb])]);
       DK.CR.cards[x.id] = c;
     } else {
-      c.say = h('p', 'sm-say', plainStatus(x.say)); add(card, c.say); DK.CR.cards['o' + x.key] = c;
+      c.say = h('p', 'sm-say', plainStatus(x.say));
+      c.go = btn('sm-btn is-primary', '', () => { if (c.go._act && !early()) c.go._act(); }); c.go.hidden = true;
+      add(card, [c.say, c.go]); DK.CR.cards['o' + x.key] = c;
     }
     return card;
   }
@@ -821,15 +866,16 @@
     var oo = { sym: sym, isLong: up, margin: amt2, lev: lev }, tpF = DK.OR.tp, slF = DK.OR.sl;
     autoShow(tpF, api.autoRead(oo, 'tp', tpF.i.value), t.sz, up, t.endPx); autoShow(slF, api.autoRead(oo, 'sl', slF.i.value), t.sz, up, t.endPx);
     tpF.i.disabled = slF.i.disabled = !!DK.busy;
-    txt(DK.OR.autoFine, 'Optional. ' + honest());
+    var onChain = api.autoChain && api.autoChain(sym);      /* v6: this open takes them on chain */
+    txt(DK.OR.autoFine, 'Optional. ' + (onChain ? 'They close this trade even when Confetti is closed.' : honest()));
     var tp = num(tpF.i.value), sl = num(slF.i.value), fin = tpF.fin != null ? tpF.fin : slF.fin;
     DK.OR.want = { tp: tp, sl: sl };
 
-    var needMoney = a.loaded && a.available < (t.min || 5);
+    var needMoney = a.loaded && t.min > 0 && a.available < t.min;
     var why = '';
     if (t.block) why = plain(t.block);
     else if (DK.orderCustom && DK.orderLevBad) why = 'Type a boost from 1× to ' + m.maxLev + '×.';
-    else if (needMoney) why = 'You need at least ' + usdS(t.min || 5) + ' to trade.';
+    else if (needMoney) why = 'You need at least ' + usdS(t.min) + ' to trade.';
     else if (!(amt2 > 0)) why = 'Type an amount.';
     else if (amt2 < t.min) why = 'The smallest trade is ' + usdS(t.min) + '.';
     else if (amt2 > a.available + 1e-9) why = 'That is more than your trading money (' + usd(a.available) + ').';
@@ -838,8 +884,9 @@
     else if (tp != null || sl != null) why = tpF.bad || slF.bad || autoWhy(api.autoCheck(oo, tp, sl) || '');
 
     /* a take profit or stop loss typed: what to know about it stands above the button (as on a phone) */
-    var note = !why && !DK.orderErr && (tp != null || sl != null) ? (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open in this browser.' : '';
-    show(DK.OR.autoFine, tp == null && sl == null);
+    var note = !why && !DK.orderErr && (tp != null || sl != null) ? (onChain ? CHAIN_ALWAYS : (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open in this browser.') : '';
+    if (onChain && sl != null) txt(DK.OR.autoFine, chainStop(lev));
+    show(DK.OR.autoFine, (tp == null && sl == null) || (onChain && sl != null));
     txt(DK.OR.say, why || DK.orderErr || note); cls(DK.OR.say, 'sm-say' + ((why && !autoWait(why)) || DK.orderErr ? ' is-bad' : ''));
     var word = DK.busy ? (!api.demo && (!api.session().live || t.oneTap) ? CONFIRM : 'Opening…') : '';
     DK.OR.go._add = needMoney && !t.block && !DK.busy;
@@ -982,9 +1029,10 @@
     var w = api.wallet(), a = api.account(), mk = api.markets();
     var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? api.openings() : [];
     var st = homeState(w, a), p = ADD.pend;
-    var sig = ['home', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
-      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0].join('|');
+    var sig = ['home', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', S.away.map(x => x.key).join(','), ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
+      mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0, old4Sig(), fxShow(w, st)].join('|');
     if (S.sig !== sig) { S.sig = sig; buildHome(st, w, a, mk, ps, os, p); }
+    if (R.fx) fxFill(R.fx);
     var bt = st !== 'visitor' && a.loaded ? usd(a.available) : '$—';      /* no wallet yet: a dash, as on the desktop page, never "$0.00" */
     txt(R.bal, bt); cls(R.bal, 'sm-big' + (bt.length > 11 ? ' is-longer' : bt.length > 9 ? ' is-long' : ''));
     if (R.sub && st === 'money') txt(R.sub, a.inTrades > 0 ? usd(a.inTrades) + ' more is in your open trades.' : '');
@@ -993,6 +1041,7 @@
     ps.forEach(x => {
       var r = R.rows['p' + see(x)]; if (!r) return;
       var st2 = x.status;
+      txt(r.pill, pillText(x.isLong, boostOf(x)));
       txt(r.sub, st2 ? plainStatus(st2.text) : usdS(x.margin) + ' in');
       roomShort(r.room, x, ' · ', !!st2);
       txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
@@ -1020,14 +1069,17 @@
       if (a.inTrades > 0) add(main, R.sub = h('p', 'sm-mid', ''));
       add(main, h('div', 'sm-links', [btn('sm-link', 'Add money', () => { openAdd(); }), a.available > 0 ? btn('sm-link', 'Withdraw', withdraw) : null]));
     }
+    R.fx = fxShow(w, st) ? fxCard() : null; if (R.fx) add(main, R.fx.n);
+    var o4 = old4Card(); if (o4) add(main, o4);
     if (p) { R.pend = noteCard(); R.pend.n.addEventListener('click', () => { openAdd(); }); add(main, R.pend.n); }
     if (S.res) {
       var res = S.res, c = noteCard(), win = res.pnl > 0;
-      txt(c.b, res.liq ? res.sym + ' closed itself' : res.sym + ' closed: ' + usdP(res.pnl)); txt(c.i, res.liq ? 'The ' + usdS(res.lost) + ' you put in is gone.' : usd(res.paid) + ' is back in your trading money.');
+      txt(c.b, resTitle(res)); txt(c.i, res.liq ? goneWords(res) : usd(res.paid) + ' is back in your trading money.');
       c.icon.className = 'sm-pill ' + (win ? 'is-up' : 'is-dn'); c.icon.textContent = win ? '✓' : '×';
       c.n.addEventListener('click', () => { S.done = res; S.res = null; go('done', res.sym); });
       add(main, c.n);
     }
+    awayCards(d => { go('done', d.sym); }).forEach(n => add(main, n));
     if (ps.length || os.length) {
       var box = h('div', 'sm-rows');
       os.forEach(function (o) { box.appendChild(tradeRow('o' + o.key, o, () => { go('coin', o.sym); })); });
@@ -1050,7 +1102,66 @@
     } else if (st === 'empty' && !p) add(cta, btn('sm-btn is-primary', 'Add money', () => { openAdd(); }));
     loadSparks(mk);
   }
-  function see(x) { S.seen[x.id] = { sym: x.sym, isLong: x.isLong, lev: x.lev, margin: x.margin }; return x.id; }
+  function see(x) { S.seen[x.id] = { sym: x.sym, isLong: x.isLong, lev: boostOf(x), margin: x.margin, stake: x.stake, added: x.added, cc: x.closeCost }; return x.id; }
+  /* v5, during the v4 run-off: what the account still has on the earlier version of the exchange, as a note key
+     that leads to its page (v4.html: close what is open there, take the money out). Nothing on a v4 config, and
+     nothing once that account has nothing left there. */
+  function old4() { try { return api.old4 ? api.old4() : null; } catch (e) { return null; } }
+  function old4Sig() { var o = old4(); return o ? 'v4:' + Math.round(o.total * 100) + (o.rules ? 'r' : '') : ''; }
+  function old4Card() {
+    var o = old4(); if (!o) return null;
+    var c = noteCard();
+    c.icon.className = 'sm-pill'; c.icon.textContent = '$';
+    txt(c.b, 'You have ' + usd(o.total) + ' on the earlier version');
+    /* v6: a v5 trade's take profit and stop loss are this browser's own rule, and from now on only that page runs it */
+    txt(c.i, 'Close what is open there and take it out.' + (o.rules ? ' The take profit and stop loss you set there now work only while that page is open.' : ''));
+    c.n.addEventListener('click', () => { location.href = o.href; });
+    return c.n;
+  }
+  /* a result's first line on its card: which level closed the trade, when one did */
+  function resTitle(d) {
+    if (d.liq) return d.sym + ' closed itself';
+    return d.sym + (d.by === 'tp' ? ' closed by your take profit: ' : d.by === 'sl' ? ' closed by your stop loss: ' : ' closed: ') + usdP(d.pnl);
+  }
+  /* the trades that ended while Confetti was closed: one card each, in the order they were read. A tap opens its result
+     (openIt). One that is just gone (nothing was read about how it ended) comes last and goes with its tap: its mark is
+     a cross, not the chevron of a card that opens something */
+  function awayCards(openIt, desk) {
+    return S.away.filter(d => !d.gone).concat(S.away.filter(d => d.gone)).map(d => {
+      var c = noteCard(), win = d.pnl > 0;
+      if (d.gone) {
+        txt(c.b, d.sym + ' is no longer open'); txt(c.i, 'It ended while you were away. Your trading money has what it paid back.');
+        c.icon.className = 'sm-pill'; c.icon.textContent = '•';
+        var x = c.n.querySelector('.sm-chev'); if (x) x.textContent = '×';
+        c.n.setAttribute('aria-label', d.sym + ' is no longer open. It ended while you were away. Dismiss.');
+        c.n.addEventListener('click', () => { S.away = S.away.filter(x => x !== d); S.sig = ''; DK.leftSig = ''; kick(); });
+        return c.n;
+      }
+      txt(c.b, resTitle(d)); txt(c.i, desk ? resLine(d, true) : 'While you were away. ' + (d.liq ? goneWords(d) : usd(d.paid) + ' is back in your trading money.'));
+      c.icon.className = 'sm-pill ' + (win ? 'is-up' : 'is-dn'); c.icon.textContent = win ? '✓' : '×';
+      c.n.addEventListener('click', () => { S.away = S.away.filter(x => x !== d); S.done = d; openIt(d); });
+      return desk ? h('div', null, [c.n, resLink(d)]) : c.n;
+    });
+  }
+  /* a result card's second line on a desktop, where the card is all there is of a result (a phone opens the result
+     screen): what came back, then how it ended (the level that fired, its price, when it was crossed and when the trade
+     closed; or the price and its moment), and a level the page saw reached that did not fire */
+  function resLine(d, away) {
+    var now = api.result(d.pid) || {}, tw = trigDone(d), at = now.at || '', seen = now.seen ? plainPx(now.seen) : '';
+    return (away ? 'While you were away. ' : '')
+      + (d.liq ? (d.trig && d.trig.kind === 2 ? 'In one second the price jumped past your stop loss and past the price where this trade closes itself. ' : '') + goneWords(d) : usd(d.paid) + ' is back in your trading money.')
+      + (tw ? ' ' + tw : at && d.exit ? ' ' + (d.liq ? 'Closed itself at $' : 'Closed at $') + d.exit + ': ' + at + '.' : '') + (seen ? ' ' + seen : '');
+  }
+  /* the transaction that closed a trade whose level fired on chain, on the explorer ('' in the demo: its hashes are pretend) */
+  function txUrl(d) {
+    var now = api.result(d.pid);
+    return d.trig && now && now.tx && !api.demo ? String((api.cfg() || {}).explorerUrl || 'https://hyperevmscan.io').replace(/\/$/, '') + '/tx/' + now.tx : '';
+  }
+  function resLink(d) {
+    var u = txUrl(d); if (!u) return null;
+    var a = h('a', 'sm-link sm-res-link', 'See it on the chain'); a.target = '_blank'; a.rel = 'noopener'; a.href = u;
+    return a;
+  }
   function noteCard() {
     var c = { icon: h('span', 'sm-spin'), b: h('b'), i: h('i') };
     c.n = btn('sm-note', [c.icon, h('span', 'sm-t', [c.b, c.i]), h('span', 'sm-chev', '›')]);
@@ -1068,10 +1179,17 @@
   }
   function tradeRow(key, x, fn, rows) {
     var r = (rows || R.rows)[key] = { sub: h('span'), room: h('em', 'sm-room-s'), v: h('b', null, key.charAt(0) === 'o' ? usdS(x.margin) : '—'), c: h('i') };
-    var pill = h('span', 'sm-pill ' + (x.isLong ? 'is-up' : 'is-dn'), (x.isLong ? '▲ UP ' : '▼ DOWN ') + x.lev + '×');
+    var pill = r.pill = h('span', 'sm-pill ' + (x.isLong ? 'is-up' : 'is-dn'), pillText(x.isLong, boostOf(x)));
     var who = h('b', null, [x.sym + ' ', pill]); who.style.display = 'flex'; who.style.alignItems = 'center'; who.style.gap = '8px';
     return btn('sm-row is-pos', [h('span', 'sm-tk', [who, h('i', null, [r.sub, r.room])]), h('span', 'sm-pr', [r.v, r.c])], fn);
   }
+  /* a trade that closed itself: what is gone and, when money was added to it too late to count (v5), what came back */
+  function goneWords(r) {
+    return r.back > 0 ? 'The ' + usdS(r.lost) + ' that was in it is gone. The ' + usdS(r.back) + ' you added came too late to count and is back in your trading money.'
+      : 'The ' + usdS(r.lost) + ' you put in is gone.';
+  }
+  /* a close held up past its time: the key and the sentence. own: only the wallet itself can still finish it (v5) */
+  var OWN_SAY = 'It did not close in time. Now only your own wallet can close it. It closes at the price of that moment or the price when you asked to close, whichever is less good for you.';
   function plainStatus(s) {
     s = String(s || '');
     if (/^Filling|^Sending|^Sent|^Opening/.test(s)) return 'Opening…';
@@ -1172,11 +1290,16 @@
     if (!w.account) add(list, item(w.has ? 'Connect wallet' : 'Open in your wallet app', '', doConnect));
     if (w.account) add(list, item('Add money', '', () => { openAdd(); }));
     if (w.account && a.loaded && a.available > 0) add(list, item('Withdraw', 'to your wallet', withdraw));
+    var o4m = w.account ? old4() : null;
+    if (o4m) add(list, item('Earlier version', usd(o4m.total) + ' to take out', null, o4m.href));
     /* page links */
     add(list, item('Portfolio', 'your trades', null, 'portfolio.html'));
     add(list, item('Leaderboard', 'top traders', null, 'leaderboard.html'));
     add(list, item('House', 'LP and stats', null, 'house.html'));
-    add(list, item('$FETTI', 'the token', null, 'confetti.html'));
+    add(list, item('$FETTI', fxMenuHint(w), null, 'confetti.html'));
+    var F = fx();
+    if (F && w.account && F.drawOn()) add(list, item('Weekly draw', fxDrawHint(w), () => { openDraw(); }));
+    if (F && F.tableHref()) add(list, item('FETTI table', 'stake FETTI, win FETTI', null, F.tableHref()));
     add(list, item('Blockfront', 'what we’re also working on', null, 'blockfront.html'));
     /* sub-links: smaller docs and contracts */
     var sub = h('div', 'sm-menu-sub');
@@ -1814,17 +1937,22 @@
     if (!(a.hypeUsd > 0)) return 0.45;
     return Math.min(TOPUP_MAX_USD, Math.max(0.1, Math.ceil(Number(need - have) / 1e18 * a.hypeUsd * 20) / 20));
   }
+  /* the page's own share of an Add money order, by the FETTI level this wallet held for the last 7 days (perks.json, never the
+     live stake: a level bought for one add and sold after would pay for itself). 1: all of it; 0.5 at Level 1; 0 from Level 2 */
+  function addShare() { var F = fx(), w = api.wallet(); return F && w.account ? F.addShare(w.account) : 1; }
   function orderOf() {
-    var f = api.fees(), w = api.wallet(), m = method(), k = kindNow();
-    /* the new ways: the ETH rule (fees.bridgePercent) where the money crosses chains, the HYPE rule (fees.swapBips) where it does not */
-    if (k) return { kind: k, chain: AK[k].chain, usd: amount(), account: w.account, refund: refundNow(), topUsd: topUsd(), feePct: f.wallet ? (k === 'hype' ? f.swapBips / 100 : f.bridgePercent) : 0, feeTo: f.wallet, px: kindPx(k) };
-    if (m === 'usdt') { var uc = usdtChain(), here = uc === api.chainId; return { chain: uc, usd: amount(), account: w.account, topUsd: here ? 0 : topUsd(), feePct: f.wallet ? (here ? f.swapBips / 100 : f.bridgePercent) : 0, feeTo: f.wallet }; }
-    if (m === 'sol') return { chain: SOLC.chain, usd: amount(), account: w.account, sol: SW.acct ? SW.acct.address : null, topUsd: topUsd(), feePct: f.wallet ? f.bridgePercent : 0, feeTo: f.wallet, px: coinPx('SOL') };
-    if (m === 'fetti') return { chain: api.chainId, usd: amount(), account: w.account, max: !!ADD.max, feePct: f.wallet ? f.swapBips / 100 : 0, feeTo: f.wallet };
+    var f = api.fees(), w = api.wallet(), k = addShare(), m = method(), kn = kindNow();
+    /* the new ways: the ETH rule (fees.bridgePercent) where the money crosses chains, the HYPE rule (fees.swapBips) where it does not;
+       the FETTI level's own part of it (addShare) as on ETH and HYPE */
+    function part(pct) { return { feePct: f.wallet ? pct * k : 0, kept: f.wallet ? pct * (1 - k) : 0 }; }
+    if (kn) return Object.assign({ kind: kn, chain: AK[kn].chain, usd: amount(), account: w.account, refund: refundNow(), topUsd: topUsd(), feeTo: f.wallet, px: kindPx(kn) }, part(kn === 'hype' ? f.swapBips / 100 : f.bridgePercent));
+    if (m === 'usdt') { var uc = usdtChain(), here = uc === api.chainId; return Object.assign({ chain: uc, usd: amount(), account: w.account, topUsd: here ? 0 : topUsd(), feeTo: f.wallet }, part(here ? f.swapBips / 100 : f.bridgePercent)); }
+    if (m === 'sol') return Object.assign({ chain: SOLC.chain, usd: amount(), account: w.account, sol: SW.acct ? SW.acct.address : null, topUsd: topUsd(), feeTo: f.wallet, px: coinPx('SOL') }, part(f.bridgePercent));
+    if (m === 'fetti') return Object.assign({ chain: api.chainId, usd: amount(), account: w.account, max: !!ADD.max, feeTo: f.wallet }, part(f.swapBips / 100));
     /* HYPE: no gas top-up (the wallet holds HYPE), the share of a HYPE conversion (the page's own swap's, fees.swapBips), and on Max
        never more HYPE than the wallet can spare */
-    if (method() === 'hype') return { chain: api.chainId, usd: amount(), account: w.account, topUsd: 0, feePct: f.wallet ? f.swapBips / 100 : 0, feeTo: f.wallet, px: hypePx(), capWei: ADD.max ? hypeSpare() : null };
-    return { chain: chainNow(), usd: amount(), account: w.account, topUsd: topUsd(), feePct: f.wallet ? f.bridgePercent : 0, feeTo: f.wallet, ethPx: ethPx() };
+    if (method() === 'hype') return { chain: api.chainId, usd: amount(), account: w.account, topUsd: 0, feePct: f.wallet ? f.swapBips / 100 * k : 0, feeTo: f.wallet, px: hypePx(), capWei: ADD.max ? hypeSpare() : null, kept: f.wallet ? f.swapBips / 100 * (1 - k) : 0 };
+    return { chain: chainNow(), usd: amount(), account: w.account, topUsd: topUsd(), feePct: f.wallet ? f.bridgePercent * k : 0, feeTo: f.wallet, ethPx: ethPx(), kept: f.wallet ? f.bridgePercent * (1 - k) : 0 };
   }
   function scheduleQuote(ms) { clearTimeout(ADD.qtimer); ADD.qtimer = setTimeout(doQuote, ms == null ? 350 : ms); }
   function doQuote() {
@@ -2091,6 +2219,8 @@
     /* an address way whose summary sits under the fold on a small phone: what lands is said beside the key too */
     if (kn && ok && !why && !note && ADD.sh.foot && ADD.sh.body && r.get.getBoundingClientRect().bottom + ADD.sh.body.scrollTop > ADD.sh.foot.getBoundingClientRect().top) note = 'You’ll trade with ' + get + '.';
     if (api.gate()) { ok = false; retry = false; why = OFF; }
+    /* a staker's level keeps more of the add in the trading money: said once, in dollars, after what lands */
+    if (q && (m === 'eth' || hy)) { var ko = orderOf(); if (ko.kept > 0 && amt > 0) fine += ' Your FETTI level adds ' + usd(amt * ko.kept / 100) + ' to this.'; }
     txt(r.get, get); txt(r.eta, eta || '—');
     txt(r.fine, fine);
     txt(r.say, why || note || ''); cls(r.say, 'sm-say' + (why && why !== LOW_HYPE ? ' is-bad' : ''));      /* the greyed HYPE row's why is a note, not a mistake */
@@ -2854,11 +2984,11 @@
      itself, its take profit and stop loss) and has its own card under the chart, with its own Close, take profit and stop loss. Up and Down stay,
      for another trade on the coin. Every trade action is the Pro code's (api.open, api.close) ---- */
 
-  var COIN = { tf: '1H', mode: 'candles', errs: {}, closing: null };
+  var COIN = { tf: '1H', mode: 'candles', errs: {}, closing: null, part: 0 };      /* part: the share (bps) of the close on its way from here, 0 for a whole one */
   var CHART_TF = ['1m', '5m', '15m', '1H', '4H', '1D'];
   /* The LightweightCharts chart for Simple: one instance shared between phone and desktop, destroyed on
      navigation away from a coin. The chart seam in trade.js loads candles and exposes Pro's theme. */
-  var smChart = { api: null, series: null, host: null, coin: null, candles: [], byTime: {}, precision: 4, lines: [], lineSig: '', keep: [] };
+  var smChart = { api: null, series: null, host: null, coin: null, candles: [], byTime: {}, precision: 4, lines: [], lineSig: '', keep: [], meta: [], drag: null, tap: null };
   function smChartTheme() {
     var t = api.chart.theme();
     return {
@@ -2999,12 +3129,13 @@
     }
     /* subscribe to crosshair moves for hover P&L */
     smChart.api.subscribeCrosshairMove(onSmCrosshair);
+    if (!host._smLines) { host._smLines = true; smLinesInit(host); }      /* the take profit / stop loss lines: tap, drag */
     loadSmCandles(coin);
   }
   function destroySmChart() {
     if (smChart.api) { try { smChart.api.remove(); } catch (e) { /* already gone */ } }
     smChart.api = null; smChart.series = null; smChart.host = null; smChart.coin = null;
-    smChart.candles = []; smChart.byTime = {}; smChart.lines = []; smChart.lineSig = ''; smChart.keep = [];
+    smChart.candles = []; smChart.byTime = {}; smChart.lines = []; smChart.lineSig = ''; smChart.keep = []; smChart.meta = []; smChart.drag = null; smChart.tap = null;
   }
   function loadSmCandles(coin) {
     if (!smChart.api || !coin) return;
@@ -3078,18 +3209,18 @@
     ps.forEach(function (p) {
       if (p.entry > 0) lines.push({ px: p.entry, title: 'You opened at', color: t.ink, style: 2 });
       if (p.endPx > 0) lines.push({ px: p.endPx, title: 'Closes itself at', color: t.accent, style: 0 });
-      if (p.auto && p.auto.tp != null) lines.push({ px: p.auto.tp, title: 'Take profit', color: t.pos, style: 2 });
-      if (p.auto && p.auto.sl != null) lines.push({ px: p.auto.sl, title: 'Stop loss', color: t.neg, style: 2 });
+      if (p.auto && p.auto.tp != null) lines.push({ px: p.auto.tp, title: 'Take profit', color: t.pos, style: 2, pid: p.id, kind: 'tp' });
+      if (p.auto && p.auto.sl != null) lines.push({ px: p.auto.sl, title: 'Stop loss', color: t.neg, style: 2, pid: p.id, kind: 'sl' });
     });
     var sig = lines.map(function (l) { return l.px + ':' + l.title; }).join('|');
-    if (sig === smChart.lineSig) return;
+    if (sig === smChart.lineSig || smChart.drag) return;      /* a line being dragged stays where the pointer has it */
     smChart.lineSig = sig;
     /* near the candles: inside the chart's range (smAutoscale). Where it closes itself stays as it always was, a line that shows
        when the candles reach it (taking it in would squeeze them on every high boost) */
     smChart.keep = lines.filter(function (l) { return l.title !== 'Closes itself at'; }).map(function (l) { return l.px; });
     /* remove old lines */
     smChart.lines.forEach(function (line) { try { smChart.series.removePriceLine(line); } catch (e) { /* ok */ } });
-    smChart.lines = [];
+    smChart.lines = []; smChart.meta = [];
     /* add new lines */
     lines.forEach(function (l) {
       var line = smChart.series.createPriceLine({
@@ -3097,7 +3228,72 @@
         axisLabelVisible: true, title: l.title
       });
       smChart.lines.push(line);
+      if (l.kind) smChart.meta.push({ line: line, pid: l.pid, kind: l.kind, px: l.px, title: l.title });
     });
+  }
+  /* (v6) the trade's own Take profit and Stop loss lines: a tap on one opens the trade's sheet; on a desktop one can be
+     dragged, and the new level goes on release through the sheet's own path (api.autoSet: the same checks; on chain or in
+     this browser, as the trade's levels live). Where it opened and where it closes itself stay put. */
+  var LINE_HIT_PX = 10;
+  function smLineAt(y) {
+    var best = null, bd = LINE_HIT_PX + 1;
+    (smChart.meta || []).forEach(function (m) {
+      var c = smChart.series ? smChart.series.priceToCoordinate(m.px) : null;
+      if (c == null) return;
+      var d = Math.abs(c - y);
+      if (d < bd) { bd = d; best = m; }
+    });
+    return best;
+  }
+  function smPointY(ev) { var r = smChart.host.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+  function smLinesInit(host) {
+    host.addEventListener('pointerdown', ev => {
+      if (!smChart.series || ev.button > 0) return;
+      var pt = smPointY(ev), m = smLineAt(pt.y);
+      if (!m) return;
+      if (isDesktop() && ev.pointerType === 'mouse') {
+        /* a drag: the chart does not pan or zoom under it */
+        ev.preventDefault(); ev.stopPropagation();
+        smChart.drag = { m: m, y0: pt.y, moved: false, px: m.px };
+        try { smChart.api.applyOptions({ handleScroll: false, handleScale: false }); } catch (e) { /* ok */ }
+        try { host.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ }
+      } else smChart.tap = { m: m, x: pt.x, y: pt.y, at: Date.now() };
+    }, true);
+    host.addEventListener('pointermove', ev => {
+      if (!smChart.series) return;
+      var pt = smPointY(ev), d = smChart.drag;
+      if (!d) { if (isDesktop() && ev.pointerType === 'mouse') host.style.cursor = smLineAt(pt.y) ? 'ns-resize' : ''; return; }
+      ev.preventDefault(); ev.stopPropagation();
+      if (!d.moved && Math.abs(pt.y - d.y0) < 3) return;
+      var px = smChart.series.coordinateToPrice(pt.y);
+      if (!(px > 0)) return;
+      d.moved = true; d.px = Number(px.toFixed(Math.max(0, smChart.precision)));
+      var dx = autoOf(d.m.pid);
+      try { d.m.line.applyOptions({ price: d.px, title: d.m.title + ' ' + price(d.px, dx ? dx.sz : null) }); } catch (e) { /* ok */ }
+    }, true);
+    var end = ev => {
+      var d = smChart.drag, t = smChart.tap;
+      smChart.tap = null;
+      if (d) {
+        ev.preventDefault(); ev.stopPropagation();
+        smChart.drag = null;
+        try { smChart.api.applyOptions({ handleScroll: smChartOptions().handleScroll, handleScale: smChartOptions().handleScale }); } catch (e) { /* ok */ }
+        if (!d.moved) { openAuto(d.m.pid); return; }
+        var x = autoOf(d.m.pid), a = (x && x.auto) || {};
+        var tp = d.m.kind === 'tp' ? d.px : (a.tp != null ? a.tp : null), sl = d.m.kind === 'sl' ? d.px : (a.sl != null ? a.sl : null);
+        var w = x && !x.status && !early() ? api.autoSet(d.m.pid, tp, sl) : 'This trade is closing.';
+        if (w) snack(autoWhy(w));
+        smChart.lineSig = '';      /* the lines come back to what the trade holds (the new level once it is in) */
+        syncSmPriceLines(); kick();
+        return;
+      }
+      if (t && ev.type === 'pointerup') {
+        var pt = smPointY(ev);
+        if (Math.abs(pt.x - t.x) < 8 && Math.abs(pt.y - t.y) < 8 && Date.now() - t.at < 600) openAuto(t.m.pid);
+      }
+    };
+    host.addEventListener('pointerup', end, true);
+    host.addEventListener('pointercancel', end, true);
   }
   function market(sym) { return api.markets().filter(m => m.sym === sym)[0] || null; }
   /* (cf_LIQ) Room before a trade closes itself: one line and a slim bar under the P&L, live on every price tick. The figure is how
@@ -3187,7 +3383,7 @@
     if (R.candleBtn) R.candleBtn.setAttribute('aria-pressed', COIN.mode === 'candles' ? 'true' : 'false');
     os.forEach(o => {
       var c = R.cards['o' + o.key]; if (!c) return;
-      txt(c.pnl, o.kind === 'end' ? 'Not opened' : 'Opening…'); txt(c.pct, o.tone ? plainStatus(o.say) : 'A few seconds'); cls(c.pct, 'sm-pnlp ' + (o.tone === 'bad' ? 'sm-dn' : 'sm-mute'));
+      txt(c.pnl, o.kind === 'end' ? 'Not opened' : 'Opening…'); txt(c.pct, o.tone ? plainStatus(o.say) : fillWords(o.sym)); cls(c.pct, 'sm-pnlp ' + (o.tone === 'bad' ? 'sm-dn' : 'sm-mute'));
       /* an order that did not open: one press opens the sheet again for the same coin and side; one held up: one press finishes it */
       var ob = o.btn, ended = o.kind === 'end' && !ob;
       show(c.go, !!ob || ended);
@@ -3207,18 +3403,21 @@
       if (st && st.final) { label = 'Closed'; busy = true; }
       else if (st && st.btn) {
         var again = /again/i.test(st.btn);
-        label = again ? 'Try closing again' : 'Finish closing now'; act = () => { api.closeAct(x.id); };
-        say = again ? 'It did not close. Your trade is still open.' : 'It is taking longer than usual. One tap finishes it.';
+        var own = !again && !!st.own;
+        label = again ? 'Try closing again' : own ? 'Close now from your wallet' : 'Finish closing now'; act = () => { heldCloseGo(x.id, own); };
+        say = COIN.errs[x.id] || (again ? 'It did not close. Your trade is still open.' : own ? OWN_SAY : 'It is taking longer than usual. One tap finishes it.');
       } else if (st || mine) {
-        var still = st && /^Still/.test(st.text);
-        label = st && /^Confirm/.test(st.text) ? CONFIRM : still ? 'Still closing…' : st && /^Check|^Closed/.test(st.text) ? plainStatus(st.text) : 'Closing…'; busy = true;
+        var still = st && /^Still/.test(st.text), pc = partOf(x);      /* a part on its way says its share: "Closing 50%…" */
+        label = st && /^Confirm/.test(st.text) ? CONFIRM : still ? 'Still closing' + pc + '…' : st && /^Check|^Closed/.test(st.text) ? plainStatus(st.text) : 'Closing' + pc + '…'; busy = true;
         say = still ? 'Taking longer than usual. Your trade stays open until it closes.' : '';
       }
-      else label = 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout) : usdS(x.margin));
+      else label = 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout) : usdS(x.back != null ? x.back : x.margin));
       txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy; c.close._act = act;
       var as = say ? '' : autoSay(x);      /* else: a take profit / stop loss that fired, or waits on hold, says so here */
       txt(c.say, say || as); cls(c.say, 'sm-say' + (err && say === err ? ' is-bad' : as ? ' is-warn' : '')); show(c.say, !!(say || as));
+      headSet(c, x);
       autoKeySet(c.ak, x, !!(st || mine));
+      partKeysSet(c.pk, x, !!(st || mine));
       poweredSet(c.pb);
     });
     /* limit order updates */
@@ -3235,14 +3434,21 @@
       txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute'));
       txt(c.pct, ok ? pct(x.pnl / x.margin) : '—'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
       roomSet(c.room, x);
-      var st = x.status, mine = COIN.closing === x.id, label, busy = false;
+      var st = x.status, mine = COIN.closing === x.id, label, busy = false, act = null, say = '';
       if (st && st.final) { label = 'Closed'; busy = true; }
-      else if (st || mine) { label = 'Closing…'; busy = true; }
-      else label = 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout) : usdS(x.margin));
-      txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy;
-      var as = autoSay(x);      /* these cards say nothing else: only a take profit / stop loss that fired or waits on hold */
-      txt(c.say, as); cls(c.say, 'sm-say' + (as ? ' is-warn' : '')); show(c.say, !!as);
+      else if (st && st.btn) {
+        var again = /again/i.test(st.btn), own = !again && !!st.own;
+        label = again ? 'Try closing again' : own ? 'Close now from your wallet' : 'Finish closing now'; act = () => { heldCloseGo(x.id, own); };
+        say = COIN.errs[x.id] || (again ? 'It did not close. Your trade is still open.' : own ? OWN_SAY : 'It is taking longer than usual. One tap finishes it.');
+      }
+      else if (st || mine) { label = 'Closing' + partOf(x) + '…'; busy = true; }
+      else label = 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout) : usdS(x.back != null ? x.back : x.margin));
+      txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy; c.close._act = act;
+      var as = say ? '' : autoSay(x);      /* else only a take profit / stop loss that fired or waits on hold */
+      txt(c.say, say || as); cls(c.say, 'sm-say' + (as ? ' is-warn' : '')); show(c.say, !!(say || as));
+      headSet(c, x);
       autoKeySet(c.ak, x, !!(st || mine));
+      partKeysSet(c.pk, x, !!(st || mine));
       poweredSet(c.pb);
     });
   }
@@ -3294,9 +3500,9 @@
       var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), say: sayLine(), room: roomNew() };
       c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
       c.ak = autoKey(x); c.set = c.ak.n;      /* Take profit and Stop loss, under where it opened and where it closes itself */
-      c.pb = poweredRow();
-      c.n = h('div', 'sm-pos', [head(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set, c.pb])]);
+      c.pk = partKeys(x); c.pb = poweredRow();      /* then Close part and Add to this trade (v5), and whose pipes the page reads through */
+      c.n = h('div', 'sm-pos', [posHead(c, x, x.sym), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
+        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set, c.pk ? c.pk.n : null, c.pb])]);
       box.appendChild(c.n);
     });
     /* limit orders waiting to fire */
@@ -3314,22 +3520,25 @@
     /* All open trades section: all positions across all coins, not just this one */
     var w = api.wallet(), a = api.account();
     var allPs = w.account && a.loaded ? api.positions() : [];
+    /* every open trade is remembered, not only this coin's: one of the others can end while this page is up (its take
+       profit or stop loss), and its result needs what the trade was */
+    allPs.forEach(see);
     var otherPs = allPs.filter(p => p.sym !== sym);
     if (otherPs.length) {
       otherPs.sort((a2, b2) => (b2.openedAt || 0) - (a2.openedAt || 0));
       var allBox = h('div', 'sm-all-trades-ph');
       add(allBox, h('div', 'sm-label', 'Your other open trades'));
       otherPs.forEach(x => {
+        var c = R.cards['all' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), say: sayLine(), room: roomNew() };
         function allHead(p) {
           var coin = h('span', 'sm-all-link', p.sym); coin.addEventListener('click', ev => { ev.stopPropagation(); go('coin', p.sym, p.id); });
-          return h('div', 'sm-pos-h', [h('span', null, [coin, sidePill(p.isLong, p.lev)]), h('span', 'sm-in', usdS(p.margin) + ' in')]);
+          return posHead(c, p, coin);
         }
-        var c = R.cards['all' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), say: sayLine(), room: roomNew() };
         c.say.hidden = true;      /* nothing is said on these cards: no empty line between the bar and Close */
-        c.close = btn('sm-btn is-primary', '', () => { closeGo(x.id); });
-        c.ak = autoKey(x); c.set = c.ak.n; c.pb = poweredRow();
+        c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) { if (!early()) c.close._act(); return; } closeGo(x.id); });
+        c.ak = autoKey(x); c.set = c.ak.n; c.pk = partKeys(x); c.pb = poweredRow();
         c.n = h('div', 'sm-pos', [allHead(x), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-          h('div', 'sm-kvs', [c.set, c.pb])]);
+          h('div', 'sm-kvs', [c.set, c.pk ? c.pk.n : null, c.pb])]);
         allBox.appendChild(c.n);
       });
       main.appendChild(allBox);
@@ -3378,6 +3587,14 @@
       row.appendChild(lab); marksEl.appendChild(row);
     });
   }
+  /* the key of a close that is held up (finish it, close it from the wallet, ask again). When the wallet itself must
+     sign (the close is the wallet's alone, or one-tap is not on) it is asked onto HyperEVM first, as closeGo does */
+  function heldCloseGo(pid, own) {
+    var s = api.session();
+    if (api.demo || (s.live && !own)) { api.closeAct(pid); return; }
+    COIN.errs[pid] = ''; S.claim = true;
+    timed(api.toHyperEvm(), 30000, '').then(() => { api.closeAct(pid); }, () => { COIN.errs[pid] = STAYED + 'it did not close. Try again.'; }).then(() => { S.claim = false; kick(); });
+  }
   function closeGo(pid) {
     var s = api.session();
     if (COIN.closing || early()) return;
@@ -3390,21 +3607,54 @@
   }
   /* a trade ended (closed, or it closed itself): the result takes the coin's place, or waits on Home as a card */
   function onResult(r) {
-    var pid = r && r.pid, res = pid && api.result(pid), seen = pid && S.seen[pid];
+    var pid = r && r.pid, res = pid && api.result(pid), seen = pid && (S.seen[pid] || (res && res.was));
+    /* v6: a trade of the last visit that is gone, with nothing read about how it ended */
+    var lost = pid && /^g/.test(String(r.key)) && api.gone ? api.gone(pid) : null;
+    if (lost) { if (!S.away.some(x => x.key === r.key)) S.away.push({ key: r.key, pid: pid, sym: lost.sym, isLong: lost.isLong, lev: lost.lev, margin: lost.margin, gone: true, pnl: 0 }); redo(); return; }
     if (!res || !seen || !/^[cl]/.test(String(r.key))) { kick(); return; }
-    var d = { key: r.key, pid: pid, sym: seen.sym, isLong: seen.isLong, lev: seen.lev, margin: seen.margin, liq: !!res.liq, pnl: res.liq ? -res.lost : res.pnl, paid: res.liq ? 0 : res.paid, lost: res.lost, exit: res.exit };
+    var d = { key: r.key, pid: pid, sym: seen.sym, isLong: seen.isLong, lev: seen.lev, margin: seen.margin, liq: !!res.liq, pnl: res.liq ? -res.lost : res.pnl, paid: res.liq ? 0 : res.paid, lost: res.lost, back: res.liq && res.back > 0 ? res.back : 0, exit: res.exit };
     d.by = res.liq ? '' : AUTO.fired[pid] || '';      /* closed by its take profit or its stop loss: the result says so */
+    d.paidIn = fxPaid(seen, d.liq);                      /* what it put in that money back counts (v5), for the result's one line */
+    /* a level that fired on chain (TriggerFired): which one, when it was crossed, a late stop at its own price */
+    if (res.trig) { d.trig = res.trig; d.closedAt = res.closedAt || 0; if (res.trig.kind !== 2) d.by = res.trig.kind === 0 ? 'tp' : 'sl'; }
+    /* it ended while Confetti was closed: its own card on Home, beside any others */
+    if (res.away) { d.away = true; if (!S.away.some(x => x.key === d.key)) S.away.push(d); redo(); return; }
     if (shown() && !isDesktop() && S.place === 'coin' && S.sym === d.sym && !sheets.length) { S.done = d; S.place = 'done'; S.sig = ''; }
     /* a wide screen on that coin, nothing open over it: the result (and its card) comes up in the right-hand panel */
     else if (shown() && isDesktop() && !DK.panel && S.sym === d.sym && !document.querySelector('dialog[open]')) { openDoneDesktop(d); return; }
-    else S.res = d;
+    else {
+      S.res = d;
+      /* on another coin's page (a phone): said at once; its card waits on the first screen */
+      if (shown() && !isDesktop() && S.place === 'coin') snack(resTitle(d) + '.');
+    }
     redo();
   }
   /* the end screen's own words: "DOGE up 20×, closed by your take profit", and what is back or gone, with the balance */
-  function doneLabel(d) { return d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×, ' + (d.liq ? 'closed itself' : d.by === 'tp' ? 'closed by your take profit' : d.by === 'sl' ? 'closed by your stop loss' : 'closed'); }
+  function doneLabel(d) { return d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×, ' + (d.liq ? 'closed itself' : d.by === 'tp' ? 'closed by your take profit' : d.by === 'sl' ? 'closed by your stop loss' : 'closed') + (d.away ? ' while you were away' : ''); }
   function doneMid(d, bal) {
-    return d.liq ? ['The price reached ' + (d.exit ? '$' + d.exit : 'its limit') + ', so this trade closed itself. The ' + usdS(d.lost) + ' you put in is gone. Nothing more is owed.', h('br'), 'Balance: ', bal]
+    return d.liq ? [(d.trig && d.trig.kind === 2 ? 'In one second the price jumped past your stop loss and past the price where this trade closes itself, so it closed itself at ' + (d.exit ? '$' + d.exit : 'that price') + '. ' : 'The price reached ' + (d.exit ? '$' + d.exit : 'its limit') + ', so this trade closed itself. ') + goneWords(d) + ' Nothing more is owed.', h('br'), 'Balance: ', bal]
       : [usd(d.paid) + ' is back in your trading money.', h('br'), 'Balance: ', bal];
+  }
+  /* a level that fired on chain, in the result's words: "Closed by your stop loss at $0.07698. It was crossed at
+     12:03:05 and the trade closed at 12:03:06."; a late stop "Closed by your stop loss at your price, $0.07700" */
+  function trigDone(d) {
+    var t = d && d.trig;
+    if (!t || t.kind === 2) return '';
+    var clock = s => new Date(s * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    var what = t.kind === 0 ? 'take profit' : 'stop loss', late = t.kind === 1 && t.late;
+    return 'Closed by your ' + what + ' at ' + (late ? 'your price, $' + t.level : '$' + t.exit) + '.' +
+      (t.at > 0 ? ' It was crossed at ' + clock(t.at) + (d.closedAt > 0 ? ' and the trade closed at ' + clock(d.closedAt) : '') + (late ? ', late, so at your own price' : '') + '.' : '');
+  }
+  /* under an end screen's words, on a phone and in a wide screen's panel alike: the level that fired on chain (its price,
+     when it was crossed, when the trade closed), else the price it ended at and that price's moment; a take profit the page
+     saw reached that did not fire (V5P_SPEC 18.16 item 1); and the transaction that closed it, for anyone to check */
+  function doneAt(d, atNode, txNode) {
+    var now = api.result(d.pid), at = now && now.at ? now.at : '', tw = trigDone(d);
+    var seen = now && now.seen ? plainPx(now.seen) : '';      /* plainPx gives its price a $ */
+    var atw = tw || (at ? (d.exit ? (d.liq ? 'Closed itself at $' : 'Closed at $') + d.exit + ': ' : 'The ') + at + '.' : '');
+    txt(atNode, atw + (seen ? (atw ? ' ' : '') + seen : '')); show(atNode, !!(atw || seen));
+    var txu = txUrl(d);
+    if (txNode) { if (txu && txNode.href !== txu) txNode.href = txu; show(txNode, !!txu); }
   }
   function paintDone() {
     var d = S.done, a = api.account();
@@ -3415,12 +3665,20 @@
       main.className = 'sm-main'; main.textContent = ''; cta.textContent = ''; cta.className = 'sm-cta';
       R.bal = h('b', null, '');
       add(main, [h('div', 'sm-ok' + (win ? '' : flat ? ' is-flat' : ' is-loss'), win ? '✓' : flat ? '=' : '×'),
-        h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R.bal)),
-        card ? cardKey(d, () => { cardGo(d, snack); }) : null]);
+        h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R.bal))]);
+      /* which price it ended at, and from what moment ("price at 12:03:05, Pyth"); empty on a market without it */
+      R.at = h('p', 'sm-fine', ''); R.at.hidden = true; add(main, R.at);
+      /* a level that fired on chain links the transaction that closed the trade (anyone can check it) */
+      R.tx = h('a', 'sm-link', 'See it on the chain'); R.tx.target = '_blank'; R.tx.rel = 'noopener'; R.tx.hidden = true; add(main, R.tx);
+      /* money back (fetti.js): what this trade brings back, or would at Level 1 */
+      var fl = fxLine(d); if (fl) add(main, fl);
+      /* the trader's own card, under the screen's words */
+      if (card) add(main, cardKey(d, () => { cardGo(d, snack); }));
       add(cta, btn('sm-btn is-primary', 'Trade again', () => { S.done = null; S.place = 'coin'; S.sym = d.sym; S.pid = null; S.sig = ''; paint(); }));
       if (card) add(cta, btn('sm-btn is-ghost', 'Share your trade', () => { cardGo(d, snack); }));
     }
     txt(R.bal, a.loaded ? usd(a.available) : '…');
+    doneAt(d, R.at, R.tx);
   }
 
   /* ---- the trade card at the end (the owner, 2026-11-19: two mock-ups, then "can you use those at the end"). Every end
@@ -3434,7 +3692,7 @@
   function cardOn() { var cs = window.ConfettiShare; return !!(cs && cs.tradeCard && cs.drawCardInto && cs.shareCard); }
   /* the trader's own referral code, as Pro's Refer panel shows it (trade.js reads it from the chain when the wallet connects) */
   function refCode() { var n = $('rfCode'), c = n ? String(n.textContent || '').trim() : ''; return /^[a-z0-9_]{3,16}$/.test(c) ? c : ''; }
-  function cardOf(d) { return { sym: d.sym, isLong: d.isLong, lev: d.lev, margin: d.margin, pnl: d.pnl, account: api.wallet().account || '', code: refCode() }; }
+  function cardOf(d) { return { sym: d.sym, isLong: d.isLong, lev: d.lev, margin: d.margin, pnl: d.pnl, account: api.wallet().account || '', code: refCode(), level: fxBadge() }; }
   function cardMake(d) {
     if (CARD.key === d.key && CARD.card) return Promise.resolve(CARD.card);
     if (CARD.key === d.key && CARD.p) return CARD.p;
@@ -3475,17 +3733,20 @@
     if (!d) { closePanel(); return; }
     if (DK.doneSig !== d.key) {
       DK.doneSig = d.key;
-      var win = d.pnl > 0.004, flat = Math.abs(d.pnl) <= 0.004, card = cardOn(), R2 = DK.DR = { bal: h('b', null, ''), say: sayLine() };
+      var win = d.pnl > 0.004, flat = Math.abs(d.pnl) <= 0.004, card = cardOn(), R2 = DK.DR = { bal: h('b', null, ''), say: sayLine(), at: h('p', 'sm-fine', ''), tx: h('a', 'sm-link', 'See it on the chain') };
+      R2.tx.target = '_blank'; R2.tx.rel = 'noopener'; R2.tx.hidden = true;
+      R2.at.hidden = true;      /* which price it ended at, and from what moment (v5); empty on a market without it */
       var say = s => { txt(R2.say, s); };
       head.querySelector('h2').textContent = d.sym + ' closed';
       head.querySelector('.sm-x').onclick = closePanel;
       body.textContent = ''; foot.textContent = '';
       add(body, [h('div', 'sm-ok' + (win ? '' : flat ? ' is-flat' : ' is-loss'), win ? '✓' : flat ? '=' : '×'),
-        h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R2.bal)),
+        h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R2.bal)), R2.at, R2.tx, fxLine(d),
         card ? cardKey(d, () => { cardGo(d, say); }) : null]);
       add(foot, [R2.say, btn('sm-btn is-primary', 'Trade again', closePanel), card ? btn('sm-btn is-ghost sm-card-go', 'Share your trade', () => { cardGo(d, say); }) : null]);
     }
     txt(DK.DR.bal, a.loaded ? usd(a.available) : '…');
+    doneAt(d, DK.DR.at, DK.DR.tx);
   }
 
   /* ---- take profit and stop loss (the owner, 2026-11-19: "we need to bring back stop loss and take profit", "just make it
@@ -3493,10 +3754,23 @@
      closes itself, in one key that opens this sheet; the order sheet has both boxes in view. The rule itself is the Pro
      code's (trade.js): a close this browser sends when the price crosses a level, through one-tap when it is on, held to
      Pro's checks (api.autoRead / autoSet / autoCheck). So where it is set the sheet says the one thing that matters about
-     it: it fires while Confetti is open here. ---- */
+     it: it fires while Confetti is open here.
+     v6 (then "then yes develop a real"): on a fast market of a v6 exchange the levels live on chain (x.auto.chain, a new
+     open's: api.autoChain(sym)). The same screens set, change and remove them there; they close the trade whether this
+     page is open or not, so those sheets say that instead, with how a stop fills (V5P_SPEC 18.11, in Simple's words: the
+     liquidation price is where a trade closes itself, leverage is its boost), and the card says what the chain is doing:
+     starts in N s (the market's own delay, 2 to 4 at launch), the old levels still counting, saving, paused on this market. PEOPLE and a market off Pyth keep the
+     browser rule. ---- */
 
   var AUTO = { sh: null, pid: null, R: {}, err: '', was: null, fired: {}, n: 0 };
   function honest() { return isDesktop() ? 'It fires while Confetti is open in this browser.' : 'It fires while Confetti is open on this phone.'; }
+  var CHAIN_ALWAYS = 'Your take profit and stop loss close this trade even when Confetti is closed.';
+  /* under a stop on chain, at every boost; at 250× and more the jump past both */
+  function chainStop(lev) {
+    return 'We check the price once a second. Once it reaches your stop, the trade closes at that price. A sudden jump can close it past your price.' +
+      (lev >= 250 ? ' At ' + lev + '× one second can move past both your stop and the price where the trade closes itself. Then it closes itself instead.' : '');
+  }
+  function clockOf(s) { return new Date(s * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
   function kvRow(k, v) { return h('div', 'sm-kv', [h('span', null, k), v]); }
   /* the card's key: Take profit and Stop loss, each with its price or Not set, in the card's own key / value lines */
   function autoKey(x) {
@@ -3522,6 +3796,40 @@
     else if (a || (!x.status && COIN.closing !== x.id)) delete AUTO.fired[x.id];
     var f = AUTO.fired[x.id];
     if (f && (x.status || COIN.closing === x.id)) return 'The price reached your ' + (f === 'tp' ? 'take profit' : 'stop loss') + ': closing it for you.';
+    /* v6: what the chain is doing with them */
+    if (a && a.chain && !x.status) {
+      /* a status that only says how a close would be confirmed hides nothing: paused, and "only while open", matter more */
+      var quiet = !a.status || /wallet asks|waiting for a wallet/.test(a.status);
+      if (a.err) return a.err;
+      if (a.saving === 'wait') return 'Saving… keep this page open a few seconds.';
+      if (a.saving) return 'Saving your take profit and stop loss…';
+      /* a level this page has seen reached: the close is on its way; a take profit that takes longer than it should says
+         when this page closes the trade itself. A stop loss is never closed by this page (a stop that closes late closes
+         at the stop's own price, and a close sent from here would give that up): the card says the price it closes at
+         and what Close would take instead */
+      if (a.crossed && quiet && a.crossed.which === 'sl' && a.crossed.slow) {
+        return 'Your stop loss was reached at ' + clockOf(a.crossed.at) + ' and has not closed the trade yet. ' +
+          (a.crossed.own ? 'A stop that closes late closes at your price, ' + price(a.crossed.level, x.sz) + '. If you press Close, you get the market price instead.'
+            : 'If you press Close, you get the market price now.');
+      }
+      if (a.crossed && quiet) {
+        var cw = a.crossed.which === 'tp' ? 'take profit' : 'stop loss';
+        return a.crossed.slow ? 'Your ' + cw + ' was reached at ' + clockOf(a.crossed.at) + ' and has not closed yet. If it still has not at ' + clockOf(a.crossed.closeAt) + ', this page closes the trade at the market price.'
+          : 'The price reached your ' + cw + ' at ' + clockOf(a.crossed.at) + ': closing.';
+      }
+      /* a stop this page watched go unfired, the price now back inside it: the chain still owes it its own price, and
+         anyone may still send that close */
+      if (a.missed && quiet) return 'Your stop loss was reached at ' + clockOf(a.missed.at) + ' and did not close the trade. It can still close it at your price, ' + price(a.missed.level, x.sz) + '.';
+      if (a.paused && quiet) return 'Paused on this market: while it is paused, they close this trade only while Confetti is open here.';
+      /* a level the price is already at or past while it waits for its start: it closes the trade when it starts */
+      if ((a.starts || a.updating) && a.already) return 'The price is already past your ' + (a.already === 'tp' ? 'take profit' : 'stop loss') + '. It closes this trade when it starts, in ' + (a.starts || a.updating) + ' s, unless the price comes back.';
+      if (a.starts) return 'Take profit and stop loss start in ' + a.starts + ' s.';
+      if (a.updating) return 'Updating: your old levels count for ' + a.updating + ' more second' + (a.updating === 1 ? '' : 's') + '.';
+      if (a.past) return 'Your stop loss is past the price where this trade closes itself, so it does nothing there. Move it closer.';
+      if (a.local && quiet) return 'These still work only while Confetti is open here. Save them again to make them work when it is closed.';
+    }
+    /* v6: levels asked for with the open that did not go on chain (its market was paused for them as it opened) */
+    if (a && a.kept && !x.status && (!a.status || /wallet asks|waiting for a wallet/.test(a.status))) return 'These did not go on chain: this market is paused for them. They close this trade only while Confetti is open here.';
     if (x.missed && !x.status && COIN.closing !== x.id && !(a && /^held: /.test(a.status || ''))) return autoMissed(x);
     if (!a || !a.status || a.status === 'closing') return '';
     if (/^held: /.test(a.status)) {
@@ -3549,7 +3857,9 @@
     var lab = h('label', 'sm-label', kind === 'tp' ? 'Take profit' : 'Stop loss'); lab.htmlFor = f.i.id;
     var box = h('span', 'sm-ak-in', [h('span', null, '$'), f.i]);
     box.addEventListener('pointerdown', ev => { if (ev.target !== f.i && !f.i.disabled) { ev.preventDefault(); f.i.focus(); } });      /* the whole box is the target */
-    f.n = h('div', 'sm-ak-f is-' + kind, [lab, box, f.rd]);
+    /* quick picks (the card's sheet): three keys under the box, each a price; filled by paintAuto, empty elsewhere */
+    f.picks = h('div', 'sm-ak-picks'); f.picks.hidden = true; f.pk = [];
+    f.n = h('div', 'sm-ak-f is-' + kind, [lab, box, f.picks, f.rd]);
     /* as it is typed the line above the button can grow (a refusal, "did you mean"): the box and what is under it stay in view */
     f.i.addEventListener('input', () => {
       var v = f.i.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'); if (v !== f.i.value) f.i.value = v; onInput();
@@ -3602,7 +3912,7 @@
     if (x.missed) { api.autoSeen(pid); kick(); }      /* (amt5) the card said a level was not set: said once, this is the key to set a new one */
     var sh = AUTO.sh || (AUTO.sh = makeSheet('Auto')), r = AUTO.R = {}, a = x.auto || {};
     AUTO.pid = pid; AUTO.err = ''; AUTO.was = { tp: a.tp != null ? a.tp : null, sl: a.sl != null ? a.sl : null };
-    sh.title.textContent = ''; add(sh.title, [x.sym, sidePill(x.isLong, x.lev)]);
+    sh.title.textContent = ''; add(sh.title, [x.sym, sidePill(x.isLong, boostOf(x))]);
     sh.body.textContent = ''; sh.foot.textContent = '';
     r.now = h('span', null, '—'); r.entry = h('span', null, '—'); r.end = h('span', 'sm-dn', '—');
     var again = () => { AUTO.err = ''; paintAuto(); };
@@ -3626,33 +3936,521 @@
     var sz = x.sz, rt = api.autoRead(pid, 'tp', r.tp.i.value) || {}, rs = api.autoRead(pid, 'sl', r.sl.i.value) || {};
     txt(r.now, price(rt.now, sz)); txt(r.entry, price(x.entry, sz)); txt(r.end, price(x.endPx, sz));
     autoShow(r.tp, rt, sz, x.isLong, x.endPx); autoShow(r.sl, rs, sz, x.isLong, x.endPx);
+    autoPicks(pid, r);
     var tp = num(r.tp.i.value), sl = num(r.sl.i.value), was = AUTO.was, had = was.tp != null || was.sl != null;
     var same = tp === was.tp && sl === was.sl, none = tp == null && sl == null, fin = r.tp.fin != null || r.sl.fin != null;
     var why = AUTO.err || r.tp.bad || r.sl.bad;
     /* (amt5) the chain's price cannot be read just now: a typed level is not judged against the chart, the button waits */
     if (!why && !same && !none && !fin && (rt.wait || rs.wait)) why = 'One moment: reading the price.';
-    txt(r.go, same ? 'Done' : fin ? 'Take the price offered' : none ? 'Remove both' : had ? 'Save changes' : tp != null && sl != null ? 'Set both' : tp != null ? 'Set take profit' : 'Set stop loss');
+    var local = !!(x.auto && x.auto.local);      /* v6: a browser rule from before; saving it puts it on chain */
+    txt(r.go, same && !(local && !none) ? 'Done' : same ? 'Save them' : fin ? 'Take the price offered' : none ? 'Remove both' : had ? 'Save changes' : tp != null && sl != null ? 'Set both' : tp != null ? 'Set take profit' : 'Set stop loss');
     r.go.disabled = !same && !fin && !!why;
-    txt(r.say, why); cls(r.say, 'sm-say' + (why && !autoWait(why) ? ' is-bad' : '')); show(r.say, !!why);
+    /* v6, on chain: they close it with this page closed. That stands right above the key, in view on every phone (the
+       reason a key is off comes first); under the boxes: how a stop fills, and that a change goes from the wallet
+       without one-tap */
+    var ch = !!(x.auto && x.auto.chain && !x.auto.paused);
+    /* a stop the page saw reached that has not closed the trade yet is still owed its own price by the chain; the book
+       keeps only the last two sets of levels, so changes made now can drop it. Said where the key is, before it is pressed */
+    var cr = ch && x.auto.crossed && x.auto.crossed.which === 'sl' && x.auto.crossed.slow && x.auto.crossed.own ? x.auto.crossed : null;
+    var owed = cr && !same ? 'Your stop loss was reached at ' + clockOf(cr.at) + ' and has not closed the trade yet. Changing it now can give up closing at its price.' : '';
+    txt(r.say, why || owed || (ch ? CHAIN_ALWAYS : '')); cls(r.say, 'sm-say' + (why && !autoWait(why) ? ' is-bad' : owed ? ' is-warn' : '')); show(r.say, !!why || ch);
     show(r.off, had && !none);
     var s = api.session(), fine = honest() + (!api.autoKept() ? ' This browser is not saving site data, so it lasts only while this tab is open.' : !s.live && !api.demo ? ' Your wallet asks you to confirm the close.' : '');
-    txt(r.fine, fine);
+    if (ch) fine = (sl != null ? chainStop(boostOf(x)) : '') + (!s.live && !api.demo && !same ? (sl != null ? ' ' : '') + 'Your wallet asks you to confirm the change.' : '');
+    else if (x.auto && x.auto.paused) fine = 'Paused on this market: while it is paused, they close this trade only while Confetti is open here. ' + fine;
+    txt(r.fine, fine); show(r.fine, !!fine);
+  }
+  /* (v6) the quick picks of the card's sheet: take profit +25% / +50% / +100% of what went in, stop loss -25% / -50% of it
+     and the furthest a stop can sensibly go (just before the price where the trade closes itself). A key puts its price
+     in the box (the readout under it says what it does, as for a typed one); a pick that cannot be set now (the price is
+     already past it) is off. The keys are made once and only their state changes, so nothing moves under the thumb. */
+  function autoPicks(pid, r) {
+    var pk = api.autoPicks ? api.autoPicks(pid) : null;
+    [r.tp, r.sl].forEach(f => {
+      var list = pk ? pk[f.kind] : null;
+      if (!list || !list.length) { f.picks.hidden = true; return; }
+      if (!f.pk.length) {
+        list.forEach((it, i) => {
+          var b = btn('sm-ak-pick', it.k, () => { var now = f.pk[i]; if (now.px == null || f.i.disabled) return; f.i.value = String(now.px); f.onInput(); });
+          b.setAttribute('aria-label', (f.kind === 'tp' ? 'Take profit at ' : 'Stop loss at ') + (it.far ? 'the furthest it can go, just before the trade closes itself' : it.k.replace('−', 'minus ').replace('+', 'plus ') + ' of what you put in'));
+          f.pk.push({ b: b, px: null }); add(f.picks, b);
+        });
+      }
+      list.forEach((it, i) => { var k = f.pk[i]; if (!k) return; k.px = it.px; k.b.disabled = it.px == null; k.b.setAttribute('aria-pressed', it.px != null && num(f.i.value) === it.px ? 'true' : 'false'); });
+      f.picks.hidden = false;
+    });
   }
   function autoGo() {
     var r = AUTO.R, pid = AUTO.pid;
     if (pid == null || early() || r.go.disabled) return;
     /* an unfinished number is taken first (as Pro's Save does): the box reads it again and the next press saves */
     if (r.tp.fin != null || r.sl.fin != null) { [r.tp, r.sl].forEach(f => { if (f.fin != null) f.i.value = String(f.fin); }); paintAuto(); return; }
-    var tp = num(r.tp.i.value), sl = num(r.sl.i.value);
-    if (tp === AUTO.was.tp && sl === AUTO.was.sl) { AUTO.sh.close(); return; }
+    var tp = num(r.tp.i.value), sl = num(r.sl.i.value), x = autoOf(pid);
+    if (tp === AUTO.was.tp && sl === AUTO.was.sl && !(x && x.auto && x.auto.local && (tp != null || sl != null))) { AUTO.sh.close(); return; }
     var w = api.autoSet(pid, tp, sl);       /* Pro's checks once more, at the press */
     if (w) { AUTO.err = autoWait(w) ? '' : autoWhy(w); paintAuto(); return; }      /* a wait is not a refusal: the line above the button says it */
     AUTO.sh.close(); kick();      /* the card under the sheet now shows the new levels: that is the answer */
   }
   function autoOff() {
     var pid = AUTO.pid; if (pid == null || early()) return;
-    api.autoSet(pid, null, null); AUTO.sh.close(); kick();
+    var w = api.autoSet(pid, null, null);      /* v6: refused on a market whose levels are paused, with why */
+    if (w) { AUTO.err = autoWhy(w); paintAuto(); return; }
+    AUTO.sh.close(); kick();
   }
+
+  /* ---- Close part and Add to this trade (v5; the owner, 2026-11-04: "can we make it so that you can close a % of your position",
+     2026-11-19: "we are still doing top ups and partial closes right"). Under its take profit and stop loss every trade card has
+     two keys. Each opens a sheet that is the face of the page's own dialog for it (trade.js pmOpen, through api.part): the dialog
+     keeps the share or the amount, runs its checks, asks the exchange what would happen and sends; the sheet shows those figures
+     (api.part.view) in Simple's words and hands every tap back. Nothing is worked out here.
+     Close part: 25 / 50 / 75 % or All, or a typed percent, with what the trader takes now and what stays in the trade; one tap
+     closes it (through one-tap when it is on; All is the card's own Close). The card then shows what is left and says what the
+     part gave back; its take profit and stop loss stay on what is left.
+     Add to this trade: an amount from the trading money, with where the trade closes itself now and after, how far each is from
+     the price, and the boost now and after. The wallet confirms this one (one-tap cannot send it), and the sheet says so.
+     A config before v5 has neither (x.can), and the end screen with its card comes only when a whole trade ends. ---- */
+
+  var PART = { sh: null, pid: null, tab: '', R: {}, err: '', busy: '', run: null, max: false };
+  /* the boost a trade runs at: the one it opened with until money is added to it */
+  function boostOf(x) { return x.boost != null ? x.boost : x.lev; }
+  function pillText(isLong, lev) { return (isLong ? '▲ UP' : '▼ DOWN') + (lev ? ' ' + lev + '×' : ''); }
+  function pctS(bps) { return String(bps / 100) + '%'; }
+  function secsS(n) { return n + (n === 1 ? ' second' : ' seconds'); }
+  /* " 50%" for the Close key of a trade whose close on its way is for a part ("Closing 50%…"); '' for a whole one */
+  function partOf(x) { var b = x.part || (COIN.closing === x.id ? COIN.part : 0); return b ? ' ' + pctS(b) : ''; }
+  /* how long an order on this coin takes to fill, in the coin's own time (the chain's setting for it, through the page);
+     "A few seconds" until that is known */
+  function fillWords(sym) { var n = api.fill ? api.fill(sym) : null; return n > 0 ? 'About ' + secsS(n) : 'A few seconds'; }
+  /* a trade card's top line. Its boost and what is in it change when a part closes or money is added: both are kept current */
+  function posHead(c, x, who) {
+    c.pill = sidePill(x.isLong, boostOf(x)); c.in = h('span', 'sm-in', usdS(x.margin) + ' in');
+    return h('div', 'sm-pos-h', [h('span', null, [who, c.pill]), c.in]);
+  }
+  function headSet(c, x) { txt(c.pill, pillText(x.isLong, boostOf(x))); txt(c.in, usdS(x.margin) + ' in'); }
+  /* the card's two keys, the same size, side by side under its take profit and stop loss; none where the exchange has neither */
+  function partKeys(x) {
+    if (!x.can || !api.part) return null;
+    var who = ', ' + x.sym + (x.isLong ? ' up' : ' down');
+    var k = { close: btn('sm-pk', 'Close part', () => { openPart(x.id, 'close'); }), add: btn('sm-pk', 'Add to this trade', () => { openPart(x.id, 'add'); }) };
+    k.close.setAttribute('aria-label', 'Close part' + who); k.add.setAttribute('aria-label', 'Add to this trade' + who);
+    /* under them, for a minute after either: what the part gave back, or what was added (nothing above it moves when it comes) */
+    k.did = h('p', 'sm-say sm-pt-did', ''); k.did.setAttribute('aria-live', 'polite'); k.did.hidden = true;
+    k.n = h('div', 'sm-pkb', [h('div', 'sm-pks', [k.close, k.add]), k.did]);
+    return k;
+  }
+  /* off while a close of that trade (all of it, or a part) is on its way */
+  function partKeysSet(k, x, off) {
+    if (!k) return;
+    k.close.disabled = k.add.disabled = !!off;
+    var s = partSay(x), key = s.map(n => typeof n === 'string' ? n : n.textContent).join('');
+    if (k.didKey !== key) { k.didKey = key; k.did.textContent = ''; add(k.did, s); }
+    show(k.did, !!key);
+  }
+  /* what was last done to this trade, for a minute, in its card's own line: the part that closed, or the money added. In the
+     end screen's own manner: a quiet sentence, the money in ink, the result in its colour and with its sign */
+  function partSay(x) {
+    var l = api.part ? api.part.last(x.id) : null;
+    if (!l) return [];
+    if (l.kind === 'part') return ['Closed ' + pctS(l.bps) + ': ', h('b', null, usd(l.paid)), ' is back in your trading money (', h('b', tone(l.pnl), usdP(l.pnl)), ').'];
+    return ['Added ', h('b', null, usdS(l.amt)), '.'].concat(l.endPx > 0 ? [' It now closes itself at ', h('b', null, price(l.endPx, x.sz)), '.'] : []);
+  }
+  function openPart(pid, tab) {
+    var x = autoOf(pid);
+    if (!x || !x.can || early() || sheets.length || x.status || COIN.closing) return;
+    if (!api.part.open(pid, tab)) return;
+    var sh = PART.sh || (PART.sh = makeSheet('Part')), r = PART.R = {};
+    PART.pid = pid; PART.tab = tab; PART.err = ''; PART.busy = ''; PART.run = null; PART.max = false;
+    sh.title.textContent = ''; add(sh.title, [h('span', 'sr-only', tab === 'close' ? 'Close part: ' : 'Add to this trade: '), x.sym, sidePill(x.isLong, boostOf(x))]);
+    sh.body.textContent = ''; sh.foot.textContent = '';
+    r.say = sayLine(); r.go = btn('sm-btn is-primary', '', partGo); r.wal = h('p', 'sm-fine sm-pt-wal', '');
+    if (tab === 'close') partCloseBuild(sh, r); else partAddBuild(sh, r);
+    add(sh.foot, [r.say, r.go, r.wal]);
+    sh.onClose = () => { PART.pid = null; PART.busy = ''; PART.run = null; api.part.shut(); };
+    sh.open(); paintPart();
+  }
+  /* the typed percent sits right before its % sign: the field is as wide as what is in it, measured in its own face
+     (a twin of the field's text, out of sight, in the same box) */
+  function pctFit(i) {
+    var m = i._m;
+    if (!m) { m = i._m = h('span', 'sm-pct-m', ''); m.setAttribute('aria-hidden', 'true'); if (i.parentNode) i.parentNode.appendChild(m); }
+    txt(m, i.value || i.placeholder || '0');
+    var w = m.offsetWidth;
+    if (w > 0) i.style.width = (w + 3) + 'px';
+  }
+  function partCloseBuild(sh, r) {
+    var v = api.part.view() || {};
+    r.pct = h('input'); r.pct.type = 'text'; r.pct.id = 'smPartPct'; r.pct.maxLength = 5; r.pct.placeholder = '0';
+    r.pct.setAttribute('inputmode', 'decimal'); r.pct.setAttribute('enterkeyhint', 'done'); r.pct.setAttribute('autocomplete', 'off'); r.pct.setAttribute('aria-label', 'How much to close, in percent');
+    r.pct.addEventListener('input', () => {
+      /* digits and one dot, two decimals at most (the exchange takes hundredths of a percent) */
+      var t = r.pct.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1').replace(/^(\d{0,3})\d*((?:\.\d{0,2})?).*$/, '$1$2');
+      if (t !== r.pct.value) r.pct.value = t;
+      PART.err = ''; pctFit(r.pct); api.part.type(t); paintPart();
+    });
+    r.pct.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); r.pct.blur(); } });
+    r.pct.addEventListener('focus', () => { setTimeout(() => { try { r.pct.select(); } catch (e) { /* fine */ } fitKeyboard(); }, 0); });
+    var lab = h('label', 'sm-label is-amt', ['How much to close', h('span', 'sm-hint', 'Type any percent')]); lab.htmlFor = 'smPartPct';
+    r.chips = h('div', 'sm-chips');
+    (v.presets || []).forEach(b => {
+      var k = btn(null, b >= 10000 ? 'All' : pctS(b), () => { if (PART.busy) return; PART.err = ''; api.part.pick(b); paintPart(); });
+      k._v = b; r.chips.appendChild(k);
+    });
+    r.note = h('p', 'sm-fine sm-pt-note', ''); r.note.hidden = true;
+    r.take = h('b', null, ''); r.stay = h('b', null, '');
+    r.fine = h('p', 'sm-fine sm-pt-fine', '');
+    add(sh.body, [lab, h('label', 'sm-amt is-mid is-pct', [r.pct, h('span', null, '%')]), r.chips, r.note,
+      h('div', 'sm-out sm-pt-out', [h('div', null, [h('span', null, 'You take about'), r.take]), h('div', null, [h('span', null, 'Stays in the trade'), r.stay])]), r.fine]);
+    /* it opens on half, the share most asked for; a trade too small to give up half opens on the most it can close in part
+       (or on All, when it can only close in full), so the two boxes show the chain's figures at once, never two dashes */
+    if (v.max >= 5000) api.part.pick(5000);
+    else if (v.max >= 100) api.part.type(String(Math.floor(v.max / 100)));
+    else if ((v.presets || []).indexOf(10000) >= 0) api.part.pick(10000);
+  }
+  function partAddBuild(sh, r) {
+    var v = api.part.view() || {};
+    r.amt = amtInput('smPartAmt', 'How much to add, in dollars', '', t => { PART.err = ''; PART.max = false; api.part.amount(t); paintPart(); });
+    var lab = h('label', 'sm-label is-amt', ['How much to add', h('span', 'sm-hint', 'Type any amount')]); lab.htmlFor = 'smPartAmt';
+    r.chips = h('div', 'sm-chips');
+    [5, 10, 25, 'max'].forEach(a => {
+      var k = btn(null, a === 'max' ? 'Max' : '$' + a, () => {
+        if (PART.busy) return;
+        var w = api.part.view(), t = a === 'max' ? (w ? String(partCap(w)) : '') : String(a);
+        PART.err = ''; PART.max = a === 'max'; r.amt.value = t; api.part.amount(t); paintPart();
+      });
+      k._v = a; r.chips.appendChild(k);
+    });
+    r.from = h('p', 'sm-fine sm-pt-from', '');
+    r.n1 = h('b', null, ''); r.n2 = h('i', null, ''); r.aLab = h('span', null, 'After'); r.a1 = h('b', null, ''); r.a2 = h('i', null, '');
+    r.boost = h('span', null, '');
+    r.fine = h('p', 'sm-fine sm-pt-fine', '');
+    add(sh.body, [lab, h('label', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, r.from,
+      h('div', 'sm-label sm-pt-lab', 'Closes itself at'),
+      h('div', 'sm-out sm-pt-out is-ba', [h('div', null, [h('span', null, 'Now'), r.n1, r.n2]), h('div', null, [r.aLab, r.a1, r.a2])]),
+      h('div', 'sm-kvs sm-pt-kv', kvRow('Boost', r.boost)), r.fine]);
+    /* it opens on $10, or on what there is to add when that is less */
+    var cap = partCap(v), first = cap >= 10 ? '10' : cap >= 5 ? '5' : cap > 0 ? String(cap) : '';
+    PART.max = !!first && cap < 5;
+    if (first) { r.amt.value = first; api.part.amount(first); }
+  }
+  /* the most that can be added: all the trading money, or what the trade can still take when that is less */
+  function partCap(v) { return cents(Math.max(0, Math.min(v.available || 0, v.room || 0))); }
+  function boostS(b) { return isFinite(b) ? b + '×' : '—'; }
+  function paintPart() {
+    var sh = PART.sh, r = PART.R;
+    if (!sh || !sh.isOpen) return;
+    var v = api.part.view(), x = PART.pid != null ? autoOf(PART.pid) : null;
+    /* the dialog let go (the close was filed, the money is in, or the trade is gone): so does its face */
+    if (!v || !x) { sh.close(); return; }
+    if (v.tab === 'close') partClosePaint(r, v); else partAddPaint(r, v);
+  }
+  function partClosePaint(r, v) {
+    var busy = !!PART.busy, s = api.session(), min = usdS(v.min), most = v.max >= 100 ? pctS(Math.floor(v.max / 100) * 100) : '';
+    each(r.chips, b => {
+      b.setAttribute('aria-pressed', v.preset === b._v && v.bps === b._v ? 'true' : 'false');
+      b.disabled = busy || (b._v < 10000 && b._v > v.max);
+    });
+    if (document.activeElement !== r.pct) { var t = v.bps ? String(v.bps / 100) : v.typed; if (r.pct.value !== t) r.pct.value = t; }
+    pctFit(r.pct); r.pct.disabled = busy;
+    var why = PART.err || (v.code === 'pending' ? 'A close of this trade is already on its way. Wait for it to finish.'
+      : v.code === 'typed' ? 'Type a percent from 1 to 100.'
+      : v.code === 'only' || (v.code === 'min' && !most) ? 'At least ' + min + ' stays in a trade, so this one can only be closed in full.'
+      : v.code === 'min' ? 'That would leave less than ' + min + ' in the trade. Close up to ' + most + ', or all of it.'
+      : v.err ? (v.errName === 'MarginBelowMinimum' ? 'That would leave less than ' + min + ' in the trade. Close less, or all of it.' : 'That could not be worked out just now. It is asked again by itself.') : '');
+    /* a key that is off says why under the row, once: a small trade cannot give up much of itself */
+    var note = why || v.max >= 7500 ? '' : most ? 'At least ' + min + ' stays in a trade, so you can close up to ' + most + ' of this one, or all of it.' : 'At least ' + min + ' stays in a trade, so this one can only be closed in full.';
+    txt(r.note, note); show(r.note, !!note);
+    txt(r.take, v.take != null ? usd(v.take) : v.wait ? 'Working it out…' : '—'); cls(r.take, v.take != null ? '' : 'is-off');
+    txt(r.stay, v.stays == null ? '—' : v.full ? 'Nothing' : usd(v.stays)); cls(r.stay, v.stays == null ? 'is-off' : '');
+    txt(r.fine, 'It closes in about ' + secsS(v.secs) + ', at the price then, so the amounts can move a little.');
+    txt(r.say, why); cls(r.say, 'sm-say' + (why ? ' is-bad' : '')); show(r.say, !!why);
+    var word = PART.busy === 'switch' ? 'Getting your wallet ready…' : PART.busy ? 'Closing…' : '';
+    txt(r.go, word || (!v.ok ? 'Close part' : (v.full ? 'Close all' : 'Close ' + pctS(v.bps)) + (v.take != null ? ' · take about ' + usd(v.take) : '')));
+    cls(r.go, 'sm-btn is-primary' + (word ? ' is-busy' : '')); r.go.disabled = !!word || !v.ok || v.take == null || !!v.busy;
+    /* the quiet line under the key, only when the wallet itself has to say yes (one-tap is not on) */
+    var wal = !api.demo && !s.live; txt(r.wal, wal ? 'Your wallet asks you to confirm.' : ''); show(r.wal, wal);
+  }
+  function partAddPaint(r, v) {
+    var busy = !!PART.busy || !!v.sending, cap = partCap(v), amt = v.amt, now = v.now, af = v.after, sz = v.sz;
+    r.amt.disabled = busy;
+    each(r.chips, b => {
+      b.setAttribute('aria-pressed', (b._v === 'max' ? PART.max : !PART.max && amt === b._v) ? 'true' : 'false');
+      b.disabled = busy || !(cap > 0) || (b._v !== 'max' && b._v > cap + 1e-9);
+    });
+    txt(r.from, 'From your trading money: ' + usd(v.available));
+    txt(r.n1, price(now.endPx, sz)); txt(r.n2, isFinite(now.away) ? roomFig(now.away) + ' away' : '');
+    txt(r.aLab, amt > 0 && !v.code ? 'After adding ' + usdS(amt) : 'After');
+    txt(r.a1, af ? price(af.endPx, sz) : v.wait ? 'Working it out…' : '—'); cls(r.a1, af ? '' : 'is-off');
+    txt(r.a2, af && isFinite(af.away) ? roomFig(af.away) + ' away' : '');
+    txt(r.boost, af ? boostS(now.boost) + ' → ' + boostS(af.boost) : boostS(now.boost));
+    var gone = 'The price is already where this trade closes itself, so money cannot be added to it now.';
+    var why = PART.err || (v.code === 'zero' ? 'Type an amount.'
+      : v.code === 'full' ? 'This trade is at 1× boost already: it cannot take more money.'
+      : v.code === 'bal' || (v.code === 'room' && amt > v.available + 1e-9 && v.available < v.room) ? 'That is more than your trading money (' + usd(v.available) + ').'
+      : v.code === 'room' ? 'This trade can take up to ' + usd(v.room) + ' more.'
+      : v.err ? (v.errName === 'PositionBusted' ? gone : v.errName === 'LeverageOutOfRange' ? 'This trade cannot take that much.' : 'That could not be worked out just now. It is asked again by itself.')
+      : !v.sending && v.say ? (v.sayNo ? (/did not answer/.test(v.say) ? plain(v.say) : 'You cancelled in your wallet. Nothing was added.')
+        : /Switch the wallet|another network/i.test(v.say) ? plain(v.say)
+        : (v.sayName === 'PositionBusted' ? 'The price reached where this trade closes itself first. ' : '') + 'It was not added: your ' + usdS(amt) + ' is still in your trading money.')
+      : !(cap > 0) && !(v.room > 0) ? 'This trade is at 1× boost already: it cannot take more money.'
+      : !(cap > 0) ? 'There is no trading money to add from.' : '');
+    txt(r.say, why); cls(r.say, 'sm-say' + (why ? ' is-bad' : '')); show(r.say, !!why);
+    /* said before the tap, truthfully: in a market on the fast price the money counts from the next second's price on, and
+       comes back if the trade had closed itself on an earlier one */
+    txt(r.fine, v.fast ? 'It counts from the next second on. If the trade has closed itself by then, this money comes straight back to you.' : 'It counts at once.');
+    var word = PART.busy === 'switch' ? 'Getting your wallet ready…' : v.sending ? (v.sent ? 'Adding ' + usdS(amt) + '…' : CONFIRM) : PART.busy ? CONFIRM : '';
+    txt(r.go, word || (amt > 0 && !v.code ? 'Add ' + usdS(amt) : 'Add to this trade'));
+    cls(r.go, 'sm-btn is-primary' + (word ? ' is-busy' : '')); r.go.disabled = !!word || !v.ok || !!v.busy;
+    txt(r.wal, 'Your wallet asks you to confirm this one.'); show(r.wal, true);
+  }
+  function partGo() {
+    var r = PART.R, v = api.part.view(), s = api.session(), pid = PART.pid, close = !!v && v.tab === 'close';
+    if (!v || PART.busy || early() || r.go.disabled) return;
+    PART.err = '';
+    if (close && v.full) { PART.sh.close(); closeGo(pid); return; }      /* All: the card's own Close, by its own path */
+    /* when the wallet itself signs (the add always; a part close only while one-tap is not on) it is asked onto HyperEVM first,
+       as Close does; that wait ends by itself, and a sheet closed meanwhile sends nothing */
+    var wallet = !api.demo && (!close || !s.live), run = PART.run = {};
+    PART.busy = wallet ? 'switch' : 'send'; S.lastErr = null; paintPart();
+    (wallet ? timed(api.toHyperEvm(), 30000, '') : Promise.resolve()).then(() => {
+      if (PART.run !== run || PART.pid !== pid || !PART.sh.isOpen) return null;
+      PART.busy = 'send'; S.claim = true;
+      if (close) { COIN.errs[pid] = ''; COIN.closing = pid; COIN.part = v.bps; }
+      paintPart();
+      return api.part.go();
+    }).then(ok => {
+      /* a part close the sheet let go of that was then not filed: said on the card, where Close's own failure is said */
+      if (ok === false && close && !(PART.pid === pid && PART.sh.isOpen && api.part.view())) COIN.errs[pid] = lastErr() || 'It did not close, so all of your trade is still open. Try again.';
+    }, () => { if (PART.run === run) PART.err = STAYED + (close ? 'nothing was closed.' : 'nothing was added.') + ' Press again and let it change.'; }).then(() => {
+      if (PART.run === run) { PART.busy = ''; PART.run = null; }
+      S.claim = false; if (close && COIN.closing === pid) { COIN.closing = null; COIN.part = 0; }
+      kick();
+    });
+  }
+
+  /* ---- FETTI levels and money back (the owner, 2026-11-19: "i want fetti to be an exchange token", "plan it i want it part
+     of v5", then "yes on all"; cf_w/fetti_token/PLAN.md, section 3.5). Stake a little FETTI and part of what your own trades
+     paid in comes back to your trading money, 7 days after each trade, if the FETTI stayed staked. fetti.js holds the rules,
+     the reads and the three wallet steps; this is how Simple shows them: one key on Home, the level sheet, one line on a
+     trade's result, the Menu's $FETTI line, the Add money share, the level on the trade card. It never names what a trade
+     costs: "what your trades paid in", "money back". Nothing here pays anyone: the perks bot does, from its own wallet. ---- */
+
+  var LV = { sh: null, pick: 0, R: {}, busy: 0, step: null, err: '', done: null, built: '' };
+
+  /* the key shows for a wallet that trades (money in, or in trades), with the switch on, unless the bot leaves it out */
+  function fxShow(w, st) { var F = fx(), m; return !!(F && w.account && st === 'money' && !((m = F.mine(w.account)) && m.skip)); }
+  function fxCard() {
+    var c = noteCard();
+    c.n.classList.add('sm-fx-note');
+    c.icon.className = 'sm-pill sm-fx-ic';
+    c.n.addEventListener('click', () => { openLevels(); });
+    return c;
+  }
+  /* the key's two lines, by where the wallet stands: money on its way, a level, a stake still warming, or nothing yet */
+  function fxWords(acct) {
+    var F = fx(), s = F.standing(acct), m = F.mine(acct), l1 = F.level(1), hold = F.holdDays();
+    if (s.known && s.level > 0 && m && m.pending >= 0.01) {
+      return { b: 'Coming back to you: ' + usd(m.pending), i: m.next && m.next.usd >= 0.01 ? 'Next: ' + usd(m.next.usd) + ' on ' + F.fmt.day(m.next.at) + '.' : 'It lands ' + hold + ' days after each trade.', on: true };
+    }
+    if (s.known && s.level > 0) return { b: 'Level ' + s.level + ': ' + F.pctOf(s.level) + '% back on every trade', i: 'It lands ' + hold + ' days after each trade.', on: true };
+    if (s.known && s.warming > 0 && s.soon > 0) return { b: 'Level ' + s.soon + ' starts at ' + F.fmt.clock(s.warmAt), i: 'Staked FETTI counts after a one-hour wait.', on: true };
+    var q = l1 ? F.quote(l1.fetti) : null;
+    return { b: 'Get money back on every trade', i: 'Stake a little FETTI.' + (q && q.usd > 0 ? ' Level 1 is about ' + F.fmt.about(q.usd) + '.' : ''), on: false };
+  }
+  function fxFill(c) {
+    var F = fx(), acct = api.wallet().account;
+    if (!F || !acct) return;
+    F.loadMe(acct, 60000); F.loadPerks(); F.loadPool(120000);      /* cheap: each one reads only when its last read is that old */
+    var w = fxWords(acct);
+    txt(c.b, w.b); txt(c.i, w.i); txt(c.icon, w.on ? '+$' : '%');
+    c.n.setAttribute('aria-label', w.b + '. ' + w.i + ' Open the levels');
+  }
+  function fxMenuHint(w) {
+    var F = fx(); if (!F) return 'the token';
+    var s = w.account ? F.standing(w.account) : null;
+    return s && s.known && s.level > 0 ? 'Level ' + s.level + ' · ' + F.pctOf(s.level) + '% back' : 'money back on trades';
+  }
+  /* the level on the trade card (share.js draws a small badge): 0 draws none */
+  function fxBadge() { var F = fx(), a = api.wallet().account; if (!F || !a) return 0; var s = F.standing(a); return s.known ? s.level : 0; }
+
+  /* what a trade put in that money back counts (v5: what opening it took, and closing it unless it closed itself), and
+     whether it paid the capped share instead of the full rate (money back leaves those out). From the card's last figures. */
+  function fxPaid(seen, liq) {
+    if (!seen || !(seen.stake > 0)) return null;
+    var open = Math.max(0, seen.margin - seen.stake - (seen.added || 0)), close = liq ? 0 : Math.max(0, seen.cc || 0);
+    var tf = api.cfg().tradeFee || {}, cap = (tf.capBps != null ? Number(tf.capBps) : 1000) / 10000;
+    return { open: open, close: close, liq: !!liq, ts: Date.now() / 1000, capped: seen.cc > 0 && seen.cc >= seen.stake * cap * 0.999 };
+  }
+  /* the result's one line: a staker hears what comes back and when; anyone else what Level 1 would bring, with a way there */
+  function fxLine(d) {
+    var F = fx(), acct = api.wallet().account;
+    if (!F || !acct || !d.paidIn) return null;
+    var s = F.standing(acct), t = { account: acct, open: d.paidIn.open, close: d.paidIn.close, liq: d.paidIn.liq, ts: d.paidIn.ts, capped: d.paidIn.capped };
+    if (s.known && s.level > 0) {
+      var b = F.tradeBack(t);
+      return b ? h('p', 'sm-fine sm-fx-line', (b.upTo ? 'Up to ' : 'About ') + usd(b.usd) + ' of this trade comes back to you on ' + F.fmt.day(b.at) + ', if your FETTI stays staked.') : null;
+    }
+    var b1 = F.tradeBack(t, 1);
+    if (!b1) return null;
+    return h('div', 'sm-fx-line', [h('p', 'sm-fine', 'With Level 1, about ' + usd(b1.usd) + ' of this trade would come back to you.'), btn('sm-link sm-fx-go', 'See the levels', () => { openLevels(); })]);
+  }
+
+  /* ---- the level sheet: four level keys, what one costs today, one black key, three wallet steps ---- */
+
+  function openLevels(n) {
+    var F = fx(), w = api.wallet();
+    if (!F) return;
+    if (!w.account) { doConnect(); return; }
+    var sh = LV.sh || (LV.sh = makeSheet('Levels')), s = F.standing(w.account), top = F.levels().length;
+    LV.pick = n >= 1 && n <= top ? n : Math.min(top, (s.known ? Math.max(s.level, s.soon || 0) : 0) + 1);
+    LV.err = ''; LV.done = null; LV.step = null; LV.built = '';
+    sh.onClose = () => { LV.busy = 0; LV.step = null; };      /* a closed sheet ends the run: no further step is asked */
+    sh.open();
+    F.loadMe(w.account, true); F.loadPerks(); F.loadPool(true);
+    paintLevels();
+  }
+  function paintLevels() {
+    var F = fx(), acct = api.wallet().account;
+    if (!F || !acct) { LV.sh.close(); return; }
+    var view = LV.done ? 'done' : 'levels';
+    if (LV.built !== view) { LV.built = view; if (view === 'done') lvBuildDone(); else lvBuild(); }
+    if (view === 'levels') { lvFill(); lvWait(); } else lvWait();
+  }
+  function lvBuild() {
+    var F = fx(), sh = LV.sh, r = LV.R = {};
+    txt(sh.title, 'Money back'); sh.body.textContent = ''; sh.foot.textContent = '';
+    var old = sh.d.querySelector('.sm-wait'); if (old) old.remove();
+    r.group = h('div', 'sm-fx-levels'); r.group.setAttribute('role', 'radiogroup'); r.group.setAttribute('aria-label', 'Levels');
+    r.rows = F.levels().map(l => {
+      var x = { l: l, cost: h('i'), tag: h('em', 'sm-fx-tag', '') };
+      x.n = btn('sm-pick sm-fx-lv', [h('span', 'sm-radio'), h('span', 'sm-t', [h('b', null, ['Level ' + l.n, h('span', 'sm-fx-pct', l.pct + '% back')]), x.cost]), x.tag], () => {
+        if (LV.busy) return;
+        LV.pick = l.n; LV.err = ''; paintLevels();
+      });
+      x.n.setAttribute('role', 'radio');
+      r.group.appendChild(x.n);
+      return x;
+    });
+    r.would = h('p', 'sm-fx-would', '');
+    r.cost = h('span', 'is-go', ''); r.how = h('span', null, '');
+    r.sum = h('div', 'sm-sum', [h('div', 'sm-sumrow', [h('span', null, 'It costs'), r.cost]), h('div', 'sm-sumrow', [h('span', null, 'From your wallet'), r.how])]);
+    r.fine = h('p', 'sm-fine', '');
+    add(sh.body, [h('p', 'sm-mid sm-fx-lead', 'Stake a little FETTI and part of what your trades pay in comes back to your trading money.'), r.group, r.would, r.sum, r.fine]);
+    r.say = sayLine();
+    r.go = btn('sm-btn is-primary', '', lvGo);
+    add(sh.foot, [r.say, r.go]);
+  }
+  function lvFill() {
+    var F = fx(), r = LV.R, acct = api.wallet().account, s = F.standing(acct), m = F.mine(acct), have = s.known ? s.level : 0;
+    var p = F.plan(acct, LV.pick), busy = !!LV.busy, hold = F.holdDays();
+    r.rows.forEach(x => {
+      var l = x.l, q = F.quote(l.fetti);
+      x.n.setAttribute('aria-checked', LV.pick === l.n ? 'true' : 'false'); x.n.disabled = busy;
+      txt(x.cost, F.fmt.fetti(l.fetti) + (q ? ' · about ' + F.fmt.about(q.usd) : ''));
+      txt(x.tag, have >= l.n ? (have === l.n ? 'Yours' : '✓') : s.soon >= l.n ? 'Soon' : '');
+      show(x.tag, !!x.tag.textContent);
+    });
+    /* what this wallet's own trades would have brought (perks.json); said only when there is such a number */
+    var wv = m && m.would && m.would[LV.pick - 1] > 0 ? m.would[LV.pick - 1] : null;
+    txt(r.would, wv != null ? 'Your trades of the last 30 days would have brought back ' + usd(wv) + ' at Level ' + LV.pick + '.' : ''); show(r.would, wv != null);
+    var cost = '…', how = '…', label = 'Get Level ' + LV.pick, why = '', note = '', fine = '';
+    var steps = 'It lands ' + hold + ' days after each trade if your FETTI stayed staked. FETTI’s price moves: what you stake can be worth less later.';
+    if (!F.canSend()) why = 'Getting a level is off on this copy of the site.';
+    if (!p || p.loading) { note = s.known ? 'Getting today’s price…' : 'Looking in your wallet…'; fine = steps; }
+    else if (p.done) {
+      cost = '—'; how = '—'; label = 'Level ' + LV.pick + ' is yours';
+      note = LV.pick < F.levels().length ? 'Pick a higher level to get more back.' : 'That is the top level.';
+      fine = 'Unstaking gives up what is on its way to you. ' + steps;
+    } else {
+      cost = p.usd > 0 ? usd(p.usd) : 'nothing more';
+      how = p.buy > 0 ? ethS(p.hypeIn) + ' HYPE' : F.fmt.fetti(p.need);
+      label = p.usd > 0 ? 'Get Level ' + LV.pick + ' for ' + usd(p.usd) : 'Stake ' + F.fmt.fetti(p.need) + ' for Level ' + LV.pick;
+      var n = p.steps.length, list = p.steps.map(x => ({ buy: 'buy FETTI with HYPE', approve: 'let Staking take it', stake: 'stake it' })[x]);
+      fine = (n === 1 ? 'One confirmation in your wallet: ' : (n === 2 ? 'Two' : 'Three') + ' confirmations in your wallet, one after the other: ') + list.join(', ') + '. ' +
+        (p.buy > 0 && p.move > 0.02 ? 'This buy moves FETTI’s price up ' + (p.move * 100).toFixed(1) + '%. ' : '') + 'It counts after a one-hour wait. ' + steps;
+      why = why || p.why || '';
+    }
+    txt(r.cost, cost); txt(r.how, how); txt(r.fine, fine);
+    show(r.sum, !(p && p.done));
+    var err = LV.err;
+    txt(r.say, why || err || note); cls(r.say, 'sm-say' + (why || err ? ' is-bad' : ''));
+    var word = busy ? (LV.step ? LV.step.i + ' of ' + LV.step.of + ' · ' + CONFIRM : 'Getting your wallet ready…') : '';
+    txt(r.go, word || label);
+    cls(r.go, 'sm-btn is-primary' + (word ? ' is-busy' : ''));
+    r.go.disabled = !!word || !!why || !p || !!p.loading || !!p.done;
+  }
+  /* the wallet is open on a step: which one, what it asks, a way out (as Add money's) */
+  function lvWait() {
+    var sh = LV.sh, st = LV.busy ? LV.step : null, n = sh.d.querySelector('.sm-wait'), F = fx();
+    if (!st) { if (n) n.remove(); return; }
+    if (!n) {
+      n = h('div', 'sm-wait', h('div', null, [h('span', 'sm-spin is-big'), h('h3', null, 'Confirm in your wallet'), h('p'), btn('sm-btn is-ghost', 'Cancel', () => { LV.busy = 0; LV.step = null; LV.err = CANCELLED; paintLevels(); })]));
+      sh.d.appendChild(n);
+    }
+    var p = n.querySelector('p'), pl = st.p, key = st.i + st.word;
+    if (p._k === key) return;
+    p._k = key; p.textContent = '';
+    var what = st.word === 'buy' ? ['Your wallet asks to buy ', h('b', null, F.fmt.fetti(pl.buy * 1.01)), ' with ', h('b', null, ethS(pl.hypeIn) + ' HYPE'), '.']
+      : st.word === 'approve' ? ['Your wallet asks to let Confetti Staking take the FETTI for this level, and no more.']
+      : ['Your wallet asks to stake ', h('b', null, 'the FETTI for Level ' + pl.n), '.'];
+    add(p, [h('b', 'sm-fx-of', st.i + ' of ' + st.of + '. ')].concat(what, [' Nothing is sent until you confirm.']));
+  }
+  function lvGo() {
+    var F = fx(), w = api.wallet(), acct = w.account;
+    if (!F || !acct || LV.busy || early()) return;
+    var p = F.plan(acct, LV.pick);
+    if (!p || p.loading || p.done || p.why || !F.canSend()) return;
+    var mine = LV.busy = Date.now() + Math.random(), alive = () => LV.busy === mine && LV.sh.isOpen;
+    LV.err = ''; LV.step = null; paintLevels();
+    /* the wallet onto HyperEVM first (the demo has none); then the steps, each one confirmed in the wallet */
+    (api.demo ? Promise.resolve() : timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.')).then(() => {
+      if (!alive()) throw say(CANCELLED);
+      return F.run(acct, p, w.eth, (i, of, word) => { if (alive()) { LV.step = { i: i, of: of, word: word, p: p }; paintLevels(); } }, alive);
+    }).then(res => {
+      if (LV.busy !== mine) return;
+      LV.busy = 0; LV.step = null; LV.done = { n: LV.pick, staked: res.staked };
+      paintLevels(); S.sig = ''; kick();
+    }, e => {
+      if (LV.busy !== mine) return;
+      var at = LV.step, first = !at || at.i <= 1;
+      LV.busy = 0; LV.step = null;
+      LV.err = e && e.cancelled ? CANCELLED : first ? errText(e) : errText(e).replace(/ Nothing was sent\.$/, '') + ' Step ' + at.i + ' of ' + at.of + ' did not finish; what went through stays in your wallet. Press again to finish.';
+      F.loadMe(acct, true);
+      if (LV.sh.isOpen) paintLevels();
+    });
+  }
+  function lvBuildDone() {
+    var F = fx(), sh = LV.sh, d = LV.done, hold = F.holdDays();
+    txt(sh.title, 'Money back'); sh.body.textContent = ''; sh.foot.textContent = '';
+    add(sh.body, [h('div', 'sm-ok', '✓'), h('div', 'sm-label', 'Level ' + d.n + ' is on'),
+      h('p', 'sm-mid', 'You staked ' + F.fmt.fetti(d.staked) + '. It counts after a one-hour wait. From then on ' + F.pctOf(d.n) + '% of what each trade pays in comes back to your trading money, ' + hold + ' days after the trade.'),
+      h('p', 'sm-fine', 'Unstaking gives up what is on its way to you. The $FETTI page shows your level and lets you unstake any time.')]);
+    add(sh.foot, btn('sm-btn is-primary', 'Done', () => { sh.close(); }));
+  }
+
+  /* ---- the weekly draw (config.json fetti.draw.on; off until the owner turns it on, with its line in the terms) ---- */
+
+  var DRW = { sh: null };
+  function fxDrawHint(w) {
+    var F = fx(), d = F && F.draw();
+    return d && d.prize > 0 ? 'win ' + usd(d.prize) + (d.drawAt ? ' on ' + F.fmt.day(d.drawAt) : '') : 'for stakers who trade';
+  }
+  function openDraw() {
+    var F = fx(), w = api.wallet();
+    if (!F || !F.drawOn()) return;
+    var sh = DRW.sh || (DRW.sh = makeSheet('Draw'));
+    var fill = () => {
+      var d = F.draw(), t = d && w.account ? d.tickets[w.account.toLowerCase()] || 0 : 0;
+      txt(sh.title, 'Weekly draw'); sh.body.textContent = ''; sh.foot.textContent = '';
+      add(sh.body, [h('div', 'sm-label', 'This week’s prize'), h('div', 'sm-big', d ? usd(d.prize) : '$—'),
+        h('p', 'sm-mid', d && d.drawAt ? 'Drawn on ' + F.fmt.day(d.drawAt) + ' at ' + F.fmt.clock(d.drawAt) + '.' : 'Drawn once a week.'),
+        h('div', 'sm-sum', [h('div', 'sm-sumrow', [h('span', null, 'Your tickets'), h('span', 'is-go', String(Math.floor(t)))]), h('div', 'sm-sumrow', [h('span', null, 'All tickets'), h('span', null, d ? String(Math.floor(d.total)) : '—')])]),
+        h('p', 'sm-fine', 'Each dollar your trades paid this week is one share of the chances, for wallets that keep a FETTI level all week. The prize lands in the winner’s trading money. The full rules are in the terms.')]);
+      add(sh.foot, btn('sm-btn is-primary', 'Close', () => { sh.close(); }));
+    };
+    fill(); sh.open();
+    F.loadDraw(true).then(() => { if (sh.isOpen) fill(); });
+  }
+
 
   /* ---- the sheet: dollars, Boost, both outcomes in dollars, one Open ---- */
 
@@ -3761,18 +4559,19 @@
     autoShow(r.tp, rt, t.sz, up, t.endPx); autoShow(r.sl, rs, t.sz, up, t.endPx);
     r.tp.i.disabled = r.sl.i.disabled = !!ORD.busy || ORD.limit;
     r.autoBox.classList.toggle('is-off', ORD.limit);
-    txt(r.autoFine, ORD.limit ? 'A limit order opens without them. Set them on its card once it is open.' : 'Optional. ' + honest());
+    var onChain = !ORD.limit && api.autoChain && api.autoChain(sym);      /* v6: this open takes them on chain */
+    txt(r.autoFine, ORD.limit ? 'A limit order opens without them. Set them on its card once it is open.' : 'Optional. ' + (onChain ? 'They close this trade even when Confetti is closed.' : honest()));
     txt(r.risk, lev + '× makes every 1% move worth ' + lev + '%. A ' + mv + '% ' + (up ? 'drop' : 'rise') + ' closes this trade and the ' + (amt > 0 ? usdS(amt) : 'money') + ' is gone.');
     txt(r.wk, sym + (up ? ' up 1%' : ' down 1%')); txt(r.w, isFinite(t.win1) ? usdP(t.win1) : '—');
     txt(r.lk, sym + (up ? ' down ' : ' up ') + mv + '%'); txt(r.l, amt > 0 ? '−' + usd(amt) : '—');
     var tp = ORD.limit ? null : num(r.tp.i.value), sl = ORD.limit ? null : num(r.sl.i.value), fin = r.tp.fin != null ? r.tp.fin : r.sl.fin;
     /* two things can stand above the button: why this trade cannot be opened as typed (the button is off until that changes),
        and what stopped the last press (the button stays on: pressing again is the way on) */
-    var err = ORD.err, why = '', needMoney = a.loaded && a.available < (t.min || 5), note = '';
+    var err = ORD.err, why = '', needMoney = a.loaded && t.min > 0 && a.available < t.min, note = '';
     if (!ORD.busy) {
       if (t.block) why = plain(t.block);
       else if (ORD.custom && ORD.levBad) why = 'Type a boost from 1× to ' + ORD.max + '×.';
-      else if (needMoney) why = 'You need at least ' + usdS(t.min || 5) + ' to trade.';
+      else if (needMoney) why = 'You need at least ' + usdS(t.min) + ' to trade.';
       else if (!(amt > 0)) why = 'Type an amount.';
       else if (amt < t.min) why = 'The smallest trade is ' + usdS(t.min) + '.';
       else if (amt > a.available + 1e-9) why = 'That is more than your trading money (' + usd(a.available) + ').';
@@ -3784,8 +4583,10 @@
     }
     if (!why && !err && t.oneTap && !api.demo) note = t.oneTap === 'first' ? 'First trade: your wallet asks once to turn on one‑tap trading. After that, no popups.' : 'Your wallet asks once to renew one‑tap trading.';
     /* a take profit or stop loss typed: the one thing to know about it stands right above the button, in view on every phone */
-    else if (!why && !err && (tp != null || sl != null)) note = (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open ' + (isDesktop() ? 'in this browser.' : 'on this phone.');
-    show(r.autoFine, ORD.limit || (tp == null && sl == null));      /* said above the button instead */
+    else if (!why && !err && (tp != null || sl != null)) note = onChain ? CHAIN_ALWAYS : (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open ' + (isDesktop() ? 'in this browser.' : 'on this phone.');
+    /* v6: under a stop on chain, how it fills (at every boost) */
+    if (onChain && sl != null) txt(r.autoFine, chainStop(lev));
+    show(r.autoFine, ORD.limit || (tp == null && sl == null) || (onChain && sl != null));      /* said above the button instead */
     txt(r.say, why || err || note); cls(r.say, 'sm-say' + ((why && !autoWait(why)) || err ? ' is-bad' : ''));      /* the reason the button is off comes first */
     var word = ORD.busy ? (tk.phase === 'wallet' || t.oneTap ? CONFIRM : 'Opening…') : '';
     r.go._add = needMoney && !ORD.busy && !t.block;
@@ -3856,7 +4657,7 @@
     /* A page view that painted Pro stays Pro (no flip on a slow load): the flag just cached decides the next load. A view the
        boot painted as Simple is corrected only towards Pro (the flag "off", or nobody asked and it is not the default). */
     if (S.mode === 'simple' && !booted) S.mode = 'pro';
-    ['account', 'positions', 'cards', 'action', 'ticket', 'prices', 'stats'].forEach(ev => { api.on(ev, kick); });
+    ['account', 'positions', 'cards', 'action', 'ticket', 'prices', 'stats', 'part'].forEach(ev => { api.on(ev, kick); });
     var who = null;
     /* the open sheet shows what the record now says (or the form, read again) */
     function sync() {
@@ -3907,6 +4708,8 @@
     who = api.wallet().account || null; loadPend();
     applyMode();
     if (shown()) bootCoin();
+    /* trade.html?levels=2: the $FETTI page's "Get a level" key, the level sheet open on Level 2 */
+    try { var lvq = new URLSearchParams(location.search).get('levels'); if (lvq && shown()) setTimeout(() => { if (fx()) openLevels(Number(lvq) || null); }, 600); } catch (e) { /* none asked for */ }
     BOOT.hash = '';
     /* Pro's Add USDC entry points open Simple's Add money only while Simple is what the phone shows: with Pro on screen
        (a saved "pro", the First steps guide, a wide window) Pro keeps its own sheet */

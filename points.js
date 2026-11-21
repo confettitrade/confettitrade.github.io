@@ -43,6 +43,18 @@
 
   /* ================================================================ engine */
 
+  /* (mirrors ops/points/indexer.py ignored_payers) FETTI levels, the plan's section 7: payers whose deposits score
+     nothing, rules.fetti.ignorePayers and the pot (rules.fetti.pot): money back, a credit draw or a prize paid in by
+     depositFor is not the wallet's own money. An {address: 1} map. */
+  var ADDR40 = /^0x[0-9a-f]{40}$/;
+  function cleanAddr(x) { x = String(x || '').trim().toLowerCase(); return ADDR40.test(x) && !/^0x0{40}$/.test(x) ? x : ''; }
+  function ignoredPayers(r) {
+    var f = (r && r.fetti) || {}, m = {};
+    (f.ignorePayers || []).forEach(function (x) { x = cleanAddr(x); if (x) m[x] = 1; });
+    if (cleanAddr(f.pot)) m[cleanAddr(f.pot)] = 1;
+    return m;
+  }
+
   function newWallet() {
     return { t: 0, b: {}, hr: {}, d: -1, sk: 0, bk: 0, sm: [], vol: 0, vm: 0, mk: [], net: 0, wm: 0, fn: 0,
       op: {}, cp: {}, stk: [0, 0], sa: 0, by: '', kids: [], act: 0, ld: 0, code: '', rf: 0, rp: 0, sn: 0, rc: 0 };
@@ -60,6 +72,10 @@
     else if (house) this.house = house;
     this.rej = rejected || [];
     this.lastWhy = '';
+    this.ign = ignoredPayers(rules);   /* payers whose deposits score nothing (rules.fetti) */
+    var ff = (rules && rules.fetti) || {};
+    this.plain = !!ff.ignorePlainPayers;       /* a deposit marked pk 'plain' (from plainFrom on) scores nothing */
+    this.plainFrom = Number(ff.plainFrom) || 0;
   }
 
   Engine.prototype.w = function (a) {
@@ -189,6 +205,10 @@
     var out = [];
     var k = ev.k, a = ev.a, t = ev.t, r = this.r, w, i;
     if (k === 'dep') {
+      /* money back, a credit draw or a prize paid in by depositFor: not the wallet's own money, no points, no streak */
+      if (ev.py && Object.prototype.hasOwnProperty.call(this.ign, ev.py)) return out;
+      /* paid in by another plain wallet, or a credit draw (classifyPayers), with nobody named: no points either */
+      if (ev.pk && ev.b >= this.plainFrom && (ev.pk === 'draw' || (this.plain && ev.pk === 'plain'))) return out;
       this.touch(a, t, out);
       w = this.w(a);
       w.net += ev.v;
@@ -201,6 +221,10 @@
     } else if (k === 'open') {
       w = this.w(a);
       w.op[String(ev.id)] = [ev.m, ev.l, ev.x, ev.b];
+      /* v5: pos[8] is the open side's size fee not yet counted (pos[4:8] = [pnl, fee, win paid, loss paid], see
+         settle). Each settled part takes its margin's share of it into the running fee; a liquidation counts what
+         is left */
+      if (ev.sf) w.op[String(ev.id)] = w.op[String(ev.id)].concat([0, 0, 0, 0, ev.sf]);
       if (ev.m >= r.minMarginUsdc) {
         this.touch(a, t, out);
         var notional = ev.m * ev.l;
@@ -225,28 +249,28 @@
       var pos = w.op[String(ev.id)];
       delete w.op[String(ev.id)];
       this.touch(a, t, out);
-      if (pos && ev.b - pos[3] >= r.minHoldBlocks) {
-        var n = pos[0] * pos[1];
-        this.award(a, 'close', n * r.close.perNotionalUsd, t, out);
-        var c, pts;
-        if (ev.p > 0) {
-          var net = ev.p - ev.f;
-          c = r.win;
-          pts = (net >= c.minUsdc ? c.flat : 0) + net * c.perUsdc;
-          this.award(a, 'win', Math.min(pts, c.max), t, out);
-        } else if (ev.p < 0) {
-          var lost = -ev.p + ev.f;
-          c = r.loss;
-          pts = (lost >= c.minUsdc ? c.flat : 0) + lost * c.perUsdc;
-          this.award(a, 'loss', Math.min(pts, c.max), t, out);
-        }
+      if (pos && ev.b - pos[3] >= r.minHoldBlocks) this.settle(a, pos, pos[0], ev, t, out);
+    } else if (k === 'pclose') {
+      /* v5 partial close: the closed part scores like a close of its own notional; the stored position keeps only
+         the margin left, so the final close (or the next part) scores the rest's notional. A part closed inside
+         minHoldBlocks scores nothing and is left out of the running totals (as an early full close). */
+      w = this.w(a);
+      var pp = w.op[String(ev.id)];
+      this.touch(a, t, out);
+      if (pp) {
+        if (ev.b - pp[3] >= r.minHoldBlocks) this.settle(a, pp, ev.cm, ev, t, out);
+        pp[0] = ev.m;
       }
     } else if (k === 'liq') {
       w = this.w(a);
+      var lp = w.op[String(ev.id)];
       delete w.op[String(ev.id)];
       this.touch(a, t, out);
       var lc = r.liquidation;
-      this.award(a, 'liquidation', Math.min(lc.flat + ev.m * lc.perUsdc, lc.max), t, out);
+      /* v5: what was lost is the collateral forfeited (ev.m, already without margin the liquidation returned) and
+         the part of the open side's size fee that no part's close has counted */
+      var gone = ev.m + (lp && lp.length > 8 ? lp[8] : 0);
+      this.award(a, 'liquidation', Math.min(lc.flat + gone * lc.perUsdc, lc.max), t, out);
       if (ev.r !== a) this.award(ev.r, 'liquidator', lc.liquidatorFlat, t, out);
     } else if (k === 'code') {
       var vault = Object.prototype.hasOwnProperty.call(this.vo, a);
@@ -279,10 +303,26 @@
       /* the age is stake-weighted: a top-up keeps it, a fresh stake starts now */
       ws.sa = st[0] <= 0 ? t : ((ws.sa === undefined ? t : ws.sa) * st[0] + t * ev.v) / (st[0] + ev.v);
       st[0] += ev.v;
-    } else if (k === 'unstake') {
+    } else if (k === 'lock') {
+      /* FETTI locked in the CreditPot counts as staked FETTI (rules.fetti.pot); w.pl is the pot's part of stk[0] */
       this.accrue(a, t, out);
-      var wu = this.w(a), s = wu.stk;
-      s[0] = Math.max(0, s[0] - ev.v);
+      var wl = this.w(a), sl = wl.stk;
+      wl.sa = sl[0] <= 0 ? t : ((wl.sa === undefined ? t : wl.sa) * sl[0] + t * ev.v) / (sl[0] + ev.v);
+      sl[0] += ev.v;
+      wl.pl = (wl.pl || 0) + ev.v;
+    } else if (k === 'unstake' || k === 'unlock') {
+      this.accrue(a, t, out);
+      var wu = this.w(a), s = wu.stk, pl = wu.pl || 0;
+      if (k === 'unlock') {
+        /* unlocked or burned: never more than this wallet has locked in the pot */
+        var dl = Math.min(ev.v, pl);
+        if (!(dl > 0)) return out;
+        wu.pl = pl - dl;
+        s[0] = Math.max(0, s[0] - dl);
+      } else {
+        /* an unstake from Staking never takes away what is locked in the pot */
+        s[0] = Math.max(pl, s[0] - ev.v);
+      }
       wu.sa = s[0] > 0 ? t : 0;
     } else if (k === 'xfer') {
       this.lastWhy = this.transfer(ev, out);
@@ -290,12 +330,49 @@
     return out;
   };
 
-  var api = { Engine: Engine, newWallet: newWallet, balance: balance };
-  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
-  if (typeof document === 'undefined') return;
-  root.ConfettiPointsEngine = api;
+  /* (mirrors ops/points/indexer.py Engine.settle) Close points for `margin` x the position's leverage, and win / loss
+     points on the position's running realised pnl and fee: pos[4:8] = [pnl, fee, win paid, loss paid] once a part was
+     closed (a position closed whole never has them, so a full close scores exactly as before). Each of win / loss
+     pays the rule at the running totals minus what it already paid: closing in parts at one price pays exactly one
+     close at the summed pnl, and the flat (and the max) is paid at most once per position, however it is split.
+     v5 and v6 (a "5:" or "6:" position id: sized()): the fee is the cut plus the size fees: this part's close side (ev.sf) and its share of
+     the open side (pos[8], what is left of it: `margin` out of the margin still open, pos[0]; a full close takes all
+     that is left). With a fee that does not depend on the result the sign of pnl no longer says who won, so the side
+     is the sign of the trader's net (pnl - fee): a close up 0.01 that paid 0.50 of fees is a loss of 0.49. Before v5
+     the fee is a share of the win or of the loss, the net has the sign of pnl, and the old test on pnl stays. */
+  /* (mirrors indexer.py sized()) a position of a generation with the size fee: v5 "5:<id>", v6 "6:<id>" (a take profit
+     or stop loss that fired on chain closes a v6 position with the Exchange's own events, so it settles here like any
+     other close) */
+  function sized(pid) { pid = String(pid); return pid.indexOf('5:') === 0 || pid.indexOf('6:') === 0; }
+  Engine.prototype.settle = function (a, pos, margin, ev, t, out) {
+    var r = this.r;
+    this.award(a, 'close', margin * pos[1] * r.close.perNotionalUsd, t, out);
+    var left = pos.length > 8 ? pos[8] : 0;
+    var take = pos[0] > 0 ? left * Math.min(1, margin / pos[0]) : left;
+    var f = ev.f + (ev.sf || 0) + take;
+    var run = pos.length > 4;
+    var pnl = run ? pos[4] + ev.p : ev.p, fee = run ? pos[5] + f : f, paidW = run ? pos[6] : 0, paidL = run ? pos[7] : 0;
+    var side = sized(ev.id) ? pnl - fee : pnl;
+    var c, pts;
+    if (side > 0) {
+      var net = pnl - fee;
+      c = r.win;
+      pts = Math.min((net >= c.minUsdc ? c.flat : 0) + net * c.perUsdc, c.max);
+      this.award(a, 'win', pts - paidW, t, out);
+      paidW = Math.max(paidW, pts);
+    } else if (side < 0) {
+      var lost = -pnl + fee;
+      c = r.loss;
+      pts = Math.min((lost >= c.minUsdc ? c.flat : 0) + lost * c.perUsdc, c.max);
+      this.award(a, 'loss', pts - paidL, t, out);
+      paidL = Math.max(paidL, pts);
+    }
+    pos.length = 4;
+    pos.push(pnl, fee, paidW, paidL);
+    if (left - take > 0) pos.push(left - take);
+  };
 
-  /* ================================================================ HUD */
+  /* ---- the chain's logs as events (mirrors ops/points/indexer.py decode_log and fold_fees) ---- */
 
   var TOPICS = {
     '0x8752a472e571a816aea92eec8dae9baf628e840f4929fbcc2d155e6233ff68a7': 'dep',
@@ -308,6 +385,13 @@
     '0xe3198cf2a81ef680e264c567b19609c810aeead02f89fce56620453ae4c62b9a': 'open',
     '0xf21c97f1434e8d81efa2f3955bb54d0d18472c1eaf6eb644a1a44f82d7ae9302': 'close',
     '0x04f15ca23238701937eb24acb2db7745e8d9f6d4bf40bfecdee7f25883542f37': 'liq',
+    /* v5 Exchange: every v4 signature unchanged (its ids are told by the address), plus
+       TradeFeeCharged(uint256 indexed positionId, address indexed trader, uint8 indexed kind, uint256 notionalUsdc, uint256 feeUsdc)
+       and PositionPartiallyClosed(uint256 indexed positionId, address indexed owner, uint256 exitPx18, int256 pnlUsdc,
+       uint256 feeUsdc, uint256 payoutUsdc, uint256 queuedUsdc, uint256 borrowUsdc, bool keeperFill, uint16 bps,
+       uint128 closedMarginUsdc, uint128 marginUsdc, uint64 addedMarginUsdc, uint96 maxProfitUsdc) */
+    '0x1c6fd6df2f57d9d493258c00a1a84782360880446d3b15beb9d531ed598942fc': 'tfee',
+    '0xb579ad7261c55b9eef2c0338c9c1286f1256ce2a96adc397e381cda8465ef4f6': 'pclose',
     '0xd07860d38e071bfab5c5f262789fd0c4e15fe7dad8e287f47ff0e962d71092a4': 'code',
     '0x0a721ab4682ceb61c7e4d264ef879fc419a6d764b136e7d96ef54b2053c75673': 'paid',
     '0x5f7165288eef601591cf549e15ff19ef9060b7f71b9c115be946fa1fe7ebf68a': 'refset',
@@ -318,12 +402,167 @@
     '0x3585389649c4946deb9f3d591291e9a7058addcb51d91b4cad87e5810fd8909b': 'vault'
   };
   var TOPIC_LIST = Object.keys(TOPICS);
-  /* position ids per generation, as ops/points/indexer.py keeps them: v4 "4:<id>", v3 the plain number */
+  /* position ids per generation, as ops/points/indexer.py keeps them: v5 "5:<id>" (a v5-only event, or any position
+     event of the v5 Exchange under a version 5 config), v4 "4:<id>", v3 the plain number. v6 (V5P_SPEC 18): every
+     position event of the v6 Exchange under a version 6 config is "6:<id>" (its ids start again at 1, and it emits v5's
+     own events too, so the address decides before the topic), and the v5 Exchange's is still "5:<id>" there (its
+     address, config contracts.v5Exchange). A take profit or stop loss that fires on chain closes the trade with the
+     Exchange's own PositionClosed (with keeperFill true and its TradeFeeCharged, folded as any close's) or, past the
+     liquidation price, its PositionLiquidated: counted as the close or the liquidation it is. The book's own events
+     (TriggersSet, OpenTriggersSet, TriggerFired) are not in TOPICS: they move no money and score nothing. */
   var V4_TOPICS = {
     '0xe3198cf2a81ef680e264c567b19609c810aeead02f89fce56620453ae4c62b9a': 1,
     '0xf21c97f1434e8d81efa2f3955bb54d0d18472c1eaf6eb644a1a44f82d7ae9302': 1,
     '0x04f15ca23238701937eb24acb2db7745e8d9f6d4bf40bfecdee7f25883542f37': 1
   };
+  var V5_TOPICS = {
+    '0x1c6fd6df2f57d9d493258c00a1a84782360880446d3b15beb9d531ed598942fc': 1,
+    '0xb579ad7261c55b9eef2c0338c9c1286f1256ce2a96adc397e381cda8465ef4f6': 1
+  };
+  function word(data, i) { return BigInt('0x' + data.slice(2 + i * 64, 2 + (i + 1) * 64)); }
+  function sword(data, i) { var v = word(data, i); return v >= (1n << 255n) ? v - (1n << 256n) : v; }
+  function taddr(t) { return '0x' + t.slice(26).toLowerCase(); }
+  function tint(t) { return Number(BigInt(t)); }
+  function usd(b) { return Number(b) / 1e6; }
+  /* v5: the v5 Exchange (lowercase) under a version 5 or 6 config, else ''; v6: the v6 Exchange under a version 6
+     config, else '' */
+  function pidOf(lg, v5, v6) {
+    var id = tint(lg.topics[1]), adr = String(lg.address || '').toLowerCase();
+    if (v6 && adr === v6) return '6:' + id;
+    /* a "5:" id is a v5 Exchange's alone: its address under a config that names one, or a v5-only event where no
+       newer Exchange is configured. Under the launch config (v6 set, no v5) no "5:" id is ever made. */
+    if ((v5 && adr === v5) || (!v6 && V5_TOPICS[lg.topics[0]])) return '5:' + id;
+    return V4_TOPICS[lg.topics[0]] ? '4:' + id : id;
+  }
+
+  /* (mirrors indexer.py fetti_rules / decode_pot) the CreditPot of rules.fetti: {a: address or '', topics: {topic0:
+     'lock' | 'unlock' | 'burn'}}. Each event: the wallet is its first indexed address, the FETTI amount (18 decimals)
+     its first data word; a burn of a frozen pledge is an unlock. The indexer checks each topic against its signature
+     at start and refuses a wrong one; the page takes the topics as published. */
+  function potOf(r) {
+    var f = (r && r.fetti) || {}, a = cleanAddr(f.pot), m = {};
+    if (a) ['lock', 'unlock', 'burn'].forEach(function (kind) {
+      var e = (f.potEvents || {})[kind] || {}, top = String(e.topic || '').toLowerCase();
+      if (/^0x[0-9a-f]{64}$/.test(top)) m[top] = kind;
+    });
+    return { a: a, topics: m };
+  }
+  /* (mirrors indexer.py code_kind / classify_payers) who paid in a deposit another address paid: 'plain' (no contract
+     code, or only an EIP-7702 delegation), 'draw' (a contract that emitted the CreditPot's Drawn for that wallet and
+     amount in that block) or 'c' (a DepositProxy, a Staking claim: the wallet's own money). drawnOf: the published
+     rules.fetti.potDrawn topic ('' when none; the indexer checks it against its signature). getCode(a) and
+     drawnLogs(payer, block) return promises; cache: payer -> 'plain' | 'c'. Resolves to how many were marked. */
+  function codeKind(code) {
+    var c = String(code || '0x').toLowerCase();
+    return c === '0x' || c === '0x0' || c === '' || (c.indexOf('0xef0100') === 0 && c.length === 48) ? 'plain' : 'c';
+  }
+  function drawnOf(r) {
+    var d = ((r && r.fetti) || {}).potDrawn || {}, top = String(d.topic || '').toLowerCase();
+    return /^0x[0-9a-f]{64}$/.test(top) ? top : '';
+  }
+  function classifyPayers(evs, drawn, lo, getCode, drawnLogs, cache) {
+    var n = 0, todo = evs.filter(function (e) {
+      return e.k === 'dep' && e.b >= lo && !e.pk && e.py && e.py !== e.a;
+    });
+    function one(i) {
+      if (i >= todo.length) return Promise.resolve(n);
+      var e = todo[i], py = e.py;
+      var kind = cache[py] ? Promise.resolve(cache[py]) : getCode(py).then(function (c) { cache[py] = codeKind(c); return cache[py]; });
+      return kind.then(function (k) {
+        if (k !== 'c' || !drawn) return k;
+        var want = BigInt(Math.round(e.v * 1e6));
+        return drawnLogs(py, e.b).then(function (logs) {
+          var hit = (logs || []).some(function (lg) {
+            var t = lg.topics || [], d = String(lg.data || '');
+            return String(lg.address || '').toLowerCase() === py && t.length >= 2 && String(t[0]).toLowerCase() === drawn &&
+              taddr(t[1]) === e.a && d.length >= 130 && BigInt('0x' + d.slice(66, 130)) === want;
+          });
+          return hit ? 'draw' : k;
+        });
+      }).then(function (k) { e.pk = k; n += 1; return one(i + 1); });
+    }
+    return one(0);
+  }
+
+  function decodePot(lg, pot) {
+    if (!pot || !pot.a || String(lg.address || '').toLowerCase() !== pot.a) return null;
+    var kind = pot.topics[lg.topics[0]];
+    if (!kind || lg.topics.length < 2 || String(lg.data || '').length < 66) return null;
+    return { k: kind === 'lock' ? 'lock' : 'unlock', b: parseInt(lg.blockNumber, 16), i: parseInt(lg.logIndex, 16),
+      a: taddr(lg.topics[1]), v: Number(word(lg.data, 0)) / 1e18 };
+  }
+
+  /* One log as an event, or null. relay: the configured PointsRelay (lowercase; only its transfers count); v5, v6: as
+     pidOf; pot: potOf(rules) (only the configured pot's lock / unlock / burn count). A "tfee" (TradeFeeCharged) is
+     never applied as it is: foldFees moves its amount onto its fill. */
+  function decode(lg, relay, v5, v6, pot) {
+    var pe = decodePot(lg, pot);
+    if (pe) return pe;
+    var k = TOPICS[lg.topics[0]];
+    if (!k) return null;
+    var d = lg.data;
+    var ev = { k: k, b: parseInt(lg.blockNumber, 16), i: parseInt(lg.logIndex, 16) };
+    /* py: who paid (deposit / depositFor's sender); a payer in rules.fetti's ignore set scores nothing */
+    if (k === 'dep') { ev.a = taddr(lg.topics[1]); ev.py = taddr(lg.topics[2]); ev.v = usd(word(d, 0)); }
+    else if (k === 'wd') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
+    else if (k === 'open') { ev.id = pidOf(lg, v5, v6); ev.a = taddr(lg.topics[2]); ev.x = tint(lg.topics[3]); ev.m = usd(word(d, 1)); ev.l = Number(word(d, 2)); }
+    else if (k === 'close') { ev.id = pidOf(lg, v5, v6); ev.a = taddr(lg.topics[2]); ev.p = Number(sword(d, 1)) / 1e6; ev.f = usd(word(d, 2)); }
+    /* cm: the closed part's margin (its notional is cm x the position's leverage); m: the margin left open */
+    else if (k === 'pclose') { ev.id = pidOf(lg, v5, v6); ev.a = taddr(lg.topics[2]); ev.p = Number(sword(d, 1)) / 1e6; ev.f = usd(word(d, 2)); ev.cm = usd(word(d, 8)); ev.m = usd(word(d, 9)); }
+    else if (k === 'liq') { ev.id = pidOf(lg, v5, v6); ev.a = taddr(lg.topics[2]); ev.r = taddr(lg.topics[3]); ev.m = usd(word(d, 1)); }
+    /* kd 0: the open side, 1: the close side */
+    else if (k === 'tfee') { ev.id = pidOf(lg, v5, v6); ev.a = taddr(lg.topics[2]); ev.kd = tint(lg.topics[3]); ev.f = usd(word(d, 1)); }
+    else if (k === 'code') {
+      ev.a = taddr(lg.topics[1]);
+      var len = Number(word(d, 1));
+      var hex = d.slice(2 + 128, 2 + 128 + len * 2);
+      var s = '';
+      for (var j = 0; j < hex.length; j += 2) s += String.fromCharCode(parseInt(hex.slice(j, j + 2), 16));
+      ev.c = s;
+    }
+    else if (k === 'paid') { ev.a = taddr(lg.topics[1]); ev.tr = taddr(lg.topics[2]); ev.v = usd(word(d, 0)); }
+    else if (k === 'vault') { ev.a = taddr(lg.topics[1]); ev.v = taddr(lg.topics[2]); }
+    else if (k === 'refset') { ev.a = taddr(lg.topics[1]); ev.r = taddr(lg.topics[2]); }
+    else if (k === 'stake' || k === 'unstake') { ev.a = taddr(lg.topics[1]); ev.v = Number(word(d, 0)) / 1e18; }
+    else if (k === 'xfer') {
+      if (!relay || String(lg.address || '').toLowerCase() !== relay) return null;   // only the configured relay counts
+      ev.a = taddr(lg.topics[1]); ev.to = taddr(lg.topics[2]); ev.v = Number(word(d, 0)); ev.tx = lg.transactionHash || '';
+    }
+    return ev;
+  }
+
+  /* The v5 size fee onto the fill it belongs to. evs: decoded events in chain order (whole blocks). Each "tfee" is added
+     as "sf" (USDC) to the nearest event before it in the same block with the same position id and the matching side
+     (kind 0: "open"; kind 1: "close" or "pclose"), each fill taking one fee at most, and is left out of the result.
+     The contract emits it right after that event in the same transaction, so this is exact. A "tfee" with no such
+     event before it is dropped. Events without a size fee, and every event of v2, v3 and v4, pass through. */
+  function foldFees(evs) {
+    var out = [], last = {}, block = null;
+    evs.forEach(function (ev) {
+      if (ev.b !== block) { block = ev.b; last = {}; }
+      var k = ev.k;
+      if (k === 'tfee') {
+        var key = String(ev.id) + '|' + (ev.kd ? 1 : 0), fill = last[key];
+        delete last[key];
+        if (fill && ev.f > 0) fill.sf = (fill.sf || 0) + ev.f;
+        return;
+      }
+      if (k === 'open') last[String(ev.id) + '|0'] = ev;
+      else if (k === 'close' || k === 'pclose') last[String(ev.id) + '|1'] = ev;
+      out.push(ev);
+    });
+    return out;
+  }
+
+  var api = { Engine: Engine, newWallet: newWallet, balance: balance, decode: decode, foldFees: foldFees, TOPICS: TOPICS,
+    potOf: potOf, ignoredPayers: ignoredPayers, holderX: holderX, codeKind: codeKind, drawnOf: drawnOf,
+    classifyPayers: classifyPayers };
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof document === 'undefined') return;
+  root.ConfettiPointsEngine = api;
+
+  /* ================================================================ HUD */
+
   var ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
   var SNAP_EVERY_MS = 120000;
   var POLL_MS = 2500;
@@ -332,18 +571,20 @@
   var CHAIN_HEX = '0x3e7';
   var TRANSFER_SELECTOR = '0xfa537391';   // PointsRelay.sendPoints(address,uint256)
   var S = {
-    relay: '', house: {}, sendBusy: false, todayShown: undefined,
+    relay: '', v5: '', v6: '', pot: { a: '', topics: {} }, house: {}, sendBusy: false, todayShown: undefined,
     cfg: null, rules: null, snap: null, eng: null,
     snapBlock: 0, cursor: 0, headTs: 0, headSeenAt: 0, live: false,
     me: '', view: '', forced: '',
     shown: 0, target: 0, deltaPending: 0, deltaTimer: 0,
     ts: {}, dirty: true, panel: null, rpcIdx: 0, chunk: 1000,
-    providers: [], err: ''
+    providers: [], err: '', payerKinds: {}
   };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function fmt(n) { return Math.floor(n + 1e-9).toLocaleString('en-US'); }
+  /* FETTI amounts: the levels start at 0.05, so small stakes keep their decimals (0.05, 2.5, 1,000) */
+  function fmtFetti(n) { return n >= 100 ? fmt(n) : (Math.floor(n * 1e4 + 1e-6) / 1e4).toLocaleString('en-US', { maximumFractionDigits: 4 }); }
   function short(a) { return a.slice(0, 6) + '…' + a.slice(-4); }
   function reduced() { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
 
@@ -385,41 +626,9 @@
 
   /* ---- log decoding ---------------------------------------------------------------------- */
 
-  function word(data, i) { return BigInt('0x' + data.slice(2 + i * 64, 2 + (i + 1) * 64)); }
-  function sword(data, i) { var v = word(data, i); return v >= (1n << 255n) ? v - (1n << 256n) : v; }
-  function taddr(t) { return '0x' + t.slice(26).toLowerCase(); }
-  function tint(t) { return Number(BigInt(t)); }
-  function pidOf(lg) { return V4_TOPICS[lg.topics[0]] ? '4:' + tint(lg.topics[1]) : tint(lg.topics[1]); }
-  function usd(b) { return Number(b) / 1e6; }
-
-  function decodeLog(lg) {
-    var k = TOPICS[lg.topics[0]];
-    if (!k) return null;
-    var d = lg.data;
-    var ev = { k: k, b: parseInt(lg.blockNumber, 16), i: parseInt(lg.logIndex, 16) };
-    if (k === 'dep') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
-    else if (k === 'wd') { ev.a = taddr(lg.topics[1]); ev.v = usd(word(d, 0)); }
-    else if (k === 'open') { ev.id = pidOf(lg); ev.a = taddr(lg.topics[2]); ev.x = tint(lg.topics[3]); ev.m = usd(word(d, 1)); ev.l = Number(word(d, 2)); }
-    else if (k === 'close') { ev.id = pidOf(lg); ev.a = taddr(lg.topics[2]); ev.p = Number(sword(d, 1)) / 1e6; ev.f = usd(word(d, 2)); }
-    else if (k === 'liq') { ev.id = pidOf(lg); ev.a = taddr(lg.topics[2]); ev.r = taddr(lg.topics[3]); ev.m = usd(word(d, 1)); }
-    else if (k === 'code') {
-      ev.a = taddr(lg.topics[1]);
-      var len = Number(word(d, 1));
-      var hex = d.slice(2 + 128, 2 + 128 + len * 2);
-      var s = '';
-      for (var j = 0; j < hex.length; j += 2) s += String.fromCharCode(parseInt(hex.slice(j, j + 2), 16));
-      ev.c = s;
-    }
-    else if (k === 'paid') { ev.a = taddr(lg.topics[1]); ev.tr = taddr(lg.topics[2]); ev.v = usd(word(d, 0)); }
-    else if (k === 'vault') { ev.a = taddr(lg.topics[1]); ev.v = taddr(lg.topics[2]); }
-    else if (k === 'refset') { ev.a = taddr(lg.topics[1]); ev.r = taddr(lg.topics[2]); }
-    else if (k === 'stake' || k === 'unstake') { ev.a = taddr(lg.topics[1]); ev.v = Number(word(d, 0)) / 1e18; }
-    else if (k === 'xfer') {
-      if (!S.relay || String(lg.address || '').toLowerCase() !== S.relay) return null;   // only the configured relay counts
-      ev.a = taddr(lg.topics[1]); ev.to = taddr(lg.topics[2]); ev.v = Number(word(d, 0)); ev.tx = lg.transactionHash || '';
-    }
-    return ev;
-  }
+  /* decode (above, shared with node): S.v5 is the v5 Exchange under a version 5 or 6 config, so its position ids are
+     "5:"; S.v6 the v6 Exchange under a version 6 config, its ids "6:" */
+  function decodeLog(lg) { return decode(lg, S.relay, S.v5, S.v6, S.pot); }
 
   function blockTs(n) {
     if (S.ts[n]) return Promise.resolve(S.ts[n]);
@@ -431,17 +640,23 @@
 
   function fetchLogs(from, to) {
     var c = S.cfg.contracts;
-    /* a v4 config also names the v3 contracts (v3Exchange / v3Referrals / v3Staking): they are followed too */
-    var addrs = [c.exchange, c.referrals, c.staking, c.v3Exchange, c.v3Referrals, c.v3Staking, c.codeVaultFactory]
+    /* every generation the config carries is followed, whatever its version: the v3 contracts (v3Exchange /
+       v3Referrals / v3Staking), the v4 ones (v4Exchange / v4Referrals / v4Staking: the launch config, version 6, keeps
+       v4 for its run-off and has NO v5 generation, MIGRATION_ONE; a v4 run-off close earns its points) and the v5 ones
+       where a config names them. A key the config does not carry is dropped by the filter below. */
+    var addrs = [];
+    [c.exchange, c.referrals, c.staking, c.v5Exchange, c.v5Referrals, c.v5Staking, c.v4Exchange, c.v4Referrals, c.v4Staking, c.v3Exchange, c.v3Referrals, c.v3Staking, c.codeVaultFactory]
       .filter(function (x) { return ADDR_RE.test(String(x || '')) && !/^0x0{40}$/.test(x); })
-      .map(function (x) { return x.toLowerCase(); });
+      .forEach(function (x) { x = x.toLowerCase(); if (addrs.indexOf(x) < 0) addrs.push(x); });
     if (S.relay) addrs.push(S.relay);
+    if (S.pot.a && addrs.indexOf(S.pot.a) < 0) addrs.push(S.pot.a);   /* FETTI locked in the CreditPot counts as staked */
+    var topicList = TOPIC_LIST.concat(Object.keys(S.pot.topics).filter(function (x) { return TOPIC_LIST.indexOf(x) < 0; }));
     if (!addrs.length) return Promise.resolve([]);
     var all = [];
     function step(start) {
       if (start > to) return Promise.resolve(all);
       var end = Math.min(start + S.chunk - 1, to);
-      return rpc('eth_getLogs', [{ address: addrs, fromBlock: '0x' + start.toString(16), toBlock: '0x' + end.toString(16), topics: [TOPIC_LIST] }])
+      return rpc('eth_getLogs', [{ address: addrs, fromBlock: '0x' + start.toString(16), toBlock: '0x' + end.toString(16), topics: [topicList] }])
         .then(function (logs) { all = all.concat(logs || []); return step(end + 1); })
         .catch(function (e) {
           if (e && e.rpc && S.chunk > 50) { S.chunk = Math.max(50, Math.floor(S.chunk / 2)); S.rpcIdx += 1; return step(start); }
@@ -486,9 +701,18 @@
         var evs = [];
         logs.forEach(function (lg) { var e = decodeLog(lg); if (e) evs.push(e); });
         evs.sort(function (x, y) { return x.b - y.b || x.i - y.i; });
+        evs = foldFees(evs);   /* v5: each size fee onto its fill, as the indexer stores them */
         var blocks = [];
         evs.forEach(function (e) { if (blocks.indexOf(e.b) < 0) blocks.push(e.b); });
-        return Promise.all(blocks.map(blockTs)).then(function () { return evs; });
+        return Promise.all(blocks.map(blockTs)).then(function () {
+          /* who paid in each deposit another address paid (indexer.py classify): before it is applied */
+          var f = S.rules.fetti || {}, drawn = drawnOf(S.rules);
+          if (!(Object.keys(ignoredPayers(S.rules)).length || f.ignorePlainPayers || drawn)) return evs;
+          var lo = Math.max(Number(f.ignoreFrom) || Number(S.cfg.deployBlock) || 0, Number(f.plainFrom) || 0);
+          return classifyPayers(evs, drawn, lo, function (a) { return rpc('eth_getCode', [a, 'latest']); },
+            function (a, b) { return rpc('eth_getLogs', [{ address: a, fromBlock: '0x' + b.toString(16), toBlock: '0x' + b.toString(16), topics: [[drawn]] }]); },
+            S.payerKinds).then(function () { return evs; });
+        });
       }).then(function (evs) {
         var announce = S.live;
         evs.forEach(function (e) { if (e.k === 'vault') S.eng.vo[e.v] = e.a; });
@@ -987,7 +1211,7 @@
     var lv = r.open.leverage;
     var lad = rf.ladder.map(function (x) { return f(x.pts) + ' at ' + f(x.at); }).join(', ');
     var rows = [
-      ['Referrals', (rf.shareBps / 100) + '% of everything your referees earn, for good. ' + f(rf.firstTrade) + ' when each makes a first trade. ' + lad + ' referred traders. ' + f(rf.feePerUsdc) + ' per USDC of referral fees.', 1],
+      ['Referrals', (rf.shareBps / 100) + '% of everything your referees earn, for good. ' + f(rf.firstTrade) + ' when each makes a first trade. ' + lad + ' referred traders. ' + f(rf.feePerUsdc) + ' per USDC your code earns you.', 1],
       ['Open', f(r.open.perNotionalUsd) + ' per $ of notional, x' + lv[0].x + ' to x' + lv[lv.length - 1].x + ' by leverage'],
       ['Close', f(r.close.perNotionalUsd) + ' per $ of notional'],
       ['Win', f(r.win.flat) + ' plus ' + f(r.win.perUsdc) + ' per USDC won'],
@@ -996,7 +1220,7 @@
       ['Deposit', f(r.deposit.perUsdc) + ' per USDC of new money'],
       ['Stake', f(r.staking.perThousandConfettiPerDay) + ' per 1,000 FETTI a day'],
     ].concat(r.holder ? [
-      ['Holders', 'staked FETTI multiplies your points: ' + r.holder.curve.filter(function (p) { return p[1] > 1; }).map(function (p) { return '×' + p[1] + ' at ' + f(p[0]); }).join(', ') +
+      ['Holders', 'staked FETTI (FETTI locked for credit too) multiplies your points: ' + r.holder.curve.filter(function (p) { return p[1] > 1; }).map(function (p) { return '×' + p[1] + ' at ' + f(p[0]); }).join(', ') +
         ', smoothly between; plus ' + (r.holder.ageWeeklyBps / 100) + '% a week held, up to ×' + r.holder.ageMaxX + '. Unstaking restarts the clock.']
     ] : []).concat([
       ['Each day', f(r.daily.flat) + ' plus ' + f(r.streak.perDay) + ' per streak day (to ' + r.streak.maxDays + '); streak bonuses at ' + r.streak.milestones.map(function (x) { return x.at; }).join(', ')],
@@ -1087,9 +1311,9 @@
           '<div class="pts-kv"><span>Sent</span><b>-' + fmt(w.sn || 0) + '</b></div>';
       }
       if (w && w.stk[0] > 0) {
-        html += '<div class="pts-kv"><span>Staked</span><b>' + fmt(w.stk[0]) + ' FETTI</b></div>' +
-          (S.rules.holder && !w.house ? '<div class="pts-kv pts-holder"><span>Holder multiplier</span><b>×' + holderX(S.rules, w.stk[0]).toFixed(1) +
-            ' for size · ×' + ageX(S.rules, chainNow() - (w.sa || 0)).toFixed(2) + ' for time held = ×' + liveMult(w, chainNow()).toFixed(1) + '</b></div>' : '') +
+        html += '<div class="pts-kv"><span>Staked</span><b>' + fmtFetti(w.stk[0]) + ' FETTI' + ((w.pl || 0) > 0 ? ' (' + fmtFetti(w.pl) + ' locked for credit)' : '') + '</b></div>' +
+          (S.rules.holder && !w.house ? '<div class="pts-kv pts-holder"><span>Holder multiplier</span><b>×' + holderX(S.rules, w.stk[0]).toFixed(2) +
+            ' for size · ×' + ageX(S.rules, chainNow() - (w.sa || 0)).toFixed(2) + ' for time held = ×' + liveMult(w, chainNow()).toFixed(2) + '</b></div>' : '') +
           '<div class="pts-kv"><span>Staking earns</span><b id="ptsStkRate"></b></div>';
       }
     }
@@ -1229,6 +1453,12 @@
       S.cfg = r[0]; S.rules = r[1];
       S.chunk = Math.min(1000, S.cfg.logChunkBlocks || 1000);
       S.relay = relayOf();
+      S.pot = potOf(S.rules);
+      /* the v5 Exchange under a version 5 config (indexer.py v5_exchange): its position ids are "5:<id>"; under a version
+         6 config the v6 Exchange's are "6:<id>" and the v5 one is contracts.v5Exchange */
+      var gen = Number(S.cfg.version), cc = S.cfg.contracts || {}, low = function (a) { return ADDR_RE.test(String(a || '')) ? String(a).toLowerCase() : ''; };
+      S.v5 = gen === 5 ? low(cc.exchange) : gen >= 6 ? low(cc.v5Exchange) : '';
+      S.v6 = gen >= 6 ? low(cc.exchange) : '';
       S.house = houseOf(S.cfg);
       configureSend();
       return loadSnapshot(true);

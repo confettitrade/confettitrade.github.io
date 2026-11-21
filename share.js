@@ -745,7 +745,7 @@
      throughout (the owner: "use sohne and sohne"): Schmal Halbfett drawn about 1.5 wide for the big figures (the mock-ups' weight
      and width), Leicht for the small lines, Breit Extrafett for the wordmark, the site logo's Breit Fett for the icon's c.
      Nothing here talks about fees.
-     tradeCard({ sym, side | isLong, lev, margin, pnl, account?, code? }) -> Promise of { canvas, blob, file, name, link, win }.
+     tradeCard({ sym, side | isLong, lev, margin, pnl, account?, code?, level? }) -> Promise of { canvas, blob, file, name, link, win }.
      Fonts and the QR encoder (qr.js) load on first use; cardReady() starts that early. */
 
   var TC_W = 1672, TC_H = 941, TC_SCALE = 2;
@@ -996,6 +996,18 @@
     tcSlash(ctx, s0, s0 + 22 * k, base, s1 - 22 * k, s1, base - 108.5 * k);
   }
 
+  /* the trader's FETTI level (money back for stakers, fetti.js), a small ink-ringed pill under confetti.trade: "FETTI LEVEL 2".
+     Level 0 or none draws nothing, so a card without a level is the owner's design exactly. */
+  function tcLevel(ctx, n) {
+    n = Math.round(Number(n) || 0);
+    if (!(n >= 1 && n <= 9)) return;
+    var L = tcLayout(ctx, 'FETTI LEVEL ' + n, { font: TC_BIG, size: 36, x: 1614, y: 114, align: 'right', ls: 2.5, sx: 1.15 });
+    var x0 = L.inkL - 26, x1 = 1640, y0 = 70, y1 = 130;
+    roundRect(ctx, x0, y0, x1, y1, 30); ctx.fillStyle = TC_PAPER; ctx.fill(); ctx.fillStyle = 'rgba(57, 120, 78, 0.12)'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = '#214d2e'; roundRect(ctx, x0, y0, x1, y1, 30); ctx.stroke();
+    tcDraw(ctx, L, '#214d2e');
+  }
+
   /* the card at S times the mock-up's size */
   function drawTradeCard(t, S) {
     var pal = t.win ? TC_WIN : TC_LOSS;
@@ -1006,6 +1018,7 @@
     tcPaper(ctx);
     tcWordmark(ctx);
     tcText(ctx, 'confetti.trade', { font: TC_SMALL, size: 29.5, x: 1640, y: 46.5, align: 'right', ls: -0.2 }, TC_INK);
+    tcLevel(ctx, t.level);
     tcIcon(ctx, pal, S);
 
     /* left: the signed percent, then Initial and Profit / Loss */
@@ -1015,7 +1028,9 @@
 
     /* right: COIN/SIDE over the leverage, right-aligned */
     tcCoin(ctx, t.sym, t.long ? 'LONG' : 'SHORT', pal);
-    tcText(ctx, Math.round(t.lev) + 'X', { font: TC_BIG, size: 138, x: 1630, y: 781.5, align: 'right', ls: 7.5, sx: TC_SX }, pal.ink);
+    /* the boost the trade ran at, as its card and its end screen said it: a whole number as it is, one that money added
+       to the trade left in between to two places ("6.67X", never rounded up to a boost the trade did not have) */
+    tcText(ctx, cardLev(t.lev) + 'X', { font: TC_BIG, size: 138, x: 1630, y: 781.5, align: 'right', ls: 7.5, sx: TC_SX, maxW: 700 }, pal.ink);
 
     /* bottom left: the QR code and the short address; bottom right: the three lines */
     var qr = tcQr(ctx, t.link, S);
@@ -1027,7 +1042,8 @@
     return cv;
   }
 
-  function cardName(t) { return 'confetti-' + t.sym.toLowerCase().replace(/[^a-z0-9]+/g, '') + '-' + (t.long ? 'long' : 'short') + '-' + Math.round(t.lev) + 'x.png'; }
+  function cardLev(lev) { var n = Number(lev); return isFinite(n) && n > 0 ? String(Math.round(n * 100) / 100) : '—'; }
+  function cardName(t) { return 'confetti-' + t.sym.toLowerCase().replace(/[^a-z0-9]+/g, '') + '-' + (t.long ? 'long' : 'short') + '-' + cardLev(t.lev).replace('.', '_') + 'x.png'; }
 
   /* the card as a PNG file (2x), with what it was drawn from; a preview canvas of any width comes from drawCardInto */
   function tradeCard(raw) {

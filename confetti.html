@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>confetti_ — stake</title>
-  <meta name="description" content="Stake FETTI on HyperEVM and earn a share of the fees in USDC: stake, unstake, claim.">
+  <meta name="description" content="Stake FETTI on HyperEVM: money back on your trades and a share of the revenue in USDC. Stake, unstake, claim.">
   <meta name="theme-color" content="#f4ecd8">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
@@ -14,7 +14,7 @@
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
   <link rel="stylesheet" href="paper.css?v=mono1">
-  <link rel="stylesheet" href="simple.css?v=ever1">
+  <link rel="stylesheet" href="simple.css?v=one1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Cream look for this page */
@@ -40,6 +40,21 @@
     .cf-mm-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 46ch), 1fr)); gap: 2px 24px; font-family: var(--font-mono); font-size: var(--text-sm); }
     .cf-mm-list a { color: var(--ink-muted); overflow-wrap: anywhere; }
     .cf-mm-list a:hover { color: var(--accent); }
+    /* "Your level" (FETTI levels and money back, fetti.js): the page's first card, in the stake card's paper look */
+    .cf-lv { margin: 0 0 var(--gap, 16px); padding: 18px 20px 16px; background: var(--panel); border: 1px solid var(--rule-strong); border-left: 6px solid var(--pos); }
+    .cf-lv-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+    .cf-lv-k { font-size: var(--text-sm); color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+    .cf-lv-big { margin: 6px 0 4px; font-size: clamp(28px, 7vw, 40px); line-height: 1.1; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+    .cf-lv-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--pos) 14%, transparent); color: var(--pos); font-weight: 700; font-size: var(--text-md); }
+    .cf-lv-tag[hidden], .cf-lv-rows .kv[hidden], .cf-lv-go[hidden] { display: none; }
+    .cf-lv-sub { margin: 0 0 12px; max-width: 60ch; color: var(--ink-muted); font-size: 16px; line-height: 1.45; }
+    .cf-lv-rows .kv { padding: 10px 0; }
+    .cf-lv-rows .kv-val { font-variant-numeric: tabular-nums; }
+    .cf-lv-go { margin-top: 14px; }
+    .cf-lv-fine { margin: 10px 0 0; font-size: var(--text-sm); color: var(--ink-muted); line-height: 1.45; }
+    .cf-giveup { margin: 10px 0 0; text-align: center; font-size: 15px; line-height: 1.4; color: var(--neg); font-weight: 600; }
+    .cf-act-unstake .cf-giveup { text-align: left; }
+    .cf-extra p { margin: 0 0 10px; max-width: 72ch; }
   </style>
 </head>
 <body class="tabs-page cream-page" data-page="confetti">
@@ -66,7 +81,20 @@
   </div>
 
   <main class="container tab-main">
-    <div class="tab-title"><h1>$FETTI</h1><span class="sub">stake FETTI, earn a share of the fees</span></div>
+    <div class="tab-title"><h1>$FETTI</h1><span class="sub">stake FETTI: money back on your trades, and a share of the revenue</span></div>
+
+    <section class="cf-lv" id="cfLevel" aria-label="Your level" hidden>
+      <div class="cf-lv-head"><span class="cf-lv-k">Your level</span><span class="cf-lv-tag" id="cfLvTag" hidden></span></div>
+      <div class="cf-lv-big" id="cfLvBig">—</div>
+      <p class="cf-lv-sub" id="cfLvSub" aria-live="polite"></p>
+      <div class="cf-lv-rows">
+        <div class="kv"><span class="kv-key">Coming back to you</span><span class="kv-val" id="cfLvPend">—</span></div>
+        <div class="kv" id="cfLvNextRow" hidden><span class="kv-key">Next</span><span class="kv-val" id="cfLvNext">—</span></div>
+        <div class="kv"><span class="kv-key">Came back, 30 days</span><span class="kv-val" id="cfLvPaid">—</span></div>
+      </div>
+      <a class="btn btn-block cf-lv-go" id="cfLvGo" href="trade.html?levels=1" hidden>Get Level 1</a>
+      <p class="cf-lv-fine" id="cfLvFine"></p>
+    </section>
 
     <div class="tab-grid">
       <section class="panel cf-you" aria-label="Your stake">
@@ -102,6 +130,7 @@
               <span class="cf-amt-mirror" id="cfAmountMirror" aria-hidden="true"></span>
             </label>
             <div class="cf-bal" id="cfBal">Wallet —</div>
+            <p class="cf-giveup" id="cfGiveUp" aria-live="polite" hidden></p>
             <div class="cf-chips" role="group" aria-label="Part of the balance">
               <button class="cf-chip" type="button" data-share="25" aria-pressed="false">25%</button>
               <button class="cf-chip" type="button" data-share="50" aria-pressed="false">50%</button>
@@ -132,6 +161,7 @@
               <button class="btn btn-sm" id="unstakeMax" type="button" disabled>Max</button>
               <button class="btn btn-sm" id="unstakeBtn" type="button" disabled>Unstake</button>
             </div>
+            <p class="cf-giveup" id="cfGiveUpDk" aria-live="polite" hidden></p>
           </div>
           <div class="act-block cf-act-claim">
             <div class="act"><button class="btn btn-sm btn-block" id="claimBtn" type="button" disabled>Claim</button></div>
@@ -143,13 +173,32 @@
       <section class="panel cf-pool" aria-label="Staking pool">
         <div class="panel-head"><span>Pool</span></div>
         <div class="panel-body">
-          <div class="kv"><span class="kv-key">APR</span><span class="kv-val" id="cfApr">—</span></div>
-          <div class="kv"><span class="kv-key">Pushed, 30d</span><span class="kv-val" id="cfPushed">—</span></div>
-          <div class="kv"><span class="kv-key">Paid to stakers</span><span class="kv-val" id="cfRewards">—</span></div>
+          <div class="kv"><span class="kv-key">Paid to stakers, 30 days</span><span class="kv-val" id="cfPaid30">—</span></div>
+          <div class="kv" id="cfBack30Row" hidden><span class="kv-key">Money back paid, 30 days</span><span class="kv-val" id="cfBack30">—</span></div>
+          <div class="kv"><span class="kv-key">FETTI burned</span><span class="kv-val" id="cfBurned">—</span></div>
+          <div class="kv"><span class="kv-key">Paid to stakers, all time</span><span class="kv-val" id="cfRewards">—</span></div>
           <div class="kv"><span class="kv-key">Total staked</span><span class="kv-val" id="cfTotal">—</span></div>
         </div>
       </section>
     </div>
+
+    <section class="panel tab-section cf-extra" id="cfDraw" aria-label="Weekly draw" hidden>
+      <div class="panel-head"><span>Weekly draw</span></div>
+      <div class="panel-body">
+        <p>Each week one wallet with a FETTI level wins a prize in trading money. One ticket for each dollar its trades paid in that week. The rules are in the <a href="terms.html#draw">terms</a>.</p>
+        <div class="kv"><span class="kv-key">This week's prize</span><span class="kv-val" id="cfDrawPrize">—</span></div>
+        <div class="kv"><span class="kv-key">Drawn</span><span class="kv-val" id="cfDrawWhen">—</span></div>
+        <div class="kv"><span class="kv-key">Your tickets</span><span class="kv-val" id="cfDrawMine">—</span></div>
+      </div>
+    </section>
+
+    <section class="panel tab-section cf-extra" id="cfTable" aria-label="FETTI table" hidden>
+      <div class="panel-head"><span>FETTI table</span></div>
+      <div class="panel-body">
+        <p>Stake FETTI, win FETTI. Winnings unlock over 7 days, and the table pays out at most a set share of the pool's FETTI a day.</p>
+        <a class="btn btn-block" id="cfTableGo" href="confetti.html">Open the FETTI table</a>
+      </div>
+    </section>
 
     <section class="panel tab-section" id="swapBox" aria-label="Trade FETTI" hidden>
       <div class="panel-head"><span>FETTI / HYPE</span></div>
@@ -175,7 +224,7 @@
           <div class="kv"><span class="kv-key">You get</span><span class="kv-val" id="swOut">—</span></div>
           <div class="kv"><span class="kv-key">Min received</span><span class="kv-val" id="swMin">—</span></div>
           <div class="hint" id="swHint" aria-live="polite"></div>
-          <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. <span id="swFee">0.3%</span> pool fee, nothing to the house. <a id="swPoolLink" target="_blank" rel="noopener" hidden>pool</a></div>
+          <div class="fineprint">Swaps go to HyperSwap's pool from your wallet. The pool keeps <span id="swFee">0.3%</span>, nothing goes to the house. <a id="swPoolLink" target="_blank" rel="noopener" hidden>pool</a></div>
         </div>
       </div>
     </section>
@@ -273,8 +322,9 @@
     </div>
   </dialog>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="tabs.js?v=ever1" defer></script>
-  <script src="points.js?v=prm1" defer></script>
+  <script src="fetti.js?v=one1" defer></script>
+  <script src="tabs.js?v=one3" defer></script>
+  <script src="points.js?v=one1" defer></script>
   <script>
     /* Copy the FETTI address from the big banner (the address itself or the button). */
     (function () {

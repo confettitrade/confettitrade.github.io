@@ -71,6 +71,21 @@
     return mulDiv(entryPx18, den + move, den, false);
   }
 
+  /* ImpactLib.bustPriceOf (v5): the bust of collateralUsdc of collateral backing notionalUsdc: the move is
+     min(95% of collateral / notional, collateral / notional - 5 bps), worked in units of 1 / (notional x 10000);
+     with the collateral the margin itself it is bustPrice at the leverage. */
+  function bustPriceOf(entryPx18, isLong, collateralUsdc, notionalUsdc) {
+    var coll = big(collateralUsdc), n = big(notionalUsdc);
+    var den = n * BPS;
+    var pct = BUST_BUFFER_PCT * 100n * coll;
+    var gap = BUST_GAP_BPS * n;
+    var whole = coll * BPS;
+    var gapped = gap < whole ? whole - gap : 0n;
+    var move = pct < gapped ? pct : gapped;
+    if (isLong) return mulDiv(entryPx18, den - move, den, true);
+    return mulDiv(entryPx18, den + move, den, false);
+  }
+
   function isBusted(px18, bustPx18, isLong) { return isLong ? px18 <= bustPx18 : px18 >= bustPx18; }
 
   /* ------------------------------------------------------------------- ImpactLib: wins */
@@ -114,15 +129,54 @@
     return { bounty: bounty, fee: fee, lp: marginUsdc - bounty - fee };
   }
 
+  /* ------------------------------------------------- the size fee (v5, V5P_SPEC section 13) */
+
+  var SHARE_DEN = 100000n;   /* a share is in tenths of a bp of the stake */
+
+  /* Exchange._feeShare: what one side of a trade pays, in tenths of a bp of its stake:
+     min(rateX10 x leverage, capBps x 10). 0 for a house wallet and for a market without the fee. */
+  function feeShare(rateX10, capBps, leverage) {
+    var byRate = big(rateX10) * big(leverage), cap = big(capBps) * 10n;
+    return byRate < cap ? byRate : cap;
+  }
+
+  /* Exchange._sizeFee: the fee of the share of a position that closes (marginUsdc before, restUsdc left open; an
+     open or a full close: rest 0). Rounded down on both terms, so the parts of a position add up to one close. */
+  function sizeFee(shareX10, marginUsdc, restUsdc) {
+    var e = big(shareX10);
+    if (e === 0n) return 0n;
+    return big(marginUsdc) * e / SHARE_DEN - big(restUsdc || 0n) * e / SHARE_DEN;
+  }
+
+  /* The stake an amount buys when the open fee rides on top of it: the largest m with
+     m + floor(m x share / 100000) <= amountUsdc, so the request takes the amount and never more. */
+  function stakeFor(amountUsdc, shareX10) {
+    var a = big(amountUsdc), e = big(shareX10);
+    if (a <= 0n) return 0n;
+    if (e === 0n) return a;
+    var m = a * SHARE_DEN / (SHARE_DEN + e);
+    while (m + sizeFee(e, m, 0n) > a) m -= 1n;
+    while (m + 1n + sizeFee(e, m + 1n, 0n) <= a) m += 1n;
+    return m;
+  }
+
+  /* The smallest amount whose stake is at least stakeUsdc: the stake plus its open fee. */
+  function amountFor(stakeUsdc, shareX10) { return big(stakeUsdc) + sizeFee(shareX10, stakeUsdc, 0n); }
+
   /* --------------------------------------------------------------- the position, as stored */
 
-  /* A position in the contract's units from the positions(id) tuple (ethers Result or a plain object). */
-  function position(t) {
+  /* A position in the contract's units from the positions(id) tuple (ethers Result or a plain object).
+     feeShareX10 (v5): its stamp, tradeFeeOf(positionId); the tuple does not carry it. None: no size fee, as on v4.
+     addedMarginUsdc (v5): the margin added after the open, the tuple's 16th field; a v4 tuple has none (0). */
+  function position(t, feeShareX10) {
+    var added = t.addedMarginUsdc != null ? t.addedMarginUsdc : 0n;
     return {
+      addedMarginUsdc: big(added),
       isLong: !!t.isLong, marginUsdc: big(t.marginUsdc), leverage: big(t.leverage), maxProfitUsdc: big(t.maxProfitUsdc),
       entryPx18: big(t.entryPx18), openedAt: big(t.openedAt), deadbandBps: big(t.deadbandBps),
       winFeeBps: big(t.winFeeBps), lossFeeBps: big(t.lossFeeBps), entryDeadbandBps: big(t.entryDeadbandBps),
-      borrowRateX10: big(t.borrowRateX10), borrowFreeHours: big(t.borrowFreeHours)
+      borrowRateX10: big(t.borrowRateX10), borrowFreeHours: big(t.borrowFreeHours),
+      feeShareX10: feeShareX10 != null ? big(feeShareX10) : 0n
     };
   }
 
@@ -135,6 +189,20 @@
   }
 
   function notional(pos) { return pos.marginUsdc * pos.leverage; }
+  /* ExchangeBase._collateral: margin plus added margin, what a loss is capped at and a liquidation forfeits */
+  function collateral(pos) { return pos.marginUsdc + (pos.addedMarginUsdc || 0n); }
+
+  /* ExchangeBase._restTerms: what a close of bps leaves open: the margin keeps its unclosed share (the closed share
+     rounds down), the added margin and the maximum profit the same share of the margin, rounded down. The stamps,
+     the entry and the opening time are the position's own. */
+  function restTerms(pos, bps) {
+    var margin = pos.marginUsdc, kept = margin - margin * big(bps) / BPS, r = {};
+    Object.keys(pos).forEach(function (k) { r[k] = pos[k]; });
+    r.marginUsdc = kept;
+    r.addedMarginUsdc = margin > 0n ? (pos.addedMarginUsdc || 0n) * kept / margin : 0n;
+    r.maxProfitUsdc = margin > 0n ? pos.maxProfitUsdc * kept / margin : 0n;
+    return r;
+  }
 
   /* MarketRules.quote: what closing pos at exitPx18 is worth before fees, the payout cap applied. */
   function quote(pos, c, exitPx18) {
@@ -147,39 +215,64 @@
       amount = adjustedGain(g.gain, g.move, c);
       if (amount > pos.maxProfitUsdc) { forfeited = amount - pos.maxProfitUsdc; amount = pos.maxProfitUsdc; }
     } else {
-      amount = cappedLoss(n, pos.marginUsdc, pos.entryPx18, exitPx18, pos.isLong);
+      amount = cappedLoss(n, collateral(pos), pos.entryPx18, exitPx18, pos.isLong);
     }
     return { isWin: isWin, amount: amount, forfeited: forfeited };
   }
 
   /* ExchangeExt.previewClose at price px18 and block time nowTs: { pnl, fee, payout } exactly as the
-     contract returns them (pnl signed, payout after the borrow), plus the borrow taken and the parts.
-     queueEmpty: the payout queue is empty (a loss fee is carved only then). */
-  function previewClose(pos, c, px18, nowTs, queueEmpty) {
+     contract returns them (pnl signed, payout after the borrow and, on v5, after the close-side size fee),
+     plus the borrow taken, the size fee taken (tradeFee) and the parts.
+     queueEmpty: the payout queue is empty (a loss fee is carved only then).
+     bps (v5; none or 10000: the whole position): a share of it, as ExchangeExt._previewCloseAt settles one
+     (ExchangeBase._closeShare: the whole position's amount, borrow and collateral less what stays open, so the parts
+     of a position add up to one close; a winning share takes at most its share of the maximum profit). rest: what
+     stays open (restTerms), null for the whole. The caller checks the share rules (1..10000, the rest's smallest
+     collateral): the contract refuses a share it does not allow and this does not. */
+  function previewClose(pos, c, px18, nowTs, queueEmpty, bps) {
+    var share = bps != null && big(bps) !== BPS;
+    var rest = share ? restTerms(pos, bps) : null;
     var q = quote(pos, c, px18);
-    var margin = pos.marginUsdc;
-    var held = big(nowTs) - pos.openedAt;
-    var borrow = borrowFee(notional(pos), pos.borrowRateX10, held < 0n ? 0n : held, pos.borrowFreeHours);
+    var held = big(nowTs) - pos.openedAt; if (held < 0n) held = 0n;
+    var borrow = borrowFee(notional(pos), pos.borrowRateX10, held, pos.borrowFreeHours);
+    var coll = collateral(pos), amount = q.amount, forfeited = q.forfeited, restAmount = 0n;
+    if (rest && rest.marginUsdc > 0n) {
+      var rq = quote(rest, c, px18);
+      var gain = amount + forfeited - rq.amount - rq.forfeited;
+      amount -= rq.amount;
+      if (q.isWin) { var cap = pos.maxProfitUsdc - rest.maxProfitUsdc; if (amount > cap) amount = cap; }
+      forfeited = gain > amount ? gain - amount : 0n;
+      restAmount = rq.amount;
+      borrow -= borrowFee(notional(rest), rest.borrowRateX10, held, rest.borrowFreeHours);
+      coll -= collateral(rest);
+    }
     var pnl = 0n, fee = 0n, payout;
-    if (q.amount === 0n) {
-      payout = margin;
+    var lossBps = queueEmpty === false ? 0n : pos.lossFeeBps;
+    if (amount === 0n) {
+      payout = coll;
     } else if (q.isWin) {
-      fee = winFee(q.amount, pos.winFeeBps);
-      pnl = q.amount - fee;
-      payout = margin + pnl;
+      fee = winFee(amount + restAmount, pos.winFeeBps) - winFee(restAmount, pos.winFeeBps);
+      pnl = amount - fee;
+      payout = coll + pnl;
     } else {
-      fee = splitLoss(q.amount, queueEmpty === false ? 0n : pos.lossFeeBps).fee;
-      pnl = -q.amount;
-      payout = margin - q.amount;
+      fee = splitLoss(amount + restAmount, lossBps).fee - splitLoss(restAmount, lossBps).fee;
+      pnl = -amount;
+      payout = coll - amount;
     }
     if (borrow > payout) borrow = payout;
     payout -= borrow;
-    return { pnl: pnl, fee: fee, payout: payout, borrow: borrow, isWin: q.isWin, amount: q.amount, forfeited: q.forfeited, flat: q.amount === 0n };
+    /* Exchange._settleClose: the close-side size fee comes after the borrow, out of the payout and never more than it */
+    var tradeFee = sizeFee(pos.feeShareX10 || 0n, pos.marginUsdc, rest ? rest.marginUsdc : 0n);
+    if (tradeFee > payout) tradeFee = payout;
+    payout -= tradeFee;
+    return { pnl: pnl, fee: fee, payout: payout, borrow: borrow, tradeFee: tradeFee, isWin: q.isWin, amount: amount, forfeited: forfeited, flat: amount === 0n, rest: rest };
   }
 
   /* The position's liquidation price, as bustPrice(positionId) works it. */
   function positionBust(pos) {
-    return bustPrice(rawEntry(pos.entryPx18, pos.isLong, pos.entryDeadbandBps), pos.isLong, pos.leverage);
+    var raw = rawEntry(pos.entryPx18, pos.isLong, pos.entryDeadbandBps);
+    if (!(pos.addedMarginUsdc > 0n)) return bustPrice(raw, pos.isLong, pos.leverage);
+    return bustPriceOf(raw, pos.isLong, collateral(pos), notional(pos));      /* ExchangeBase._bustPrice */
   }
 
   /* What the position is worth to its owner at px18: previewClose, except at or past the
@@ -188,8 +281,10 @@
   function value(pos, c, px18, nowTs, queueEmpty) {
     var bust = positionBust(pos);
     if (isBusted(px18, bust, pos.isLong)) {
-      var lf = splitLiquidation(pos.marginUsdc, queueEmpty === false ? 0n : pos.lossFeeBps);
-      return { pnl: -pos.marginUsdc, fee: lf.fee, payout: 0n, borrow: 0n, isWin: false, amount: pos.marginUsdc, forfeited: 0n, flat: false, liquidated: true, bust: bust };
+      /* the collateral is forfeited: the margin and what was added to it */
+      var coll = collateral(pos), lf = splitLiquidation(coll, queueEmpty === false ? 0n : pos.lossFeeBps);
+      /* a liquidation has no close side: no size fee is taken (the open side was paid at the fill) */
+      return { pnl: -coll, fee: lf.fee, payout: 0n, borrow: 0n, tradeFee: 0n, isWin: false, amount: coll, forfeited: 0n, flat: false, liquidated: true, bust: bust };
     }
     var r = previewClose(pos, c, px18, nowTs, queueEmpty);
     r.liquidated = false; r.bust = bust;
@@ -233,9 +328,10 @@
   var S = {
     ONE: ONE, BPS: BPS, mulDiv: mulDiv,
     deadbandExit: deadbandExit, spreadEntry: spreadEntry, rawEntry: rawEntry, borrowFee: borrowFee,
-    bustPrice: bustPrice, isBusted: isBusted, rawGain: rawGain, impactScaleE18: impactScaleE18,
+    bustPrice: bustPrice, bustPriceOf: bustPriceOf, isBusted: isBusted, rawGain: rawGain, impactScaleE18: impactScaleE18,
     adjustedGain: adjustedGain, winFee: winFee, cappedLoss: cappedLoss, splitLoss: splitLoss, splitLiquidation: splitLiquidation,
-    position: position, curve: curve, quote: quote, previewClose: previewClose, positionBust: positionBust, value: value,
+    feeShare: feeShare, sizeFee: sizeFee, stakeFor: stakeFor, amountFor: amountFor,
+    position: position, curve: curve, collateral: collateral, restTerms: restTerms, quote: quote, previewClose: previewClose, positionBust: positionBust, value: value,
     fill: fill, openEntry: openEntry, oracle18: oracle18, parseOracle: parseOracle, usd: usd, px: px
   };
   if (typeof module === 'object' && module && module.exports) module.exports = S;

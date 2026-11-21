@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 6,
   "chainId": 999,
   "chainIdHex": "0x3e7",
   "chainName": "HyperEVM",
@@ -14,22 +14,32 @@
   },
   "hyperliquidInfoUrl": "https://api.hyperliquid.xyz/info",
   "contracts": {
-    "exchange": "0x533d0bc51bafeb1519f1bac93d48c175b1496063",
-    "exchangeExt": "0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0",
+    "exchange": "0xed8ee016b5684816cfff550f202e211db1d2cdd9",
+    "exchangeExt": "0xf296441c94736296845bbc7832d3b96c7fccf3cf",
     "usdc": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
-    "oracle": "0x1fa6c831868527c65c33e14fd2456855458e03ba",
+    "oracle": "0x0158c92b46d042a6ee916573756af0e30a93a4a6",
     "confetti": "0x995b36d7e33680fc6fa1db6fa4dc8e475b5233a2",
-    "staking": "0x2bf4976eb70cdcc03871ab60977fc4292587ce9a",
-    "referrals": "0x1dcdbe02568169a777ad6d2b3c5edcf5058780da",
+    "staking": "0x2Bf4976EB70cdcC03871Ab60977Fc4292587CE9a",
+    "referrals": "0x7b366431e67f5964b67378c807870d9e2cc72d23",
     "priceSource": "0xFaF573187824D176fc74d1de91a072eb6ffa8494",
-    "marketRules": "0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d",
-    "sessionRouter": "0x5477ab941a551874596aeeb16d3bcf79a120351d",
-    "depositFactory": "0xe5bb8b4703787f428aaa6a3755add72b9c82fb75",
+    "marketRules": "0x28e632860ef8d52f56a1950868a06c4ff1587414",
+    "sessionRouter": "0x3cd25cf3ac32fd4e0455094d7ee5fa2c035daba6",
+    "depositFactory": "0xbcafdc548c9c922cb1e132dcb8c29a06d0b940e4",
     "v2Exchange": "0x257d667a52b282ac0b4c001fd437522bf6b9cbe2",
     "v3Exchange": "0x723943c8fdd71e0e670b18d15be737222f3a0810",
     "v3Staking": "0x167549bb697f96ee19e0ffbfa5ab5f6487f10051",
     "v3Referrals": "0xdf0c59514877f38a7b59bd7db1422217ab25714b",
-    "codeVaultFactory": "0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d"
+    "codeVaultFactory": "0x99a64dbee205defe571fe427970009ee80a2fa3f",
+    "v4Exchange": "0x533d0bc51bafeb1519f1bac93d48c175b1496063",
+    "v4ExchangeExt": "0xd23f1c74a64a5fb6f6a68da854d33d736918cbb0",
+    "v4Staking": "0x2bf4976eb70cdcc03871ab60977fc4292587ce9a",
+    "v4Referrals": "0x1dcdbe02568169a777ad6d2b3c5edcf5058780da",
+    "v4Oracle": "0x1fa6c831868527c65c33e14fd2456855458e03ba",
+    "v4MarketRules": "0xe1e48bf50b8af7d44e7f1ed3422598e381aab72d",
+    "v4SessionRouter": "0x5477ab941a551874596aeeb16d3bcf79a120351d",
+    "v4DepositFactory": "0xe5bb8b4703787f428aaa6a3755add72b9c82fb75",
+    "v4CodeVaultFactory": "0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d",
+    "triggerBook": "0xf4D5eBBeB7f4d2fC47497Df23FB38071C625b8D7"
   },
   "onramp": {
     "moonpayKey": "",
@@ -45,14 +55,63 @@
   },
   "houseBots": [],
   "pointsRelay": "",
-  "fees": { "wallet": "0x028e6Bc799cab8c42A6F78A30B2c6D901E8A4161", "swapBips": 100, "bridgePercent": 3 },
-  "deployBlock": 48983821,
+  "fees": {
+    "wallet": "0x028e6Bc799cab8c42A6F78A30B2c6D901E8A4161",
+    "swapBips": 100,
+    "bridgePercent": 3
+  },
+  "deployBlock": 51812225,
   "v3DeployBlock": 48797405,
   "v2DeployBlock": 48404443,
   "logChunkBlocks": 20000,
   "logChunksPerLoad": 10,
-  "ui": { "simplePhones": "default", "simpleDesktop": "default" },
+  "ui": {
+    "simplePhones": "default",
+    "simpleDesktop": "default"
+  },
+  "fetti": {
+    "$comment": "FETTI levels and money back (fetti.js; PLAN.md 3.5). moneyBack: the level key, the level sheet and the lines, on a v5 config only. levels: [FETTI staked, % back], used only when perks.json does not carry the perks bot's own rules. perksUrl: the bot's public books, a file on this site. addShare: the share of the page's own part of an Add money order that stays, by the level held for the last 7 days (levels 0 to 4). draw.on / table.on: the weekly prize draw's and the FETTI table's entries on the pages; both off until the owner turns them on (the draw's line in the terms shows with it).",
+    "moneyBack": true,
+    "perksUrl": "perks.json",
+    "levels": [
+      [
+        0.05,
+        10
+      ],
+      [
+        0.5,
+        20
+      ],
+      [
+        3,
+        30
+      ],
+      [
+        15,
+        40
+      ]
+    ],
+    "holdDays": 7,
+    "perFettiDayUsd": 10,
+    "payUtcMinute": 30,
+    "addShare": [
+      1,
+      0.5,
+      0,
+      0,
+      0
+    ],
+    "draw": {
+      "on": false,
+      "url": "draw.json"
+    },
+    "table": {
+      "on": false,
+      "href": ""
+    }
+  },
   "$settings": "Stand-ins until the page reads the live values from the exchange (minMarginUsdc(), winFeeBps(), lossFeeBps(), borrowFreeHours(), maxWinBps()).",
+  "$fastDelay": "v5: each market's fastDelay restates its fast-price delay in seconds (fastPricing(id).delay on the exchange; the day-0 measurement's values, job G2). A stand-in like the others: the real page reads the chain and never this; the demo, which has no chain, fills each coin after its own delay and a block. PEOPLE has none: the older rule.",
   "minMarginUsdc": 5,
   "bustBufferPct": 95,
   "bustGapBps": 5,
@@ -96,6 +155,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -106,6 +166,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 150000,
+      "fastDelay": 4,
       "launch": true
     },
     {
@@ -116,6 +177,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 1000000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -126,6 +188,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 500000,
+      "fastDelay": 4,
       "launch": true
     },
     {
@@ -136,6 +199,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 150000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -146,6 +210,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 150000,
+      "fastDelay": 4,
       "launch": true
     },
     {
@@ -156,6 +221,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 2000000,
+      "fastDelay": 4,
       "launch": true
     },
     {
@@ -176,6 +242,7 @@
       "tier": "B",
       "maxLeverage": 250,
       "oiCapPerSideUsd": 500000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -186,6 +253,7 @@
       "tier": "B",
       "maxLeverage": 250,
       "oiCapPerSideUsd": 500000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -196,6 +264,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -206,6 +275,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 3,
       "launch": true
     },
     {
@@ -216,6 +286,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -226,6 +297,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -236,6 +308,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 2,
       "launch": true
     },
     {
@@ -246,6 +319,7 @@
       "tier": "A",
       "maxLeverage": 1000,
       "oiCapPerSideUsd": 10000000,
+      "fastDelay": 3,
       "launch": true
     },
     {
@@ -401,5 +475,7 @@
       "maxLeverage": 50,
       "launch": false
     }
-  ]
+  ],
+  "v4DeployBlock": 48983821,
+  "triggersLive": false
 }

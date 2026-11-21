@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — v4</title>
+  <meta name="description" content="Close your Confetti v4 positions and withdraw. Their take profit and stop loss keep working here while this page is open.">
+  <meta name="theme-color" content="#f4ecd8">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='#0d1229'/%3E%3Cpath d='M3.35 18.5C3.35 21.9 6.12 24.25 10.17 24.25C13.75 24.25 15.92 22.31 16.44 20.48L12.9 19.17C12.56 20.21 11.62 21.08 10.15 21.08C8.44 21.08 7.25 20.08 7.25 18.5C7.25 16.92 8.44 15.92 10.15 15.92C11.62 15.92 12.56 16.79 12.9 17.83L16.44 16.54C15.92 14.69 13.75 12.75 10.17 12.75C6.12 12.75 3.35 15.1 3.35 18.5Z' fill='#f4eaf2'/%3E%3Crect x='17' y='9' width='9' height='16' fill='#e86a6a'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <link rel="stylesheet" href="paper.css?v=mono1">
+  <link rel="stylesheet" href="simple.css?v=one1">
+  <link rel="stylesheet" href="points.css?v=phone2">
+  <script>
+    /* Cream look for this page */
+    document.documentElement.removeAttribute('data-theme');
+  </script>
+  <style>
+    /* The v4 run-off page (MIGRATION_ONE.md, V5P_SPEC 18.12): a trader arrives here to close what is still open on v4
+       and take the money out, most of them on a phone. v4 has no trigger contract, so the take profit and stop loss
+       set on a v4 trade stay the browser rule they always were: from the launch on this page shows them under each
+       position and sends the close when one is reached, while it is open (one-tap when it is on, else the wallet). Scoped to this page. */
+    /* once a wallet is connected its chip stands for it: the Connect key steps aside (tabs.js hides it) */
+    body.cream-page[data-page="v4"] .sm-page-top .sm-connect[hidden] { display: none; }
+    /* the take profit / stop loss line under each position: its words wrap, they never run off the row */
+    body.cream-page[data-page="v4"] .pos-lines .tpsl-sub span { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+    body.cream-page[data-page="v4"] .pos-lines .tpsl-sub .input { min-width: 0; flex: 1 1 140px; }
+    @media (max-width: 640px) {
+      /* a row never scrolls sideways: its figures wrap, and its key (Close, Fill, Cancel) is a full-width key
+         under them, 48 px tall, in the thumb's reach */
+      body.cream-page[data-page="v4"] .pos-lines { overflow-x: visible; }
+      body.cream-page[data-page="v4"] .pos-lines .pos-line { min-width: 0; height: auto; flex-wrap: wrap; row-gap: 8px; padding-top: 12px; padding-bottom: 12px; }
+      body.cream-page[data-page="v4"] .pos-lines .pos-line .grow { display: none; }
+      body.cream-page[data-page="v4"] .pos-lines .pos-line .btn { flex: 1 0 100%; min-height: 48px; }
+      body.cream-page[data-page="v4"] .act .btn { min-height: 48px; }
+      body.cream-page[data-page="v4"] .tab-title { flex-wrap: wrap; row-gap: 6px; }
+      /* the header fits a 360 px screen: the wordmark, the wallet and Menu; the House chip gives way here */
+      body.cream-page[data-page="v4"] .sm-page-top .sm-house { display: none; }
+    }
+  </style>
+</head>
+<body class="tabs-page cream-page" data-page="v4">
+
+  <header class="sm-page-top">
+    <a class="sm-logo" href="trade.html">confetti<i>_</i></a>
+    <span class="sm-page-top-r">
+      <a class="sm-house" id="houseChip" href="house.html"><span><b>House —</b></span></a>
+      <button class="sm-chip is-off" id="walletChip" type="button" hidden><span><i class="sm-dot"></i><span id="walletAddr"></span></span></button>
+      <button class="sm-connect" id="connectBtn" type="button">Connect wallet</button>
+      <button class="sm-chip" id="menuBtn" type="button"><span>Menu</span></button>
+    </span>
+  </header>
+
+  <main class="container tab-main">
+    <div class="tab-title"><h1>v4</h1><span class="sub">close and withdraw</span><span class="sub" id="v4Who"></span></div>
+    <p class="hint">These are the trades you opened before the move to v5. A take profit or stop loss you set on one still works while this page is open: when the price reaches it, the trade closes. With one-tap on, there is no popup; without it, your wallet asks you to confirm.<span id="v4TrigLive" hidden> On a trade you open now, they close it even when Confetti is closed.</span></p>
+
+    <section class="panel tab-section" aria-label="v4 balance">
+      <div class="status-grid">
+        <div>
+          <h4>Balance</h4>
+          <div class="kv"><span class="kv-key">Available</span><span class="kv-val" id="v4Avail">—</span></div>
+          <div class="kv"><span class="kv-key">Margin in use</span><span class="kv-val" id="v4Margin">—</span></div>
+          <div class="kv"><span class="kv-key">Open PnL</span><span class="kv-val" id="v4Pnl">—</span></div>
+        </div>
+        <div>
+          <h4>Withdraw</h4>
+          <div class="act">
+            <div class="input-group">
+              <input class="input" id="v4Amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false" aria-label="Withdraw amount">
+              <span class="unit">USDC</span>
+            </div>
+            <button class="btn btn-sm" id="v4Max" type="button" disabled>Max</button>
+            <button class="btn btn-sm btn-primary" id="v4Withdraw" type="button" disabled>Withdraw</button>
+          </div>
+          <div class="act-block"><div class="hint" id="v4Hint" aria-live="polite"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel tab-section" aria-label="Open positions">
+      <div class="panel-head"><span>Open</span><span class="count" id="v4OpenCount"></span></div>
+      <div class="pos-lines" id="v4Open">
+        <div class="empty">Connect a wallet.</div>
+      </div>
+    </section>
+
+    <section class="panel tab-section" aria-label="Pending requests">
+      <div class="panel-head"><span>Pending</span><span class="count" id="v4PendingCount"></span></div>
+      <div class="pos-lines" id="v4Pending">
+        <div class="empty">Connect a wallet.</div>
+      </div>
+    </section>
+
+    <footer class="trade-foot">
+      <a class="wordmark" href="index.html">confetti<span class="cursor cursor-block" aria-hidden="true"></span></a>
+      <span>HyperEVM (999)</span>
+      <span class="spacer"></span>
+      <a href="docs.html">docs</a>
+      <a href="terms.html">terms</a>
+    <a href="contracts.html">contracts</a>
+      <a href="https://x.com/confetti_trade" target="_blank" rel="noopener">@confetti_trade</a>
+      <a href="https://github.com/confettitrade" target="_blank" rel="noopener">github</a>
+    </footer>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+
+  <!-- Phones: the Menu sheet (the header's Menu) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phMenuSheet" aria-labelledby="phMenuTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phMenuTitle">Menu</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <nav class="ph-menu-list" aria-label="Pages">
+      <a href="trade.html">Trade</a>
+      <a href="portfolio.html">Portfolio</a>
+      <a href="house.html">House</a>
+      <a href="confetti.html">$FETTI</a>
+      <a href="leaderboard.html">Leaderboard</a>
+      <a class="ph-menu-sub" href="docs.html">Docs</a>
+      <a class="ph-menu-sub" href="contracts.html">Contracts</a>
+    </nav>
+  </dialog>
+
+  <!-- Phones: the Account sheet (the header's account button) -->
+  <dialog class="sheet-modal ph-sheet ph-only" id="phAcctSheet" aria-labelledby="phAcctTitle">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="panel-head"><span id="phAcctTitle">Account</span><button class="ph-x" type="button" data-close aria-label="Close">✕</button></div>
+    <div class="ph-acct-body">
+      <div class="ph-kv js-ph-num" hidden><span>Balance</span><b class="js-ph-bal">—</b></div>
+      <div class="ph-kv js-ph-num" hidden><span>In trades</span><b class="js-ph-margin">—</b></div>
+      <div class="ph-kv js-ph-num" hidden><span>P&amp;L</span><b class="js-ph-pnl">—</b></div>
+      <div class="ph-acct-btns">
+        <a class="ph-btn" href="trade.html">+ Deposit</a>
+        <a class="ph-btn" href="trade.html">Withdraw</a>
+      </div>
+      <div class="ph-addr"><span class="ph-addr-v js-ph-addr">—</span><button class="ph-quiet js-ph-copy" type="button">Copy</button></div>
+      <a class="ph-quiet js-ph-explorer" href="https://hyperevmscan.io" target="_blank" rel="noopener">View on explorer</a>
+      <button class="ph-quiet js-ph-send" type="button" hidden>Send points</button>
+      <button class="ph-quiet ph-disc js-ph-disc" type="button">Disconnect</button>
+    </div>
+  </dialog>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="tabs.js?v=one3" defer></script>
+  <script src="points.js?v=one1" defer></script>
+</body>
+</html>

@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="paper.css?v=closex1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <!-- [simple] Confetti Simple: the mode is decided before the first paint; styles for both phone and desktop -->
-  <link rel="stylesheet" href="simple.css?v=pay2">
+  <link rel="stylesheet" href="simple.css?v=onepay1">
   <script src="simple-boot.js?v=noproboot1"></script>
   <script>
     /* Night only. */
@@ -680,6 +680,7 @@
 
     <div class="notice" id="v2Banner" hidden>You have <b id="v2Amt">money</b> on v2. <a class="btn btn-sm" id="stV2" href="v2.html">Move it</a></div>
     <div class="notice" id="v3Banner" hidden>You have <b id="v3Amt">money</b> on v3. <a class="btn btn-sm" id="stV3" href="v3.html">Move it</a></div>
+    <div class="notice" id="v4Banner" hidden>You have <b id="v4Amt">money</b> on v4. <a class="btn btn-sm" id="stV4" href="v4.html">Move it</a></div>
     <div class="notice" id="usdcBanner" hidden>Trades are in USDC, not HYPE. You have <b id="usdcBannerHype">—</b> HYPE: swap it in one tap. <button class="btn btn-sm" id="usdcBannerGo" type="button">Swap HYPE for USDC</button></div>
     <div class="notice" id="chainBanner" hidden>Your wallet is on <b id="chainBannerName">another network</b>. Confetti runs on HyperEVM. <button class="btn btn-sm btn-accent" id="chainBannerGo" type="button">Switch wallet to HyperEVM</button></div>
     <div class="setup-swap-host" id="setupSwapHost" hidden></div>
@@ -847,7 +848,7 @@
                 <label class="unit unit-pre dk-tool-k" for="dkLimitPx">Limit price</label>
                 <input class="input" id="dkLimitPx" type="number" min="0" step="any" inputmode="decimal" placeholder="—">
               </div>
-              <div class="hint" id="dkLimitHint">Opens when the price reaches it. Fires from this page while it is open; the fill lands at the oracle a few seconds later.</div>
+              <div class="hint" id="dkLimitHint">Opens when the price reaches it. Fires from this page while it is open; the fill lands a few seconds later.</div>
             </div>
 
             <!-- the owner, 2026-10-25: "right above the leverage section on the right i want a large deposit USDC button" -->
@@ -915,7 +916,7 @@
             <div class="tp" id="previewBox">
               <div class="tp-line"><span class="tp-k">Position size</span><span class="tp-v" id="orderValue">—</span></div>
               <div class="tp-line"><span class="tp-k" id="moveKey">If the price moves 1% your way</span><span class="tp-v pos" id="moveWin">—</span></div>
-              <div class="tp-sent" id="opensNear">Opens near the oracle price in about 3 s</div>
+              <div class="tp-sent" id="opensNear">Opens near the market price in a few seconds</div>
             </div>
 
             <!-- desktop (piece B): the receipt, read right above the button that risks it. renderForm's numbers
@@ -953,12 +954,12 @@
               <p class="dl" id="capLine" hidden></p>
               <p class="dl tp-amber" id="queueLine" hidden>The house is paying earlier winners first. A win right now may be paid later.</p>
               <p class="dl" id="keptShare">Small wins are trimmed.</p>
-              <p class="dl" id="feeLine">Fee: — of winnings</p>
+              <p class="dl" id="feeLine">Fee: —</p>
               <p class="dl" id="borrowLine">Borrow: —</p>
               <p class="dl" id="whyFeeLine">The fee is higher than a 2 % venue's on purpose: it keeps the house cash that pays winners, shown live as HOUSE LP at the top of the page, and the entry spread makes printing a price and closing into it a losing trade.</p>
               <p class="dl" id="posCapLine">Biggest position: —</p>
               <p class="dl">Hyperliquid 24h volume <b id="chipVol">—</b></p>
-              <p class="dl" id="fillsNote">Every trade fills at the oracle price a few seconds after you click. Prices on the chart come from Hyperliquid.</p>
+              <p class="dl" id="fillsNote">Every trade fills at the price a few seconds after you click. Prices on the chart come from Hyperliquid.</p>
               <label class="details-chk"><input type="checkbox" id="autoFillChk" data-autofill checked> If a fill is slow, ask my wallet to finish it (recommended)</label>
             </details>
 
@@ -1461,10 +1462,11 @@
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" integrity="sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP" crossorigin="anonymous" referrerpolicy="no-referrer"
           onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';s.integrity='sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP';s.crossOrigin='anonymous';document.head.appendChild(s);})()"></script>
   <script src="keeper.js?v=house1" defer></script>
-  <script src="share.js?v=card1" defer></script>
-  <script src="settle.js?v=pnl1" defer></script>
-  <script src="simple.js?v=pay5" async></script>
-  <script src="trade.js?v=amt5" defer></script>
-  <script src="points.js?v=prm1" defer></script>
+  <script src="share.js?v=one1" defer></script>
+  <script src="settle.js?v=one1" defer></script>
+  <script src="fetti.js?v=one1" defer></script>
+  <script src="simple.js?v=onepay2" async></script>
+  <script src="trade.js?v=one1" defer></script>
+  <script src="points.js?v=one1" defer></script>
 </body>
 </html>
