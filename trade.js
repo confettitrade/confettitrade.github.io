@@ -2195,7 +2195,7 @@
       if (filter && m.symbol.toLowerCase().indexOf(filter) === -1) return;
       (marketOnChain(m) ? live : soon).push(m);
     });
-    var firsts = ['BTC', 'ETH', 'SOL']; // the majors first (the owner, 2026-10-25: 'put sol up under eth')
+    var firsts = ['BTC', 'ETH', 'XRP', 'SOL', 'ZEC', 'DOGE', 'LINK', 'PEPE', 'PUMP', 'PENGU', 'TRUMP', 'VIRTUAL', 'FLOKI', 'WIF', 'FARTCOIN', 'MELANIA', 'PEOPLE']; // by market cap, biggest first (the owner, 2026-11-21: 'order them by mcap size'; CoinGecko at ~16:00 UTC: BTC $1,211B, ETH $206B, XRP $59B, SOL $42B, ZEC $13B, DOGE $8.7B, LINK $6.6B, PEPE $1.4B, PUMP $0.85B, then the small caps); a coin not listed follows in the config's order
     function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
     live.sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); });
     var caps = [];
@@ -4074,8 +4074,8 @@
       if (filter && m.symbol.toLowerCase().indexOf(filter) === -1) return;
       (marketOnChain(m) ? live : soon).push(m);
     });
-    /* today's order: BTC and ETH first, then the config order */
-    var firsts = ['BTC', 'ETH', 'SOL']; // the majors first (the owner, 2026-10-25: 'put sol up under eth')
+    /* today's order: by market cap (firsts), then the config order */
+    var firsts = ['BTC', 'ETH', 'XRP', 'SOL', 'ZEC', 'DOGE', 'LINK', 'PEPE', 'PUMP', 'PENGU', 'TRUMP', 'VIRTUAL', 'FLOKI', 'WIF', 'FARTCOIN', 'MELANIA', 'PEOPLE']; // by market cap, biggest first (the owner, 2026-11-21: 'order them by mcap size'; CoinGecko at ~16:00 UTC: BTC $1,211B, ETH $206B, XRP $59B, SOL $42B, ZEC $13B, DOGE $8.7B, LINK $6.6B, PEPE $1.4B, PUMP $0.85B, then the small caps); a coin not listed follows in the config's order
     function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
     live.sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); });
     var recent = recentCoins().map(function (s) { return state.bySym[s]; }).filter(function (m) { return m && live.indexOf(m) >= 0; });
@@ -16124,7 +16124,7 @@
         hypeUsd: sw.hypeUsd || NaN, busy: !!state.busy, word: state.busy ? sendWord() : '', dep: dep.step, depTwo: dep.two, min: minKnown() ? amountOfStake(mm, least || 0) : null };
     },
     markets: function () {
-      var firsts = ['BTC', 'ETH', 'SOL'];
+      var firsts = ['BTC', 'ETH', 'XRP', 'SOL', 'ZEC', 'DOGE', 'LINK', 'PEPE', 'PUMP', 'PENGU', 'TRUMP', 'VIRTUAL', 'FLOKI', 'WIF', 'FARTCOIN', 'MELANIA', 'PEOPLE']; // by market cap, biggest first (the owner, 2026-11-21: 'order them by mcap size'; CoinGecko at ~16:00 UTC: BTC $1,211B, ETH $206B, XRP $59B, SOL $42B, ZEC $13B, DOGE $8.7B, LINK $6.6B, PEPE $1.4B, PUMP $0.85B, then the small caps); a coin not listed follows in the config's order
       function rank(m) { var i = firsts.indexOf(m.symbol); return i < 0 ? firsts.length : i; }
       return state.markets.filter(marketOnChain).sort(function (a, b) { return rank(a) - rank(b) || state.markets.indexOf(a) - state.markets.indexOf(b); }).map(function (m) {
         return { sym: m.symbol, coin: m.coin, sz: m.szDecimals, maxLev: maxLev(m), tag: marketTagText(m), per: coinsPerUnit(m.symbol) };
