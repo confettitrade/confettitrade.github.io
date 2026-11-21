@@ -3401,6 +3401,7 @@
       txt(c.pct, ok ? pct(x.pnl / x.margin) : 'The price is delayed'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
       pnlFit(c);
       txt(c.entry, price(x.entry, x.sz));
+      if (c.now) txt(c.now, q && q.px > 0 ? price(q.px, x.sz) : '—');      /* the coin's price now, live, between where it opened and where it closes itself */
       txt(c.end, price(x.endPx, x.sz)); cls(c.end, 'sm-dn');      /* the price; how far it is now is the line under the P&L */
       roomSet(c.room, x);
       /* its one action: Close (what it gives back, live), or the close on its way, said in place */
@@ -3551,13 +3552,13 @@
       box.appendChild(c.n);
     });
     ps.forEach(x => {
-      var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), end: h('span', null, '—'), say: sayLine(), room: roomNew() };
+      var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), now: h('span', null, '—'), end: h('span', null, '—'), say: sayLine(), room: roomNew() };
       c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
       c.ak = autoKey(x); c.set = c.ak.n;      /* Take profit and Stop loss, under where it opened and where it closes itself */
       c.pk = partKeys(x); c.pb = poweredRow();      /* then Close part and Add to this trade (v5), and whose pipes the page reads through */
       /* (cf_POS_CARD) where it opened and where it closes itself: one ruled line, side by side, each name above its price */
       c.n = h('div', 'sm-pos', [posHead(c, x, x.sym), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-        h('div', 'sm-kvs', [h('div', 'sm-facts', [h('div', 'sm-fact', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-fact', [h('span', null, 'Closes itself at'), c.end])]), c.set, c.pk ? c.pk.n : null, c.pb])]);
+        h('div', 'sm-kvs', [h('div', 'sm-facts', [h('div', 'sm-fact', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-fact sm-fact-now', [h('span', null, 'Price now'), c.now]), h('div', 'sm-fact', [h('span', null, 'Closes itself at'), c.end])]), c.set, c.pk ? c.pk.n : null, c.pb])]);      /* (owner 11/21 "make it so you dont have to scroll to see current price") the price now sits on the card itself */
       box.appendChild(c.n);
     });
     /* limit orders waiting to fire */

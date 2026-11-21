@@ -1289,11 +1289,12 @@ body.cream-page .pts-bar { display: none; }
   .sm-root > .sm-main .sm-pos > .sm-btn { height: 52px; margin-top: 10px; }
   .sm-root > .sm-main .sm-pos > .sm-kvs { margin-top: 10px; }
   /* where it opened and where it closes itself: one ruled line, each name above its price */
-  .sm-facts { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--rule); }
+  .sm-facts { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: 10px; border-top: 1px solid var(--rule); }
   .sm-fact { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 4px 0 3px; }
   .sm-fact > span:first-child { font-size: 14px; line-height: 17px; color: var(--ink-muted); }
   .sm-fact > span:last-child { font-size: 15px; line-height: 19px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .sm-fact + .sm-fact { align-items: flex-end; text-align: right; }
+  .sm-facts .sm-fact.sm-fact-now { align-items: center; text-align: center; }      /* (owner 11/21) the price now, in the middle of the card's facts */
   /* the take profit / stop loss key: its two side by side, each name above its price (44 px with its rim). Between it, Close part
      and Add to this trade, and the Blockfront key under them: 10 px, 8 px clear of each 2 px lip */
   .sm-root > .sm-main .sm-pos .sm-kv.is-btn.sm-ak { margin: 8px 0 0; }
