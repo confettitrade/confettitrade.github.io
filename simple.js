@@ -268,7 +268,7 @@
   }
   function go(place, sym, pid) {
     if (S.place === 'home') { S.homeY = el.main.scrollTop; hPush(location.pathname + location.search + '#' + encodeURIComponent(sym || S.sym)); }
-    S.place = place; S.sym = sym || S.sym; S.pid = pid || null; S.pickOnce = !!pid; S.sig = ''; S.since = Date.now();
+    S.place = place; S.sym = sym || S.sym; S.pid = pid || null; S.pickOnce = !!pid; S.sig = ''; S.since = Date.now(); COIN.tmode = 0;
     paint(); el.main.scrollTop = 0;
   }
 
@@ -3397,8 +3397,9 @@
     ps.forEach(x => {
       var c = R.cards['p' + see(x)]; if (!c) return;
       var ok = !x.delayed && isFinite(x.pnl);
-      txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute') + (c.pnlK || ''));
       txt(c.pct, ok ? pct(x.pnl / x.margin) : 'The price is delayed'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      pnlFit(c);
       txt(c.entry, price(x.entry, x.sz));
       txt(c.end, price(x.endPx, x.sz)); cls(c.end, 'sm-dn');      /* the price; how far it is now is the line under the P&L */
       roomSet(c.room, x);
@@ -3435,8 +3436,9 @@
     allPs.forEach(x => {
       var c = R.cards['all' + x.id]; if (!c) return;
       var ok = !x.delayed && isFinite(x.pnl);
-      txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute') + (c.pnlK || ''));
       txt(c.pct, ok ? pct(x.pnl / x.margin) : '—'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
+      pnlFit(c);
       roomSet(c.room, x);
       var st = x.status, mine = COIN.closing === x.id, label, busy = false, act = null, say = '';
       if (st && st.final) { label = 'Closed'; busy = true; }
@@ -3455,6 +3457,53 @@
       partKeysSet(c.pk, x, !!(st || mine));
       poweredSet(c.pb);
     });
+    fitTrades();
+  }
+  /* (cf_POS_CARD) A card's result and its percent stay on one line whatever the figure. Before, on a 360 px phone a figure from
+     $100 up (on a 390 px one from $1,000) pushed the percent to a second line: the card grew 25 px and Close moved under the
+     thumb each time the figure crossed a digit. Now the figure steps down a size (36, 30, 26, 22 px), only as far as the line
+     needs; looked at again only when the figure or the percent changes length (or the screen its width). */
+  var PNL_K = ['', ' is-long', ' is-longer', ' is-longest'];
+  function pnlFit(c) {
+    var row = c.pnl.parentNode, key = c.pnl.textContent.length + '|' + c.pct.textContent.length + '|' + window.innerWidth;
+    if (!row || c.pnlKey === key) return;
+    c.pnlKey = key;
+    var base = c.pnl.className.replace(/ is-long(er|est)?/g, '');
+    for (var i = 0; i < PNL_K.length; i++) {
+      c.pnlK = PNL_K[i]; c.pnl.className = base + c.pnlK;
+      if (row.offsetHeight < 46) break;      /* one line: 40 px (its min-height); a second line makes it 65 */
+    }
+  }
+  /* (cf_POS_CARD) The open trade's card whole on the screen, nothing to scroll (the owner, 2026-11-21: "make it so the open
+     posistion card isnt cut off at the bottom making it so you have to scroll"). With a trade open, the trades sit right under
+     the coin's price and the stats, the chart and its timeframes come under them (buildCoin). Three ways to lay the top out,
+     taken in this order, the first in which the first card is whole above the Up / Down keys with 8 px to spare:
+       0  the price as on every coin (its name, then the big price), "Your trade on" and the cards;
+       1  the price in one line (the name, a smaller price, the day's move), the cards right under it;
+       2  the cards first (a short screen, such as 360 x 560 with the browser's bars), the price in one line under them.
+     Measured on the card as drawn, its Blockfront line counted even before it shows (it may come a moment later), against the
+     screen without a passing message over the keys (a snack goes in 6 s): right after each build, and again on a later paint
+     only when the card grew (a line it says, such as its take profit's note) and nothing is under way: no sheet open, no close
+     on its way, the screen not scrolled down to the chart. One way only for the visit (0 to 1 to 2, never back until the coin
+     is opened again: go), so nothing moves back and forth. */
+  function tradeTop(n) {
+    var main = el.main;
+    COIN.tmode = n;
+    main.classList.toggle('is-tsmall', n === 1);
+    main.classList.toggle('is-tfirst', n === 2);
+    if (R.box) main.insertBefore(R.box, n === 2 ? main.firstChild : R.stats);
+  }
+  function fitTrades() {
+    var main = el.main, box = R.box, card = box && box.isConnected ? box.querySelector('.sm-pos') : null;
+    if (!card || COIN.tmode >= 2) return;
+    if (!R.fitNew && (main.scrollTop > 2 || sheets.length || COIN.closing != null || box.querySelector('.sm-btn.is-busy'))) return;
+    var h0 = card.offsetHeight;
+    if (!R.fitNew && h0 <= R.fitH) return;
+    R.fitNew = false; R.fitH = h0;
+    var pb = card.querySelector('.sm-pb'), extra = 0, sn = el.root.querySelector('.sm-snack');
+    if (pb && pb.hidden) { pb.hidden = false; extra = card.offsetHeight - h0; pb.hidden = true; }
+    var room = main.clientHeight + (sn ? sn.offsetHeight : 0) - 8;
+    while (COIN.tmode < 2 && card.getBoundingClientRect().bottom - main.getBoundingClientRect().top + main.scrollTop + extra > room) tradeTop(COIN.tmode + 1);
   }
   function buildCoin(sym, mode, ps, os, lims) {
     var main = el.main, cta = el.cta, trade = mode === 'trade', m = market(sym);
@@ -3490,6 +3539,7 @@
     var up = btn('sm-dir is-up', ['▲ Up', h('i', null, '(Click here to open)')], () => { openOrder(sym, true); });
     var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, '(Click here to open)')], () => { openOrder(sym, false); });
     add(cta, [up, dn]);
+    R.box = null;
     if (!trade) return;
     function head(x) { return h('div', 'sm-pos-h', [h('span', null, [x.sym, sidePill(x.isLong, x.lev)]), h('span', 'sm-in', usdS(x.margin) + ' in')]); }
     var total = ps.length + os.length + lims.length;
@@ -3505,8 +3555,9 @@
       c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
       c.ak = autoKey(x); c.set = c.ak.n;      /* Take profit and Stop loss, under where it opened and where it closes itself */
       c.pk = partKeys(x); c.pb = poweredRow();      /* then Close part and Add to this trade (v5), and whose pipes the page reads through */
+      /* (cf_POS_CARD) where it opened and where it closes itself: one ruled line, side by side, each name above its price */
       c.n = h('div', 'sm-pos', [posHead(c, x, x.sym), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.set, c.pk ? c.pk.n : null, c.pb])]);
+        h('div', 'sm-kvs', [h('div', 'sm-facts', [h('div', 'sm-fact', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-fact', [h('span', null, 'Closes itself at'), c.end])]), c.set, c.pk ? c.pk.n : null, c.pb])]);
       box.appendChild(c.n);
     });
     /* limit orders waiting to fire */
@@ -3519,7 +3570,7 @@
         h('p', 'sm-fine', 'Fires while Confetti is open on this phone.'), c.cancel]);
       box.appendChild(c.n);
     });
-    main.appendChild(box);
+    R.box = box; R.fitNew = true; tradeTop(COIN.tmode || 0);      /* (cf_POS_CARD) under the price, or first: fitTrades */
 
     /* All open trades section: all positions across all coins, not just this one */
     var w = api.wallet(), a = api.account();

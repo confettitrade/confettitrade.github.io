@@ -1251,6 +1251,64 @@ body.cream-page .pts-bar { display: none; }
   body.cream-page .sm-page-top [hidden] { display: none !important; }
 }
 
+/* ---- (cf_POS_CARD) the open trade's card fits the phone (the owner, 2026-11-21: "make it so the open posistion card isnt cut off
+   at the bottom making it so you have to scroll").
+   With a trade open, the trades sit right under the coin's price, and the stats, the chart and its timeframes come under them
+   (simple.js buildCoin; on a screen too short for the price and the card together, fitTrades puts the trades first and the price
+   right under them). The card keeps every line and key it had, in less height: where it opened and where it closes itself side
+   by side in one ruled line, each name above its price; the take profit / stop loss key holds its two the same way; Close 52 px
+   (a primary key: 48 to 56), Close part and Add to this trade 44 px, every key 8 px clear of the next; the gaps one step tighter.
+   A long result steps down a size instead of pushing its percent to a second line, so the card never grows when a figure
+   crosses a digit. The smallest type on the card is still the boost badge's 13 px. Phone only (.sm-main): the desktop card and
+   the sheets are as they were. ---- */
+@media screen {
+  /* the screen: the price, the trades, then the stats, the chart and its timeframes (fitTrades picks one of three tops) */
+  .sm-root > .sm-main.is-trade > .sm-trades { margin-top: 14px; }
+  .sm-root > .sm-main.is-trade:not(.is-tfirst) > .sm-stats { margin-top: 18px; }
+  .sm-root > .sm-main .sm-trades > .sm-label + .sm-pos { margin-top: 8px; }
+  /* 1 and 2: the price in one line (its name, the price a size down, the day's move), and no "Your trade on" over the cards:
+     the line above them, the top bar's key and each card's own top line already name the coin */
+  .sm-root > .sm-main.is-trade:is(.is-tsmall, .is-tfirst) > .sm-cname { display: inline-block; margin-right: 10px; vertical-align: baseline; }
+  .sm-root > .sm-main.is-trade:is(.is-tsmall, .is-tfirst) > .sm-cbar { display: inline-flex; min-height: 0; vertical-align: baseline; }
+  .sm-root > .sm-main.is-trade:is(.is-tsmall, .is-tfirst) .sm-price { font-size: 28px; }
+  .sm-root > .sm-main.is-trade:is(.is-tsmall, .is-tfirst) > .sm-trades > .sm-label { display: none; }
+  .sm-root > .sm-main.is-trade:is(.is-tsmall, .is-tfirst) .sm-trades > .sm-label + .sm-pos { margin-top: 0; }
+  .sm-root > .sm-main.is-trade.is-tsmall > .sm-trades { margin-top: 10px; }
+  /* 2: the cards first, the price line under them */
+  .sm-root > .sm-main.is-trade.is-tfirst > .sm-trades { margin: 0 0 18px; }
+
+  /* the card */
+  .sm-root > .sm-main .sm-pos { padding: 12px 16px 8px; }
+  .sm-root > .sm-main .sm-pos-h { min-height: 24px; }
+  .sm-root > .sm-main .sm-pos > .sm-pnlrow { margin-top: 3px; }
+  /* the result a size down while it is long, so it and its percent stay on one line (simple.js pnlFit) */
+  .sm-root > .sm-main .sm-pnlrow .sm-pnl.is-long { font-size: 30px; }
+  .sm-root > .sm-main .sm-pnlrow .sm-pnl.is-longer { font-size: 26px; }
+  .sm-root > .sm-main .sm-pnlrow .sm-pnl.is-longest { font-size: 22px; }
+  .sm-root > .sm-main .sm-pos > .sm-room { margin-top: 7px; }
+  .sm-root > .sm-main .sm-pos > .sm-btn { height: 52px; margin-top: 10px; }
+  .sm-root > .sm-main .sm-pos > .sm-kvs { margin-top: 10px; }
+  /* where it opened and where it closes itself: one ruled line, each name above its price */
+  .sm-facts { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--rule); }
+  .sm-fact { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 4px 0 3px; }
+  .sm-fact > span:first-child { font-size: 14px; line-height: 17px; color: var(--ink-muted); }
+  .sm-fact > span:last-child { font-size: 15px; line-height: 19px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sm-fact + .sm-fact { align-items: flex-end; text-align: right; }
+  /* the take profit / stop loss key: its two side by side, each name above its price (44 px with its rim). Between it, Close part
+     and Add to this trade, and the Blockfront key under them: 10 px, 8 px clear of each 2 px lip */
+  .sm-root > .sm-main .sm-pos .sm-kv.is-btn.sm-ak { margin: 8px 0 0; }
+  .sm-root > .sm-main .sm-pos .sm-ak-rows { flex-direction: row; gap: 12px; }
+  .sm-root > .sm-main .sm-pos .sm-ak-row { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; min-height: 42px; padding: 3px 0; }
+  .sm-root > .sm-main .sm-pos .sm-ak-row + .sm-ak-row { border-top: 0; align-items: flex-end; text-align: right; }
+  .sm-root > .sm-main .sm-pos .sm-ak-row > span { font-size: 14px; line-height: 17px; }
+  .sm-root > .sm-main .sm-pos .sm-ak-row > b { line-height: 19px; }
+  /* Close part and Add to this trade */
+  .sm-root > .sm-main .sm-pos .sm-pks { margin: 10px 0 0; }
+  .sm-root > .sm-main .sm-pos .sm-pk { min-height: 44px; }
+  /* Powered by Blockfront */
+  .sm-root > .sm-main .sm-pos .sm-kv.sm-pb { min-height: 29px; margin-top: 4px; padding: 5px 0 0; }
+}
+
 /* ---- (cf_BFNEWS) the Blockfront article's two small marks in Simple (the owner, 2026-11-19: "a little announcment somwhere", then
    "powered by block front", "on the position cards actually").
    .sm-news: one slim paper card under the coins on Home: the sentence, the article's link as a small key, and a close that hides
