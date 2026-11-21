@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+<!-- confetti_ : the wordmark's c and its cursor (Soehne Breit 700) in ink on one of the site's paper keys. Drawn on a 16 px grid: sharp at 16 and 32. -->
+<rect width="16" height="16" rx="3" fill="#8a7f66"/>
+<rect x="1" y="1" width="14" height="13" rx="2" fill="#f4ecd8"/>
+<path d="M2 6.5C2 8.567 3.569 10 5.857 10C7.364 10 8.429 9.349 8.997 8.556L6.883 7.714C6.62 7.934 6.272 8.072 5.845 8.072C4.878 8.072 4.205 7.464 4.205 6.5C4.205 5.536 4.878 4.928 5.845 4.928C6.271 4.928 6.617 5.065 6.88 5.284L9 4.453C8.432 3.653 7.367 3 5.857 3C3.569 3 2 4.433 2 6.5Z" fill="#2a2520"/>
+<rect x="9" y="10" width="5" height="2" fill="#2a2520"/>
+</svg>

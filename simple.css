@@ -1175,6 +1175,101 @@ body.cream-page .pts-bar { display: none; }
   .sm-panel-foot .sm-card-go { margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) { .sm-card canvas { transition: none; } }
 }
+/* ---- the card's choices (the owner, 2026-11-21: "make it so they customize the pnl cards too. removeable wallet address.
+   removable trade amount."). One small sheet, opened by the card or by Share your trade. The card is on top, flat (it is the
+   picture, not a key) and stays there while the choices under it scroll on a short phone. Then the two switches side by
+   side, each a paper key with a track and a knob (ink when on, sunk paper when off, the knob's side as well as the colour);
+   how the result shows, the three keys of every choice here; the four looks as small cards, the chosen one pressed in; the
+   caption in a box sunk into the paper, as every typed thing is; and the sheet's one black key. ---- */
+@media screen {
+  .sm-cz-pv { flex: none; display: flex; justify-content: center; align-items: flex-start; padding: 2px var(--sm-pad) 14px; border-bottom: 1px solid var(--rule); }
+  .sm-cz-pv canvas {
+    display: block; flex: none; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: 8px; background: #f9edcf;
+    box-shadow: 0 0 0 1px var(--key-rim, #8a7f66), 0 10px 18px -10px rgba(42, 37, 32, 0.55);
+    opacity: 0; transition: opacity 160ms ease-out;
+  }
+  .sm-cz-pv.is-in canvas { opacity: 1; }
+  .sm-cz .sm-sh-body { padding-top: 0; padding-bottom: 12px; }
+  .sm-cz-g { margin-top: 12px; }
+  .sm-cz-g > .sm-label { display: flex; align-items: center; height: 20px; margin-bottom: 7px; }      /* one height, with or without the words at its right: nothing shifts when they come */
+  .sm-cz-g > .sm-label .sm-hint { line-height: 20px; }
+  /* the two switches */
+  .sm-cz-sws { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 3px; }
+  :is(.sm-root, .sm-sheet) .sm-cz-sw { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 48px; padding: 0 10px 0 14px; font-size: 16px; font-weight: 600; text-align: left; }
+  .sm-cz-sw > span { min-width: 0; white-space: nowrap; }
+  .sm-cz-tog { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--key-rim, #8a7f66), inset 0 2px 3px rgba(42, 37, 32, 0.18); transition: background-color 160ms ease-out; }
+  .sm-cz-tog::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); box-shadow: 0 0 0 1px var(--key-rim, #8a7f66), 0 1px 2px rgba(42, 37, 32, 0.35); transition: transform 160ms ease-out; }
+  .sm-cz-sw[aria-checked="true"] .sm-cz-tog { background: var(--ink); box-shadow: inset 0 0 0 1px var(--key-ink-rim, #0f0d0b); }
+  .sm-cz-sw[aria-checked="true"] .sm-cz-tog::after { transform: translateX(18px); box-shadow: 0 0 0 1px var(--key-ink-rim, #0f0d0b), 0 1px 2px rgba(0, 0, 0, 0.4); }
+  /* a switch that is on is not a key pressed in: it stays up, and its track says on */
+  dialog.sm-sheet.sm-cz button.sm-cz-sw.sm-cz-sw[aria-checked="true"] {
+    background: var(--raised); color: var(--ink); border-color: var(--key-rim); transform: none;
+    box-shadow: 0 var(--k-now, 3px) 0 var(--key-rim), 0 calc(var(--k-now, 3px) + 5px) 10px -5px var(--key-shade), inset 0 1px 0 var(--key-hi);
+  }
+  dialog.sm-sheet.sm-cz button.sm-cz-sw.sm-cz-sw[aria-checked="true"]:active { --k-now: 1px; transform: translateY(2px); }
+  dialog.sm-sheet.sm-cz button.sm-cz-sw.sm-cz-sw[aria-checked="true"]:focus-visible { box-shadow: var(--focus), 0 var(--k-now, 3px) 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
+  .sm-cz-sw[disabled] { opacity: 0.45; }
+  /* the looks: four small cards */
+  .sm-cz-looks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-bottom: 3px; }
+  :is(.sm-root, .sm-sheet) .sm-cz-look { display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; min-height: 64px; padding: 5px 5px 6px; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; }
+  .sm-cz-look canvas { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: 5px; background: var(--sunken); box-shadow: 0 0 0 1px rgba(42, 37, 32, 0.28); }
+  .sm-cz-look > span { white-space: nowrap; }
+  /* the caption */
+  .sm-cz-cap {
+    display: block; width: 100%; height: 48px; margin: 0; padding: 0 14px; border: 0; border-radius: 10px; background: var(--raised); color: var(--ink);
+    font: inherit; font-size: 17px; outline: none; caret-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--key-rim, #8a7f66), inset 0 3px 5px rgba(42, 37, 32, 0.16);
+  }
+  .sm-cz-cap::placeholder { color: var(--ink-faint); }
+  .sm-sheet .sm-cz-cap:focus, .sm-sheet .sm-cz-cap:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--ink), inset 0 3px 5px rgba(42, 37, 32, 0.16); }
+  /* beside Result: said in ink, it is about what the card gives away */
+  .sm-cz .sm-label.is-amt .sm-hint.sm-cz-hint { color: var(--ink); white-space: nowrap; }
+  /* what the key did: a few seconds, over the foot of the choices, just above the key; nothing moves for it */
+  .sm-cz .sm-sh-foot { position: relative; }
+  .sm-cz-note {
+    position: absolute; left: var(--sm-pad); right: var(--sm-pad); bottom: 100%; z-index: 2; margin: 0 0 4px; padding: 11px 14px; border-radius: 10px;
+    background: var(--ink); color: var(--page); font-size: 15px; line-height: 1.35; overflow-wrap: anywhere;
+    box-shadow: 0 8px 16px -8px rgba(20, 17, 14, 0.6); animation: sm-fade 180ms ease-out;
+  }
+  .sm-cz-note:empty { display: none; }
+  /* typing the caption on a phone: the keyboard takes half the screen, so the sheet may use all that is left, the other
+     choices wait, and the card takes what room there is over the line being typed and the key */
+  dialog.sm-sheet.sm-cz.is-kb { max-height: 100vh; max-height: 100dvh; }
+  .sm-cz.is-kb .sm-cz-g:not(.is-cap) { display: none; }
+  .sm-cz.is-kb .sm-sh-body { flex: none; overflow: visible; }
+  .sm-cz.is-kb .sm-cz-pv { flex: 1 1 0; min-height: 0; overflow: hidden; container-type: size; }
+  .sm-cz.is-kb .sm-cz-pv canvas { width: min(100cqw, 100cqh * 1672 / 941); }
+  dialog.sm-sheet.sm-cz.is-kb { height: 90vh; height: 90dvh; }
+  @media (max-height: 700px) { dialog.sm-sheet.sm-cz.is-kb { height: 100vh; height: 100dvh; } }
+  /* a short phone: more choices wait under the fold, and the foot's edge says so */
+  .sm-cz .sm-sh-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 20px; pointer-events: none; background: linear-gradient(rgba(250, 246, 237, 0), var(--raised)); opacity: 0; transition: opacity 160ms ease-out; }
+  .sm-cz.has-more .sm-sh-foot::before { opacity: 1; }
+  @media (max-width: 374px) {
+    :is(.sm-root, .sm-sheet) .sm-cz-sw { padding: 0 8px 0 10px; font-size: 15px; }
+    :is(.sm-root, .sm-sheet) .sm-cz-look { padding: 4px 4px 5px; font-size: 12px; }
+  }
+  /* a phone under 820 px tall: the same sheet a little closer together, so everything is in view without a scroll from
+     360 x 780 up (shorter phones scroll the choices under the card) */
+  @media (max-height: 820px) {
+    .sm-cz-pv { padding-bottom: 12px; }
+    .sm-cz .sm-sh-body { padding-bottom: 10px; }
+    .sm-cz-g { margin-top: 10px; }
+    .sm-cz-g > .sm-label { margin-bottom: 6px; }
+    :is(.sm-root, .sm-sheet) .sm-cz-sw { min-height: 44px; }
+    :is(.sm-root, .sm-sheet) .sm-cz-look { gap: 4px; padding-bottom: 5px; }
+  }
+  /* a wide screen: the sheet takes the end panel's own place, from under the top bar to the bottom and as wide as that
+     panel, so there is one panel there and not a sheet over the lower half of another. No grab handle: nothing to pull */
+  @media (min-width: 641px) {
+    dialog.sm-sheet.sm-cz { top: 64px; width: 380px; max-width: none; height: auto; max-height: none; border-top: 0; }
+    .sm-cz .sm-sh-head { min-height: 64px; padding-top: 8px; }
+    .sm-cz .sm-sh-head::before { content: none; }
+    .sm-cz .sm-sh-foot { padding-bottom: 16px; }
+  }
+  @media (min-width: 641px) and (max-width: 1023px) { dialog.sm-sheet.sm-cz { width: 340px; } }
+  @media (min-width: 1280px) { dialog.sm-sheet.sm-cz { width: 400px; } }
+  @media (prefers-reduced-motion: reduce) { .sm-cz-pv canvas, .sm-cz-tog, .sm-cz-tog::after, .sm-cz .sm-sh-foot::before { transition: none; } .sm-cz-note { animation: none; } }
+}
 /* ---- Close part and Add to this trade (v5; the owner, 2026-11-04: "can we make it so that you can close a % of your position",
    2026-11-19: "we are still doing top ups and partial closes right").
    On every trade card, under its take profit and stop loss: two paper keys of one size, side by side. Their sheets are made of

@@ -3743,43 +3743,190 @@
   /* ---- the trade card at the end (the owner, 2026-11-19: two mock-ups, then "can you use those at the end"). Every end
      screen shows the trader's own card in his design, green for a win and red for a loss: share.js draws it from the same
      figures the screen says (what went in, what it made or lost, the coin, the side, the boost), with the short address and a
-     QR code to confetti.trade carrying the trader's own referral code. A tap on the card or on Share your trade hands the PNG
-     to the phone's share sheet, or saves it where there is none. The PNG is made as the screen comes up: a share sheet has
-     to open in the tap's own moment. ---- */
+     QR code to confetti.trade carrying the trader's own referral code.
+     The owner, 2026-11-21: "make it so they customize the pnl cards too. removeable wallet address. removable trade amount."
+     A tap on the card or on Share your trade opens one small sheet: the card on top, drawn again at every choice, and under it
+     two switches (the address, the amount put in), how the result shows (both, the percent, the dollars), four looks (his
+     own first) and a line of the trader's own. The choices are kept on this device for each wallet (share.js: cardPrefs);
+     the caption belongs to one trade and is not kept. The sheet's one black key hands the PNG to the phone's share sheet, or
+     saves it where there is none. What is switched off is not on the card, not in the PNG and not in what a screen reader
+     hears. The PNG is made as the choices settle: a share sheet has to open in the tap's own moment. ---- */
 
-  var CARD = { key: '', p: null, card: null };
-  function cardOn() { var cs = window.ConfettiShare; return !!(cs && cs.tradeCard && cs.drawCardInto && cs.shareCard); }
+  var CARD = { sig: '', p: null, card: null, o: null, okey: null, caps: {}, auto: false, sh: null, R: null, d: null, keys: [], t: 0, raf: 0, said: '' };
+  function cardOn() { var cs = window.ConfettiShare; return !!(cs && cs.tradeCard && cs.drawCardInto && cs.shareCard && cs.cardPrefs && cs.cardLooks); }
   /* the trader's own referral code, as Pro's Refer panel shows it (trade.js reads it from the chain when the wallet connects) */
   function refCode() { var n = $('rfCode'), c = n ? String(n.textContent || '').trim() : ''; return /^[a-z0-9_]{3,16}$/.test(c) ? c : ''; }
   function cardOf(d) { return { sym: d.sym, isLong: d.isLong, lev: d.lev, margin: d.margin, pnl: d.pnl, account: api.wallet().account || '', code: refCode(), level: fxBadge() }; }
+  /* the trader's choices: the ones kept on this device for this wallet, and this trade's own caption */
+  function cardO(d) {
+    var a = String(api.wallet().account || '').toLowerCase();
+    if (!CARD.o || CARD.okey !== a) { CARD.o = window.ConfettiShare.cardPrefs.get(a); CARD.okey = a; CARD.auto = false; }
+    var o = CARD.o;
+    return { addr: o.addr, amount: o.amount, result: o.result, look: o.look, caption: CARD.caps[d.key] || '' };
+  }
+  function cardSig(d) { var o = cardO(d); return [d.key, o.addr, o.amount, o.result, o.look, o.caption].join('|'); }
   function cardMake(d) {
-    if (CARD.key === d.key && CARD.card) return Promise.resolve(CARD.card);
-    if (CARD.key === d.key && CARD.p) return CARD.p;
-    CARD.key = d.key; CARD.card = null;
-    var p = CARD.p = window.ConfettiShare.tradeCard(cardOf(d)).then(c => { if (CARD.p === p) { CARD.card = c; CARD.p = null; } return c; },
+    var sig = cardSig(d);
+    if (CARD.sig === sig && CARD.card) return Promise.resolve(CARD.card);
+    if (CARD.sig === sig && CARD.p) return CARD.p;
+    CARD.sig = sig; CARD.card = null;
+    var p = CARD.p = window.ConfettiShare.tradeCard(cardOf(d), cardO(d)).then(c => { if (CARD.p === p) { CARD.card = c; CARD.p = null; } return c; },
       e => { if (CARD.p === p) CARD.p = null; throw e; });
     return p;
   }
-  function cardGo(d, say) {
-    if (!cardOn()) return;
-    var c = CARD.key === d.key ? CARD.card : null;
-    var go = card => window.ConfettiShare.shareCard(card).then(r => { if (r === 'saved') say('Your card is saved: ' + card.name); });
-    if (c) { go(c); return; }
-    cardMake(d).then(go, () => { say('The card could not be made just now. Try again in a moment.'); });
+  /* the card in words, for a screen reader: only what the card shows (never the address) */
+  function cardAlt(d) {
+    var o = cardO(d), says = [d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×'];
+    if (o.result !== 'usd') says.push(pct(d.pnl / d.margin));
+    if (o.result !== 'pct') says.push(usdP(d.pnl));
+    if (o.amount) says.push(usd(d.margin) + ' in');
+    return 'Your trade card: ' + says.join(', ') + '.';
   }
-  /* the card itself, a key as wide as the screen: drawn at its own size on the page, and the PNG made for the share */
+  /* the card itself, a key as wide as the screen: drawn at its own size on the page with the trader's choices, and again
+     when they change; the PNG is made for the share */
   function cardKey(d, onTap) {
     var cv = h('canvas'), n = btn('sm-card', cv, onTap);
-    n.setAttribute('aria-label', 'Your trade card: ' + d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×, ' + pct(d.pnl / d.margin) + '. Share it');
     cv.setAttribute('aria-hidden', 'true');
     var tries = 0;
-    (function draw() {
+    n._draw = function draw() {
       var w = n.clientWidth;
+      n.setAttribute('aria-label', cardAlt(d) + ' Share it');
       if (!w) { if (++tries < 60) requestAnimationFrame(draw); return; }
-      window.ConfettiShare.drawCardInto(cv, cardOf(d), w).then(() => { n.classList.add('is-in'); }, () => { n.hidden = true; });
-    })();
+      window.ConfettiShare.drawCardInto(cv, cardOf(d), w, cardO(d)).then(() => { n.classList.add('is-in'); }, () => { n.hidden = true; });
+    };
+    n._draw();
+    CARD.keys = CARD.keys.filter(k => document.contains(k)).concat([n]);
     cardMake(d).catch(noop);
     return n;
+  }
+
+  /* -- the card's sheet -- */
+  function cardGo(d) {
+    if (!cardOn()) return;
+    var sh = cardSheet();
+    CARD.d = d; CARD.said = '';
+    CARD.R.cap.value = CARD.caps[d.key] || '';
+    paintCard();
+    sh.open();
+    cardDraw();
+    cardMake(d).catch(noop);
+  }
+  function cardSheet() {
+    if (CARD.sh) return CARD.sh;
+    var cs = window.ConfettiShare, sh = CARD.sh = makeSheet('Card'), R = CARD.R = {};
+    sh.d.classList.add('sm-cz');
+    txt(sh.title, 'Share your trade');
+    /* the card stays in view over the choices while they scroll (a short phone) */
+    R.cv = h('canvas'); R.cv.setAttribute('role', 'img');
+    R.pv = h('div', 'sm-cz-pv', R.cv);
+    sh.d.insertBefore(R.pv, sh.body);
+    var sw = (label, k, says) => {
+      var b = btn('sm-cz-sw', [h('span', null, label), h('i', 'sm-cz-tog')], () => { cardSet(k, b.getAttribute('aria-checked') !== 'true'); });
+      b.setAttribute('role', 'switch'); b.setAttribute('aria-label', says);
+      return b;
+    };
+    R.addr = sw('Address', 'addr', 'Address: your wallet address on the card'); R.amount = sw('Amount in', 'amount', 'Amount in: what you put in, on the card');
+    R.res = h('div', 'sm-seg'); R.res.setAttribute('role', 'group'); R.res.setAttribute('aria-label', 'Show the result as');
+    [['both', 'Both'], ['pct', 'Percent'], ['usd', 'Dollars']].forEach(x => { var b = btn(null, x[1], () => { CARD.auto = false; cardSet('result', x[0]); }); b._v = x[0]; R.res.appendChild(b); });
+    R.looks = h('div', 'sm-cz-looks'); R.looks.setAttribute('role', 'group'); R.looks.setAttribute('aria-label', 'Look');
+    cs.cardLooks.forEach(l => {
+      var cv = h('canvas'); cv.setAttribute('aria-hidden', 'true');
+      var b = btn('sm-cz-look', [cv, h('span', null, l.name)], () => { cardSet('look', l.id); });
+      b._v = l.id; b._cv = cv; R.looks.appendChild(b);
+    });
+    R.cap = h('input', 'sm-cz-cap'); R.cap.type = 'text'; R.cap.id = 'smCardCap'; R.cap.maxLength = cs.cardCapMax || 40; R.cap.placeholder = 'Add a line of your own';
+    R.cap.setAttribute('enterkeyhint', 'done'); R.cap.setAttribute('autocomplete', 'off'); R.cap.setAttribute('autocapitalize', 'sentences');
+    R.cap.addEventListener('input', () => { if (!CARD.d) return; CARD.caps[CARD.d.key] = R.cap.value; cardChanged(true); });
+    R.cap.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); R.cap.blur(); } });
+    R.cap.addEventListener('focus', () => { setTimeout(() => { fitKeyboard(); cardKb(); }, 0); });
+    R.cap.addEventListener('blur', cardKb);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', cardKb);
+    var capLab = h('label', 'sm-label is-amt', ['Caption', h('span', 'sm-hint', 'Optional')]); capLab.htmlFor = 'smCardCap';
+    add(sh.body, [
+      h('div', 'sm-cz-g', [h('div', 'sm-label', 'Show on the card'), h('div', 'sm-cz-sws', [R.addr, R.amount])]),
+      h('div', 'sm-cz-g', [h('div', 'sm-label is-amt', ['Result', R.hint = h('span', 'sm-hint sm-cz-hint', '')]), R.res]),
+      h('div', 'sm-cz-g', [h('div', 'sm-label', 'Look'), R.looks]),
+      h('div', 'sm-cz-g is-cap', [capLab, R.cap])]);
+    /* what the key did (saved, and under which name), said over the choices' foot for a few seconds: nothing moves for it */
+    R.say = sayLine(); R.say.className = 'sm-cz-note'; R.go = btn('sm-btn is-primary', '', cardShare);
+    add(sh.foot, [R.say, R.go]);
+    sh.body.addEventListener('scroll', cardMore, { passive: true });
+    /* closed: the end screen's own card wears the choices */
+    sh.onClose = () => {
+      clearTimeout(CARD.t); sh.d.classList.remove('is-kb');
+      var d = CARD.d; CARD.d = null;
+      CARD.keys = CARD.keys.filter(k => document.contains(k)); CARD.keys.forEach(k => { k._draw(); });
+      if (d) cardMake(d).catch(noop);
+    };
+    return sh;
+  }
+  /* more choices under the fold (a short phone): the foot's edge fades over them until the last is in view */
+  function cardMore() { var sh = CARD.sh, b = sh && sh.body; if (b) sh.d.classList.toggle('has-more', b.scrollHeight - b.clientHeight - b.scrollTop > 6); }
+  /* a choice: kept for this wallet on this device, and the card drawn again */
+  function cardSet(k, v) {
+    var d = CARD.d, o = CARD.o;
+    if (!d || !o) return;
+    /* the dollars beside the percent give the amount away, so with the amount off the result shows as the percent, and
+       comes back with the amount, unless the trader chose how it shows */
+    if (k === 'amount' && !v && o.result === 'both') { o.result = 'pct'; CARD.auto = true; }
+    else if (k === 'amount' && v && CARD.auto && o.result === 'pct') { o.result = 'both'; CARD.auto = false; }
+    o[k] = v;
+    window.ConfettiShare.cardPrefs.set(CARD.okey, o);
+    cardChanged(false);
+  }
+  function cardChanged(typing) {
+    CARD.said = '';
+    paintCard(); cardDraw();
+    clearTimeout(CARD.t);
+    CARD.t = setTimeout(() => { if (CARD.d) cardMake(CARD.d).catch(noop); }, typing ? 350 : 120);
+  }
+  function paintCard() {
+    var d = CARD.d, R = CARD.R;
+    if (!d || !R) return;
+    var o = cardO(d), on = b => b ? 'true' : 'false';
+    R.addr.setAttribute('aria-checked', on(o.addr)); R.amount.setAttribute('aria-checked', on(o.amount));
+    R.addr.disabled = !api.wallet().account;
+    each(R.res, b => { b.setAttribute('aria-pressed', on(b._v === o.result)); });
+    each(R.looks, b => { b.setAttribute('aria-pressed', on(b._v === o.look)); });
+    R.cv.setAttribute('aria-label', cardAlt(d) + (o.caption.trim() ? ' ' + o.caption.trim() : ''));
+    if (CARD.can == null) CARD.can = !!window.ConfettiShare.cardCanShare();
+    txt(R.go, CARD.can ? 'Share' : 'Save the picture');
+    /* beside the three keys, when the choice undoes the switch above it */
+    txt(R.hint, !o.amount && o.result === 'both' ? 'Both gives the amount away' : '');
+    txt(R.say, CARD.said);
+  }
+  /* the card and the four looks, drawn once a frame at most */
+  function cardDraw() {
+    if (CARD.raf || !CARD.d) return;
+    CARD.raf = requestAnimationFrame(() => {
+      CARD.raf = 0;
+      var d = CARD.d, R = CARD.R, cs = window.ConfettiShare;
+      if (!d || !R) return;
+      var o = cardO(d), raw = cardOf(d), w = R.pv.clientWidth ? R.cv.clientWidth : 0;
+      if (!w) { if (CARD.sh && CARD.sh.isOpen) cardDraw(); return; }      /* the sheet is not laid out yet */
+      cs.drawCardInto(R.cv, raw, w, o).then(() => { R.pv.classList.add('is-in'); }, noop);
+      cardMore();
+      each(R.looks, b => { var bw = b._cv.clientWidth; if (bw) cs.drawCardInto(b._cv, raw, bw, { addr: o.addr, amount: o.amount, result: o.result, look: b._v, caption: o.caption }).catch(noop); });
+    });
+  }
+  /* typing the caption with the phone's keyboard up: the card, the line being typed and the key share what is left */
+  function cardKb() {
+    var sh = CARD.sh, vv = window.visualViewport;
+    if (!sh || !sh.isOpen) return;
+    var kb = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+    var on = kb > 80 && document.activeElement === CARD.R.cap;
+    if (sh.d.classList.contains('is-kb') !== on) { sh.d.classList.toggle('is-kb', on); cardDraw(); }
+    cardMore();
+  }
+  function cardShare() {
+    var d = CARD.d;
+    if (!d) return;
+    clearTimeout(CARD.t);
+    var told = s => { CARD.said = s; paintCard(); clearTimeout(CARD.st); if (s) CARD.st = setTimeout(() => { CARD.said = ''; paintCard(); }, 6000); };
+    var go = card => window.ConfettiShare.shareCard(card).then(r => { told(r === 'saved' ? 'Your card is saved: ' + card.name : ''); });
+    var c = CARD.sig === cardSig(d) ? CARD.card : null;
+    if (c) { go(c); return; }
+    cardMake(d).then(go, () => { told('The card could not be made just now. Try again in a moment.'); });
   }
 
   /* a wide screen's end screen: the right-hand panel, with the result's words, the card and its keys */

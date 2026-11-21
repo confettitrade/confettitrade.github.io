@@ -745,8 +745,21 @@
      throughout (the owner: "use sohne and sohne"): Schmal Halbfett drawn about 1.5 wide for the big figures (the mock-ups' weight
      and width), Leicht for the small lines, Breit Extrafett for the wordmark, the site logo's Breit Fett for the icon's c.
      Nothing here talks about fees.
-     tradeCard({ sym, side | isLong, lev, margin, pnl, account?, code?, level? }) -> Promise of { canvas, blob, file, name, link, win }.
-     Fonts and the QR encoder (qr.js) load on first use; cardReady() starts that early. */
+     tradeCard({ sym, side | isLong, lev, margin, pnl, account?, code?, level? }, choices?) -> Promise of { canvas, blob, file,
+     name, link, win, opts, text }. Fonts and the QR encoder (qr.js) load on first use; cardReady() starts that early.
+
+     The trader's choices (the owner, 2026-11-21: "make it so they customize the pnl cards too. removeable wallet address.
+     removable trade amount."). His card is the default, and every choice is a layer on it (cardOpts):
+       addr     false takes the short address off the card, with nothing in its place;
+       amount   false takes what went in ("Initial") off the card;
+       result   'both' (his: the percent, the dollars under it), 'pct' (the percent alone) or 'usd' (the dollars in the percent's
+                place, in its letters);
+       look     'classic' (his), 'paper', 'confetti' or 'night': the same card, the same places, in the brand's other dress;
+       caption  a short line of the trader's own, beside the QR code.
+     A line that goes leaves no gap: the lines under the big figure close up and the block is set back on the icon's middle.
+     What is switched off is not drawn, and nothing else the share carries has it: the file's name is the coin, the side and
+     the boost; the only words handed to a share sheet are the trader's own caption. The QR code with the trader's referral
+     code and the FETTI level stay on every look. */
 
   var TC_W = 1672, TC_H = 941, TC_SCALE = 2;
   var TC_FONTS = [['Soehne Schmal Card', 'fonts/soehne-schmal-600.woff2'], ['Soehne Leicht Card', 'fonts/soehne-300.woff2'], ['Soehne Breit Card', 'fonts/soehne-breit-900.woff2'],
@@ -759,6 +772,44 @@
   var TC_WIN = { ink: '#007552', face: '#39784e', edge: '#214d2e', shade: '22,66,34' };
   var TC_LOSS = { ink: '#e01717', face: '#c0121f', edge: '#7a020c', shade: '62,42,24' };
   var TC_SX = 1.45, TC_SX_PCT = 1.5;    /* Söhne Schmal drawn this much wider: the mock-ups' letters (the percent a touch more) */
+  var TC_CAP_MAX = 40;
+  /* the looks: his own first. ink: the wordmark and the small lines; win / loss: the figures and the icon; c: the icon's letter;
+     lvl: the FETTI pill's line and letters, its tint, the paper under it */
+  var TC_LOOKS = [
+    { id: 'classic', name: 'Classic', ink: TC_INK, win: TC_WIN, loss: TC_LOSS, c: '#fff', lvl: ['#214d2e', 'rgba(57, 120, 78, 0.12)', TC_PAPER] },
+    /* the app's own paper: flat cream, the fine dots, an ink frame like a trade's card, a black key for the icon */
+    { id: 'paper', name: 'Paper', ink: '#2a2520', c: '#faf6ed', lvl: ['#2a2520', 'rgba(42, 37, 32, 0.05)', '#faf6ed'],
+      win: { ink: '#2e7a4c', face: '#2a2520', edge: '#0f0d0b', shade: '42,37,32' }, loss: { ink: '#b44855', face: '#2a2520', edge: '#0f0d0b', shade: '42,37,32' } },
+    /* his card under a throw of confetti in the brand's colours */
+    { id: 'confetti', name: 'Confetti', ink: TC_INK, win: TC_WIN, loss: TC_LOSS, c: '#fff', lvl: ['#214d2e', 'rgba(57, 120, 78, 0.12)', TC_PAPER] },
+    /* the black key as a card: ink paper, cream letters, the night colours for up and down */
+    { id: 'night', name: 'Night', ink: '#f4ecd8', c: '#fff', lvl: ['#f4ecd8', 'rgba(244, 236, 216, 0.08)', '#2a2520'],
+      win: { ink: '#4ade80', face: '#39784e', edge: '#214d2e', shade: '0,0,0' }, loss: { ink: '#f47287', face: '#c0121f', edge: '#7a020c', shade: '0,0,0' } }
+  ];
+  function tcLook(id) { for (var i = 0; i < TC_LOOKS.length; i++) if (TC_LOOKS[i].id === id) return TC_LOOKS[i]; return TC_LOOKS[0]; }
+
+  /* the choices, whole and safe: anything missing or unknown is his card as he drew it */
+  function cardOpts(o) {
+    o = o && typeof o === 'object' ? o : {};
+    var cap = String(o.caption == null ? '' : o.caption).replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim();
+    cap = (Array.from ? Array.from(cap) : cap.split('')).slice(0, TC_CAP_MAX).join('').trim();
+    return { addr: o.addr !== false, amount: o.amount !== false, result: o.result === 'pct' || o.result === 'usd' ? o.result : 'both', look: tcLook(o.look).id, caption: cap };
+  }
+
+  /* the choices kept on this device, each wallet its own (never the caption: that is about one trade). Where storage is
+     blocked they last as long as the page */
+  var LS_CARD = 'confetti.card.', cardMem = {};
+  function cardPrefsKey(account) { return LS_CARD + (account ? String(account).toLowerCase() : 'anon'); }
+  function cardPrefsGet(account) {
+    var k = cardPrefsKey(account), raw = cardMem[k] != null ? cardMem[k] : lsGet(k), o = null;
+    try { o = raw ? JSON.parse(raw) : null; } catch (e) { o = null; }
+    o = cardOpts(o); o.caption = '';
+    return o;
+  }
+  function cardPrefsSet(account, opts) {
+    var o = cardOpts(opts), k = cardPrefsKey(account), raw = JSON.stringify({ addr: o.addr, amount: o.amount, result: o.result, look: o.look });
+    cardMem[k] = raw; lsSet(k, raw);
+  }
 
   var tcLoad = null;
   /* the three faces and qr.js, once per page; a failure is forgotten so the next card tries again */
@@ -821,7 +872,9 @@
       var pre = [], pull = 0;
       for (var i = 0; i < n; i++) {
         if (o.slash && i > 0 && text.charAt(i) === '/') pull += o.slash;
-        pre.push(ctx.measureText(text.slice(0, i)).width + (i * ls - pull) / sx);
+        /* each letter where the string up to it ends: a pair's kerning lands on the letter after it (the mock-ups' figures
+           are matched this way and stay so); kern: the pair's own kerning, for the lines added since */
+        pre.push((o.kern ? ctx.measureText(text.slice(0, i + 1)).width - ctx.measureText(text.charAt(i)).width : ctx.measureText(text.slice(0, i)).width) + (i * ls - pull) / sx);
       }
       var first = ctx.measureText(text.charAt(0)), last = ctx.measureText(text.charAt(n - 1));
       var left = -first.actualBoundingBoxLeft, right = pre[n - 1] + last.actualBoundingBoxRight;
@@ -850,11 +903,13 @@
   /* the vignette's strength by distance from (836, 403), as measured off the mock-ups: [distance, alpha of rgb(40, 45, 25)] */
   var TC_VIG = [[300, 0], [356, 0.014], [416, 0.026], [476, 0.05], [536, 0.088], [596, 0.148], [656, 0.218], [716, 0.287], [776, 0.36],
     [836, 0.42], [930, 0.485], [1000, 0.53]];
-  var tcVig = null;
+  var tcVig = {};
   /* worked out once, pixel by pixel, on a small canvas the card scales up: a canvas gradient is dithered, and that grain
-     makes the PNG three times the size */
-  function tcVignette() {
-    if (tcVig) return tcVig;
+     makes the PNG three times the size. rgb: the shade's colour (his: 40, 45, 25) */
+  function tcVignette(rgb) {
+    rgb = rgb || [40, 45, 25];
+    var key = rgb.join(',');
+    if (tcVig[key]) return tcVig[key];
     var k = 8, w = Math.ceil(TC_W / k) + 1, h = Math.ceil(TC_H / k) + 1;
     var cv = document.createElement('canvas');
     cv.width = w; cv.height = h;
@@ -866,22 +921,22 @@
           if (r <= TC_VIG[s][0]) { var p = TC_VIG[s - 1], q = TC_VIG[s]; a = r <= p[0] ? p[1] : p[1] + (q[1] - p[1]) * (r - p[0]) / (q[0] - p[0]); break; }
         }
         var o = (j * w + i) * 4;
-        d[o] = 40; d[o + 1] = 45; d[o + 2] = 25; d[o + 3] = Math.round(a * 255);
+        d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = Math.round(a * 255);
       }
     }
     c2.putImageData(img, 0, 0);
-    tcVig = { cv: cv, k: k };
-    return tcVig;
+    tcVig[key] = { cv: cv, k: k };
+    return tcVig[key];
   }
 
-  /* the paper: cream, the dot grid, and the soft dark vignette, darker at the sides and corners */
-  function tcPaper(ctx) {
-    ctx.fillStyle = TC_PAPER; ctx.fillRect(0, 0, TC_W, TC_H);
-    ctx.fillStyle = 'rgba(120, 95, 55, 0.24)';
+  function tcDots(ctx, color, r) {
+    ctx.fillStyle = color;
     for (var y = 37.4; y < TC_H; y += 43.6) {
-      for (var x = 34.6; x < TC_W; x += 44.77) { ctx.beginPath(); ctx.arc(x, y, 2.9, 0, Math.PI * 2); ctx.fill(); }
+      for (var x = 34.6; x < TC_W; x += 44.77) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
     }
-    var v = tcVignette();
+  }
+  function tcShade(ctx, rgb) {
+    var v = tcVignette(rgb);
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     try { ctx.imageSmoothingQuality = 'high'; } catch (e) { /* older browsers: the default smoothing */ }
@@ -889,8 +944,61 @@
     ctx.restore();
   }
 
+  /* the paper: cream, the dot grid, and the soft dark vignette, darker at the sides and corners */
+  function tcPaper(ctx) {
+    ctx.fillStyle = TC_PAPER; ctx.fillRect(0, 0, TC_W, TC_H);
+    tcDots(ctx, 'rgba(120, 95, 55, 0.24)', 2.9);
+    tcShade(ctx);
+  }
+
+  /* the same throw for the same trade, on the page and in the PNG: the trade's own figures seed it */
+  function tcSeed(t) {
+    var s = t.sym + '|' + (t.long ? 'l' : 's') + '|' + t.lev + '|' + Math.round(t.margin * 100) + '|' + Math.round(t.pnl * 100), x = 2166136261;
+    for (var i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); }
+    return x >>> 0;
+  }
+  /* where the card's own things are, with room around them: no piece lands there, whatever is switched on or off (so the
+     throw does not move when a choice does) */
+  var TC_KEEP = [[30, 28, 470, 132], [1280, 14, 1672, 146], [40, 262, 652, 612], [652, 276, 1022, 660], [960, 524, 1672, 812], [0, 716, 1010, 941], [1196, 812, 1672, 941]];
+  var TC_BITS = ['#b44855', '#2e7a4c', '#f32d35', '#facc15', '#788cff', '#2a2520'];
+  function tcConfetti(ctx, t) {
+    var r = rng(tcSeed(t) + 7), got = [];
+    /* thrown from above: thick at the top, thinning down the card; a few big pieces, a few long strips, the rest small. No
+       piece lies across another, and each has the wordmark block's own slightly rounded corners */
+    for (var i = 0; i < 1600 && got.length < 84; i++) {
+      var x = r() * TC_W, y = Math.pow(r(), 1.9) * TC_H, kind = r(), deg = r() * 180, col = TC_BITS[Math.floor(r() * TC_BITS.length)];
+      var w = kind < 0.14 ? 56 + r() * 30 : kind < 0.42 ? 34 + r() * 14 : 19 + r() * 12, h = kind < 0.14 ? 8 + r() * 3 : kind < 0.42 ? 15 + r() * 6 : 9 + r() * 6;
+      var pad = w / 2 + 8;
+      if (TC_KEEP.some(function (k) { return x > k[0] - pad && x < k[2] + pad && y > k[1] - pad && y < k[3] + pad; })) continue;
+      if (got.some(function (g) { var dx = g[0] - x, dy = g[1] - y, near = (g[2] + w) / 2 + 5; return dx * dx + dy * dy < near * near; })) continue;
+      got.push([x, y, w]);
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(deg * Math.PI / 180);
+      roundRect(ctx, -w / 2, -h / 2, w / 2, h / 2, Math.min(3, h / 3)); ctx.fillStyle = col; ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /* the card's ground in each look */
+  function tcBack(ctx, look, t) {
+    if (look.id === 'paper') {
+      ctx.fillStyle = '#faf6ed'; ctx.fillRect(0, 0, TC_W, TC_H);
+      tcDots(ctx, 'rgba(42, 37, 32, 0.13)', 2.6);
+      ctx.lineWidth = 12; ctx.strokeStyle = '#2a2520'; ctx.strokeRect(6, 6, TC_W - 12, TC_H - 12);
+      return;
+    }
+    if (look.id === 'night') {
+      ctx.fillStyle = '#322c26'; ctx.fillRect(0, 0, TC_W, TC_H);
+      tcDots(ctx, 'rgba(244, 236, 216, 0.11)', 2.9);
+      tcShade(ctx, [8, 6, 4]);
+      return;
+    }
+    tcPaper(ctx);
+    if (look.id === 'confetti') tcConfetti(ctx, t);
+  }
+
   /* the app icon: a rounded tile with a darker edge under it and a soft shadow, the white c and its bar */
-  function tcIcon(ctx, pal, S) {
+  function tcIcon(ctx, pal, S, ink) {
     var x = 687, y = 314, w = 300, h = 296, r = 66, edge = 8;
     ctx.save();
     ctx.shadowColor = 'rgba(' + pal.shade + ', 0.52)';
@@ -901,12 +1009,12 @@
     roundRect(ctx, x, y, x + w, y + h, r); ctx.fillStyle = pal.face; ctx.fill();
     /* c: its ink in the mock-up's box (727..867 x 399..527); the bar 869..957 x 501..526 */
     var c = tcLayout(ctx, 'c', { font: TC_C, size: 233.5, x: 727, y: 524.5, sx: 0.935 });
-    tcDraw(ctx, c, '#fff');
-    ctx.fillStyle = '#fff'; ctx.fillRect(870, 501, 88, 25);
+    tcDraw(ctx, c, ink);
+    ctx.fillStyle = ink; ctx.fillRect(870, 501, 88, 25);
   }
 
-  function tcWordmark(ctx) {
-    var L = tcText(ctx, 'confetti', { font: TC_MARK, size: 77, x: 55, y: 98.5, ls: 0.2 }, TC_INK);
+  function tcWordmark(ctx, ink) {
+    var L = tcText(ctx, 'confetti', { font: TC_MARK, size: 77, x: 55, y: 98.5, ls: 0.2 }, ink);
     roundRect(ctx, L.inkR + 6, 51, L.inkR + 36, 107, 4); ctx.fillStyle = TC_RED; ctx.fill();
   }
 
@@ -945,18 +1053,20 @@
 
   /* The percent the mock-ups' way: a heavy plus or minus bar, the figures in Söhne Schmal, and his own chunky % (two tall
      rings and a heavy slash, measured off the mock-up), all in his units at k = size / 173 (his figures' size). Its ink starts
-     at 66 on baseline 440.5 and never comes nearer the icon than about 70 (the mock-up keeps 118): it ends by 618. */
-  function tcPercent(ctx, t, pal) {
-    var flat = Math.abs(t.pnl) <= 0.004, num = cardPct(t).replace(/%$/, ''), base = 440.5, maxW = 552;
+     at 66 on baseline 440.5 and never comes nearer the icon than about 70 (the mock-up keeps 118): it ends by 618.
+     base: its baseline (his 440.5, lower when lines under it are switched off). usd: the dollars stand here instead, the
+     same bar and the same letters, with no % after them. */
+  function tcPercent(ctx, t, pal, base, usd) {
+    var flat = Math.abs(t.pnl) <= 0.004, num = usd ? cardMoney(t.pnl) : cardPct(t).replace(/%$/, ''), maxW = 552;
     var size = 173, sx = TC_SX_PCT, P;
     function lay() {
-      var k = size / 173, L = tcLayout(ctx, num, { font: TC_BIG, size: size, x: 0, y: base, sx: sx });
+      var k = size / 173, L = tcLayout(ctx, num, { font: TC_BIG, size: size, x: 0, y: base, sx: sx, ls: usd ? 3 * k : 0, kern: usd });
       var signW = flat ? 0 : (t.win ? 51 : 41) * k, gapS = flat ? 0 : 10 * k;
-      P = { k: k, L: L, signW: signW, gapS: gapS, gapP: 9 * k, pctW: 164 * k };
+      P = { k: k, L: L, signW: signW, gapS: gapS, gapP: usd ? 0 : 9 * k, pctW: usd ? 0 : 164 * k };
       P.w = signW + gapS + L.w + P.gapP + P.pctW;
     }
     lay();
-    if (P.w > maxW) { sx = Math.max(1.15, sx * (P.L.w - (P.w - maxW)) / P.L.w); lay(); }
+    if (P.w > maxW) { sx = Math.max(usd ? 1.3 : 1.15, sx * (P.L.w - (P.w - maxW)) / P.L.w); lay(); }
     for (var i = 0; i < 3 && P.w > maxW; i++) { size *= maxW / P.w; lay(); }
     var k = P.k, x = 66;
     ctx.fillStyle = pal.ink;
@@ -965,8 +1075,9 @@
       ctx.fillRect(x, cy - bar / 2, P.signW, bar);
       if (t.win) ctx.fillRect(x + (P.signW - 19 * k) / 2, cy - P.signW / 2, 19 * k, P.signW);
     }
-    var L = tcLayout(ctx, num, { font: TC_BIG, size: size, x: x + P.signW + P.gapS, y: base, sx: sx });
+    var L = tcLayout(ctx, num, { font: TC_BIG, size: size, x: x + P.signW + P.gapS, y: base, sx: sx, ls: usd ? 3 * k : 0, kern: usd });
     tcDraw(ctx, L, pal.ink);
+    if (usd) return;
     var p = L.inkR + P.gapP, f = function (v) { return p + v * k; }, g = function (v) { return base + v * k; };
     ctx.fillStyle = pal.ink;
     tcRing(ctx, f(0), g(-135.5), f(62), g(-41.5), f(24), g(-117.5), f(38), g(-61.5));
@@ -998,33 +1109,51 @@
 
   /* the trader's FETTI level (money back for stakers, fetti.js), a small ink-ringed pill under confetti.trade: "FETTI LEVEL 2".
      Level 0 or none draws nothing, so a card without a level is the owner's design exactly. */
-  function tcLevel(ctx, n) {
+  function tcLevel(ctx, n, look) {
     n = Math.round(Number(n) || 0);
     if (!(n >= 1 && n <= 9)) return;
     var L = tcLayout(ctx, 'FETTI LEVEL ' + n, { font: TC_BIG, size: 36, x: 1614, y: 114, align: 'right', ls: 2.5, sx: 1.15 });
     var x0 = L.inkL - 26, x1 = 1640, y0 = 70, y1 = 130;
-    roundRect(ctx, x0, y0, x1, y1, 30); ctx.fillStyle = TC_PAPER; ctx.fill(); ctx.fillStyle = 'rgba(57, 120, 78, 0.12)'; ctx.fill();
-    ctx.lineWidth = 2.5; ctx.strokeStyle = '#214d2e'; roundRect(ctx, x0, y0, x1, y1, 30); ctx.stroke();
-    tcDraw(ctx, L, '#214d2e');
+    roundRect(ctx, x0, y0, x1, y1, 30); ctx.fillStyle = look.lvl[2]; ctx.fill(); ctx.fillStyle = look.lvl[1]; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = look.lvl[0]; roundRect(ctx, x0, y0, x1, y1, 30); ctx.stroke();
+    tcDraw(ctx, L, look.lvl[0]);
   }
 
-  /* the card at S times the mock-up's size */
-  function drawTradeCard(t, S) {
-    var pal = t.win ? TC_WIN : TC_LOSS;
+  /* a line of the trader's own words, drawn whole (an emoji or an accent is more than one unit: never letter by letter); its
+     ink starts at x and is never wider than maxW */
+  function tcPlain(ctx, text, o, color) {
+    var size = o.size, m;
+    function measure() { ctx.font = Math.round(size * 100) / 100 + 'px ' + o.font; m = ctx.measureText(text); }
+    measure();
+    var w = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+    if (o.maxW && w > o.maxW) { size = size * o.maxW / w; measure(); }
+    ctx.save();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = color;
+    ctx.fillText(text, o.x + m.actualBoundingBoxLeft, o.y);
+    ctx.restore();
+  }
+
+  /* the card at S times the mock-up's size, with the trader's choices (o: cardOpts) */
+  function drawTradeCard(t, S, o) {
+    var look = tcLook(o.look), pal = t.win ? look.win : look.loss, ink = look.ink;
     var cv = document.createElement('canvas');
     cv.width = Math.round(TC_W * S); cv.height = Math.round(TC_H * S);
     var ctx = cv.getContext('2d');
     ctx.scale(S, S);
-    tcPaper(ctx);
-    tcWordmark(ctx);
-    tcText(ctx, 'confetti.trade', { font: TC_SMALL, size: 29.5, x: 1640, y: 46.5, align: 'right', ls: -0.2 }, TC_INK);
-    tcLevel(ctx, t.level);
-    tcIcon(ctx, pal, S);
+    tcBack(ctx, look, t);
+    tcWordmark(ctx, ink);
+    tcText(ctx, 'confetti.trade', { font: TC_SMALL, size: 29.5, x: 1640, y: 46.5, align: 'right', ls: -0.2 }, ink);
+    tcLevel(ctx, t.level, look);
+    tcIcon(ctx, pal, S, look.c);
 
-    /* left: the signed percent, then Initial and Profit / Loss */
-    tcPercent(ctx, t, pal);
-    tcText(ctx, cardMoney(t.margin) + ' Initial', { font: TC_SMALL, size: 44.5, x: 113, y: 517.5, maxW: 540 }, TC_INK);
-    tcText(ctx, cardMoney(t.pnl) + (t.win ? ' Profit' : ' Loss'), { font: TC_SMALL, size: 44.5, x: 113, y: 579.5, maxW: 540 }, TC_INK);
+    /* left: the signed percent, then Initial and Profit / Loss (his card). A line switched off is not there, the next one
+       moves up into its place, and the block drops half of what went so it stays on the icon's middle */
+    var lines = [];
+    if (o.amount) lines.push(cardMoney(t.margin) + ' Initial');
+    if (o.result === 'both') lines.push(cardMoney(t.pnl) + (t.win ? ' Profit' : ' Loss'));
+    var dy = (2 - lines.length) * 31;
+    tcPercent(ctx, t, pal, 440.5 + dy, o.result === 'usd');
+    lines.forEach(function (s, i) { tcText(ctx, s, { font: TC_SMALL, size: 44.5, x: 113, y: 517.5 + dy + i * 62, maxW: 540 }, ink); });
 
     /* right: COIN/SIDE over the leverage, right-aligned */
     tcCoin(ctx, t.sym, t.long ? 'LONG' : 'SHORT', pal);
@@ -1032,12 +1161,14 @@
        to the trade left in between to two places ("6.67X", never rounded up to a boost the trade did not have) */
     tcText(ctx, cardLev(t.lev) + 'X', { font: TC_BIG, size: 138, x: 1630, y: 781.5, align: 'right', ls: 7.5, sx: TC_SX, maxW: 700 }, pal.ink);
 
-    /* bottom left: the QR code and the short address; bottom right: the three lines */
-    var qr = tcQr(ctx, t.link, S);
-    if (t.addr) tcText(ctx, t.addr, { font: TC_SMALL, size: 35, x: 209, y: 906.5, ls: 4.7 }, TC_INK);
-    tcText(ctx, 'Perp Trading', { font: TC_SMALL, size: 24.4, x: 1645, y: 855.5, align: 'right', ls: 0.9 }, TC_INK);
-    tcText(ctx, 'Up to 1000x leverage', { font: TC_SMALL, size: 24.4, x: 1645, y: 883.5, align: 'right', ls: 0.9 }, TC_INK);
-    tcText(ctx, 'Fully onchain on hyperliquid', { font: TC_SMALL, size: 24.4, x: 1645, y: 912.5, align: 'right', ls: 0.9 }, TC_INK);
+    /* bottom left: the QR code, the short address beside its foot, and the trader's own line over the address (on the
+       address's line when that is off); bottom right: the three lines */
+    var qr = tcQr(ctx, t.link, S), addr = o.addr ? t.addr : '';
+    if (addr) tcText(ctx, addr, { font: TC_SMALL, size: 35, x: 209, y: 906.5, ls: 4.7 }, ink);
+    if (o.caption) tcPlain(ctx, o.caption, { font: TC_SMALL, size: 40, x: 210, y: addr ? 850.5 : 906.5, maxW: 760 }, ink);
+    tcText(ctx, 'Perp Trading', { font: TC_SMALL, size: 24.4, x: 1645, y: 855.5, align: 'right', ls: 0.9 }, ink);
+    tcText(ctx, 'Up to 1000x leverage', { font: TC_SMALL, size: 24.4, x: 1645, y: 883.5, align: 'right', ls: 0.9 }, ink);
+    tcText(ctx, 'Fully onchain on hyperliquid', { font: TC_SMALL, size: 24.4, x: 1645, y: 912.5, align: 'right', ls: 0.9 }, ink);
     cv.qr = qr;
     return cv;
   }
@@ -1045,42 +1176,56 @@
   function cardLev(lev) { var n = Number(lev); return isFinite(n) && n > 0 ? String(Math.round(n * 100) / 100) : '—'; }
   function cardName(t) { return 'confetti-' + t.sym.toLowerCase().replace(/[^a-z0-9]+/g, '') + '-' + (t.long ? 'long' : 'short') + '-' + cardLev(t.lev).replace('.', '_') + 'x.png'; }
 
-  /* the card as a PNG file (2x), with what it was drawn from; a preview canvas of any width comes from drawCardInto */
-  function tradeCard(raw) {
-    var t;
+  /* the card as a PNG file (2x), with what it was drawn from; a preview canvas of any width comes from drawCardInto.
+     text: the only words that go with the picture, the trader's own caption (or none) */
+  function tradeCard(raw, opts) {
+    var t, o = cardOpts(opts);
     try { t = cardTrade(raw); } catch (e) { return Promise.reject(e); }
     return cardReady().then(function () {
-      var cv = drawTradeCard(t, TC_SCALE);
+      var cv = drawTradeCard(t, TC_SCALE, o);
       return new Promise(function (ok, no) {
         cv.toBlob(function (b) {
           if (!b) { no(new Error('no image')); return; }
           var name = cardName(t), file = null;
           try { file = new File([b], name, { type: 'image/png' }); } catch (e) { file = null; }
-          ok({ canvas: cv, blob: b, file: file, name: name, link: t.link, win: t.win, trade: t });
+          ok({ canvas: cv, blob: b, file: file, name: name, link: t.link, win: t.win, trade: t, opts: o, text: o.caption });
         }, 'image/png');
       });
     });
   }
 
   /* the card drawn straight onto a canvas on the page, crisp at its own size (CSS width x device pixels) */
-  function drawCardInto(canvas, raw, cssW) {
-    var t = cardTrade(raw);
+  function drawCardInto(canvas, raw, cssW, opts) {
+    var t = cardTrade(raw), o = cardOpts(opts);
     return cardReady().then(function () {
       var dpr = Math.min(3, window.devicePixelRatio || 1), S = Math.max(0.2, cssW * dpr / TC_W);
-      var src = drawTradeCard(t, S);
+      var src = drawTradeCard(t, S, o);
       canvas.width = src.width; canvas.height = src.height;
       canvas.getContext('2d').drawImage(src, 0, 0);
       return t;
     });
   }
 
+  /* does this browser hand a picture to a share sheet? (the key says Share where it does, Save where it cannot) */
+  function cardCanShare() {
+    try {
+      var f = new File([new Blob(['x'], { type: 'image/png' })], 'card.png', { type: 'image/png' });
+      return !!(navigator.share && navigator.canShare && navigator.canShare({ files: [f] }));
+    } catch (e) { return false; }
+  }
+
   /* Share the PNG: the phone's share sheet with the file where the browser can, otherwise a download. Called from the tap
-     itself with a file made before it (a share sheet needs the tap's own moment). Resolves 'shared', 'saved' or 'cancelled'. */
+     itself with a file made before it (a share sheet needs the tap's own moment). The card's caption goes with it as the
+     share's words where the browser takes words with a file; nothing else does. Resolves 'shared', 'saved' or 'cancelled'. */
   function shareCardFile(card) {
     var file = card && card.file;
     var data = file ? { files: [file] } : null;
     var can = false;
     try { can = !!(data && navigator.canShare && navigator.canShare(data) && navigator.share); } catch (e) { can = false; }
+    if (can && card.text) {
+      var withText = { files: [file], text: card.text };
+      try { if (navigator.canShare(withText)) data = withText; } catch (e) { /* the picture alone */ }
+    }
     if (can) {
       return navigator.share(data).then(function () { return 'shared'; }, function (e) {
         if (e && e.name === 'AbortError') return 'cancelled';
@@ -1345,11 +1490,18 @@
   window.ConfettiShare = {
     open: function (trade) { open(trade); },
     use: function (h) { if (h && typeof h.postInfo === 'function') hooks.postInfo = h.postInfo; },
-    /* the trade card (the owner's design): cardReady() loads its fonts and qr.js; tradeCard(trade) the 2x PNG;
-       drawCardInto(canvas, trade, cssWidth) a preview on the page; shareCard(card) the share sheet or a download */
+    /* the trade card (the owner's design): cardReady() loads its fonts and qr.js; tradeCard(trade, choices) the 2x PNG;
+       drawCardInto(canvas, trade, cssWidth, choices) a preview on the page; shareCard(card) the share sheet or a download.
+       The trader's choices: cardOpts(any) makes them whole, cardLooks names the looks, cardPrefs keeps them per wallet
+       on this device, cardCanShare() says whether a share sheet takes the picture here */
     cardReady: cardReady,
     tradeCard: tradeCard,
     drawCardInto: drawCardInto,
-    shareCard: shareCardFile
+    shareCard: shareCardFile,
+    cardOpts: cardOpts,
+    cardLooks: TC_LOOKS.map(function (l) { return { id: l.id, name: l.name }; }),
+    cardCapMax: TC_CAP_MAX,
+    cardPrefs: { get: cardPrefsGet, set: cardPrefsSet },
+    cardCanShare: cardCanShare
   };
 })();
