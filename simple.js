@@ -1763,6 +1763,9 @@
      sale moves its price: the dollars shown are the sale priced on the pool now and the HYPE it makes priced by Relay now, and one
      add never moves the price by more than the cap (config swap.fettiMovePct, 2 unless set). */
   var FT = { bal: null, rf: null, rw: null, allow: null };
+  /* FETTI as a way to add money is switched off (the owner, 2026-11-21: "pause this immediately"). false: the way is not
+     offered anywhere on the form and can never be the picked way. true brings it back exactly as it was. */
+  var FETTI_PAY = false;
   function fcfg() { var c = api.cfg() || {}, s = c.swap || {}; return { tok: (c.contracts || {}).confetti, router: s.router, pair: s.pair, whype: s.whype, cap: Number(s.fettiMovePct) > 0 && Number(s.fettiMovePct) <= 10 ? Number(s.fettiMovePct) : 2 }; }
   function setReserves(r, f) { var w0 = BigInt(f.whype) < BigInt(f.tok); FT.rw = BigInt(w0 ? r[0] : r[1]); FT.rf = BigInt(w0 ? r[1] : r[0]); }
   function readFetti() {
@@ -1893,6 +1896,7 @@
   function ethBest() { var px = ethPx(), best = 0; CH_ORDER.forEach(c => { if (!ADD.refused[c] && ADD.bal[c] != null && px > 0) best = Math.max(best, Number(spendable(c)) / 1e18 * px); }); return best; }
   function method() {
     var m = methods(), c = chainNow(), hs = hypeState();
+    if (!FETTI_PAY && ADD.method === 'fetti') ADD.method = null;
     if (ADD.method && m[ADD.method] && !(ADD.method === 'hype' && hs === 'low' && ADD.how.hype !== 'addr')) return ADD.method;
     /* USDT in the wallet that covers the amount when neither the ETH nor the spare HYPE does */
     if (usdtBest() >= Math.max(MIN_ADD_USD, amount()) && ethBest() < amount() && !(hs === 'ok' && hypeUsd(hypeSpare()) >= amount())) return 'usdt';
@@ -1901,7 +1905,7 @@
     if (c != null) return 'eth';
     if (m.wallet) return 'wallet';
     if (usdtBest() >= MIN_ADD_USD) return 'usdt';
-    if (fettiUsd(fettiMaxWei()) >= MIN_ADD_USD) return 'fetti';
+    if (FETTI_PAY && fettiUsd(fettiMaxWei()) >= MIN_ADD_USD) return 'fetti';
     return m.apple ? 'apple' : 'eth';
   }
   /* the new ways' own state: where the USDT is, which address way, what makes a quote this way's own */
@@ -2092,7 +2096,7 @@
       : [['Get Phantom', 'https://phantom.com/download'], ['Get Solflare', 'https://solflare.com/download']]).forEach(x => { var a = h('a', 'sm-link', x[0]); a.href = x[1]; a.target = '_blank'; a.rel = 'noopener'; r.solLinks.appendChild(a); });
     r.moreKey = btn('sm-morekey', [h('b', null, 'More ways to pay'), h('span', null, '')], () => { ADD.moreOpen = !r._open; paintAdd(); });
     r.moreList = h('div', 'sm-opts is-more');
-    [['usdt', 'USDT'], ['sol', 'Solana'], ['btc', 'Bitcoin'], ['fetti', 'FETTI']].forEach(x => {
+    [['usdt', 'USDT'], ['sol', 'Solana'], ['btc', 'Bitcoin'], ['fetti', 'FETTI']].filter(x => FETTI_PAY || x[0] !== 'fetti').forEach(x => {
       var b = btn(null, [h('span', null, x[1]), h('span')], () => { ADD.method = x[0]; ADD.moreOpen = false; ADD.err = ''; ADD.q = null; ADD.max = false; ADD.note = ''; ADD.auto = false; paintAdd(); scheduleQuote(0); });
       b._m = x[0]; r.moreList.appendChild(b);
     });
@@ -2360,9 +2364,9 @@
   /* which rows show: the picked way and the ways this wallet can pay with now, those first; the rest behind "More ways to pay",
      which stands open by itself when the wallet has nothing to pay with yet */
   function fillWays(r, m, ms, busy) {
-    var use = { usdt: usdtBest() >= MIN_ADD_USD, sol: !!SW.acct, btc: false, fetti: fettiUsd(fettiMaxWei()) >= MIN_ADD_USD }, hid = [];
+    var use = { usdt: usdtBest() >= MIN_ADD_USD, sol: !!SW.acct, btc: false, fetti: FETTI_PAY && fettiUsd(fettiMaxWei()) >= MIN_ADD_USD }, hid = [];
     var can = { apple: true, eth: ethBest() >= MIN_ADD_USD, hype: hypeState() === 'ok', wallet: true }, any = can.eth || can.hype || ms.wallet || use.usdt || use.sol || use.fetti;
-    ['usdt', 'sol', 'btc', 'fetti'].forEach(k => { var on = m === k || use[k]; show(r[k].n, on); can[k] = use[k]; if (!on) hid.push({ usdt: 'USDT', sol: 'Solana', btc: 'Bitcoin', fetti: 'FETTI' }[k]); });
+    ['usdt', 'sol', 'btc', 'fetti'].forEach(k => { var off = k === 'fetti' && !FETTI_PAY, on = !off && (m === k || use[k]); show(r[k].n, on); can[k] = use[k]; if (!on && !off) hid.push({ usdt: 'USDT', sol: 'Solana', btc: 'Bitcoin', fetti: 'FETTI' }[k]); });
     /* first what this wallet can pay with now; then a new way that was picked; a wallet with nothing to pay with leads with the list */
     var kN = kindNow();      /* a coin picked with its address way leads, like a way the wallet can pay with */
     function ord(n, k) { var v = can[k] || (k === m && kN) ? '0' : NEW[k] ? '1' : any ? '2' : '4'; if (n.style.order !== v) n.style.order = v; }
@@ -2611,7 +2615,7 @@
   /* FETTI: the allowance (exactly the sale, when the wallet has not given it), the sale on the pool, and then the HYPE that came pays
      the way HYPE does: its own order, pressed here, confirmed in the wallet. A run that stops after the sale leaves that HYPE in the
      wallet, and the form on HYPE with it. */
-  function fettiGo() {
+  function fettiGo() { if (!FETTI_PAY) return;
     var q0 = ADD.q, f = fcfg(), c = api.chainId;
     if (!q0 || q0.rail !== 'fetti') return;
     newRun(R => {
