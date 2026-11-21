@@ -353,6 +353,7 @@
   /* trade.js asks before a toast: in Simple the place that started the action says it (true: handled) */
   function onToast(text, kind) {
     if (!shown() || document.querySelector('dialog[open]:not(.sm-sheet)')) return false;
+    if (REF.sh && REF.sh.isOpen && refHeard(text, kind)) return true;      /* Refer friends: the sheet says what its own send came to */
     if (kind === 'err') { S.lastErr = { text: plain(text), at: Date.now() }; if (!S.claim && !sheets.length && !/HyperEVM|Switch|^Closed |liquidated/.test(text) && !(S.place === 'coin' && /did not go through|Didn.t open/.test(text))) snack(S.lastErr.text);      /* not twice: the coin's card says that one itself */ kick(); }
     else if (S.tell && Date.now() - S.tell < 15000) { S.tell = 0; snack(plain(text)); }      /* the answer to Switch wallet, said once */
     else if (/^(Take profit|Stop loss) hit: /.test(text)) {
@@ -402,6 +403,7 @@
     if (AUTO.sh && AUTO.sh.isOpen) paintAuto();      /* the take profit / stop loss sheet, on a phone and on a desktop */
     if (PART.sh && PART.sh.isOpen) paintPart();      /* Close part / Add to this trade, the same */
     if (LV.sh && LV.sh.isOpen) paintLevels();        /* FETTI levels (fetti.js), on a phone and on a desktop */
+    if (REF.sh && REF.sh.isOpen) paintRefer();       /* Refer friends, the same */
     addr();
   }
   /* The list scrolls under the bottom bar, never behind it: while more is below, the bar has an edge (so a row cut at the
@@ -1311,8 +1313,9 @@
       var s = api.session();
       add(list, item('One-tap trading', s.live ? 'On' : 'Off', () => { api.pro('menu'); setMode('pro'); }));
     }
-    /* refer */
-    if (w.account) add(list, item('Refer friends', 'earn 15%', () => { api.pro('menu'); setMode('pro'); }));
+    /* refer: Simple's own sheet (a visitor sees what it brings and a Connect key) */
+    add(list, MENU.ref = item('Refer friends', refMenuHint(), openRefer));
+    refShare();
     if (!NO_PRO) add(list, item('Pro view', 'candles, limit orders, history, points', () => { api.pro('coin', S.place !== 'home' ? S.sym : null); setMode('pro'); }));
     add(sh.body, list);
     sh.open();
@@ -4507,6 +4510,278 @@
     F.loadDraw(true).then(() => { if (sh.isOpen) fill(); });
   }
 
+  /* ---- Refer friends (the owner, 2026-11-21: "switch the refer site to the new layout"). The menu's Refer friends used to
+     throw the whole page into Pro to show Pro's Refer tab; now it opens this sheet. The sheet is that tab's face and no more:
+     trade.js keeps the tab filled in out of sight (the code, what it earned, who referred this wallet, the extra codes), and
+     the sheet shows what the tab shows and presses the tab's own keys: its Register form, its Create code form, its Claim
+     key. Every check, contract call and refusal is therefore Pro's own, and nothing here builds a transaction.
+     Two figures are also read here, by the view calls the tab itself makes, so that they are live while the sheet is open:
+     the share (referralShareBps: the page never writes that number itself) and what the main code has earned
+     (referralEarned). The card keeps one shape in every wallet state: the link or the box to make it, its keys, its QR code.
+     Simple has its own words for what a trade costs: a friend's trades "pay in". ---- */
+
+  /* run: the send in hand ('make' | 'create' | 'claim'), step: where it is ('ask' the tab, 'net' the wallet's network, 'chain' sent);
+     ring: the box a refusal was about, ringed red until the next press or keystroke; got: the fresh earned figure and whose it is */
+  var REF = { sh: null, R: null, f: null, watch: null, timer: 0, canShare: false, more: false, run: '', step: '', code: '', moved: false, sync: false, seq: 0,
+    say: '', bad: false, ring: '', bps: null, asking: false, got: null, rows: null };
+  var REF_SITE = 'confetti.trade/?ref=', REF_RULES = '3 to 16 characters: a-z, 0-9, underscore. One per wallet, for good.';
+  function refLink(code) { return 'https://' + REF_SITE + code; }
+  /* a line of Pro's Refer tab, as it stands */
+  function proText(id) { var n = $(id); return n ? String(n.textContent || '').replace(/\s+/g, ' ').trim() : ''; }
+  /* What the tab shows for this wallet. state: none (no wallet), load (not read yet), make (no code: the tab offers its
+     Register form), have. more: the tab offers extra codes (its factory is in and checked); rows: each one's name, link, what
+     it earned and what a claim would send; due: what the tab's Claim key would send now, '' when it has nothing to send. */
+  function refView() {
+    var w = api.wallet(), code = w.account ? refCode() : '', form = $('referForm'), box = $('rfMore'), claim = $('vaultClaim'), list = $('rfVaults'), rows = [];
+    var more = !!(w.account && box && !box.hidden);
+    if (more && list) each(list, row => {
+      var a = row.querySelector('.kv-key a'), s = row.querySelector('.kv-val span'), m = /^(.*?) earned(?: · (.*?) to claim)?$/.exec(s ? String(s.textContent || '') : '');
+      rows.push({ name: a ? String(a.textContent || '') : '', link: a ? a.getAttribute('href') || '' : '', earned: m ? m[1] : '', due: m && m[2] ? m[2] : '' });
+    });
+    return {
+      account: w.account || '', code: code, state: !w.account ? 'none' : code ? 'have' : form && !form.hidden ? 'make' : 'load',
+      earned: proText('rfEarned'), by: proText('rfBy'), more: more, total: proText('rfMoreTotal'), rows: rows,
+      due: more && claim && !claim.hidden ? (/^Claim (\S+)/.exec(proText('vaultClaim')) || [])[1] || '' : ''
+    };
+  }
+  /* the two live figures: the same view calls as the tab's, on the registry config.json names */
+  function refAsk(fn, args) {
+    var to = String((api.cfg().contracts || {}).referrals || '');
+    if (!E || !/^0x[0-9a-fA-F]{40}$/.test(to)) return Promise.reject(new Error('no registry'));
+    var f = REF.f || (REF.f = new E.Interface(['function referralShareBps() view returns (uint16)', 'function referralEarned(address referrer) view returns (uint256)']));
+    return rpc(api.chainId, 'eth_call', [{ to: to, data: f.encodeFunctionData(fn, args) }, 'latest']).then(hex => f.decodeFunctionResult(fn, hex)[0]);
+  }
+  /* the share: asked until it is known, then kept for this page view */
+  function refShare() {
+    if (REF.bps != null || REF.asking) return;
+    REF.asking = true;
+    refAsk('referralShareBps', []).then(v => { REF.bps = Number(v); }, noop).then(() => {
+      REF.asking = false;
+      var i = MENU.ref && MENU.ref.querySelector('i'); if (i) txt(i, refMenuHint());
+      paintRefer();
+    });
+  }
+  function refPct() { return REF.bps != null && isFinite(REF.bps) ? String(Number((REF.bps / 100).toFixed(2))) + '%' : ''; }
+  function refMenuHint() { return 'earn ' + (refPct() || 'USDC'); }
+  function refEarned() {
+    var a = api.wallet().account;
+    if (!a || api.demo) return;
+    refAsk('referralEarned', [a]).then(v => { if (api.wallet().account === a) { REF.got = { a: a, n: Number(v) / 1e6 }; paintRefer(); } }, noop);
+  }
+  function refSay(s, bad, ring) { REF.say = s || ''; REF.bad = !!bad; REF.ring = ring || ''; paintRefer(); }
+  function refEnd(s, bad, ring) { REF.run = ''; REF.step = ''; REF.moved = false; ++REF.seq; if (!bad) refEarned(); refSay(s, bad, ring); }
+  /* a code box: only what a code may hold gets in (a-z, 0-9, underscore; capitals come in small), up to 16 */
+  function refInput(id, label, hold, go) {
+    var i = h('input'); i.type = 'text'; i.id = id; i.maxLength = 16; i.placeholder = hold; i.spellcheck = false;
+    i.setAttribute('aria-label', label); i.setAttribute('autocomplete', 'off'); i.setAttribute('autocapitalize', 'none'); i.setAttribute('autocorrect', 'off'); i.setAttribute('enterkeyhint', 'go');
+    i.addEventListener('input', () => { var c = i.value.toLowerCase().replace(/[^a-z0-9_]/g, ''); if (c !== i.value) i.value = c; if (REF.say && !REF.run) refSay(''); });
+    i.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+    i.addEventListener('focus', () => { setTimeout(fitKeyboard, 0); });
+    return i;
+  }
+  function openRefer() {
+    var sh = REF.sh;
+    if (!sh) {
+      sh = REF.sh = makeSheet('Refer', true); sh.d.classList.add('is-rf');
+      sh.body.addEventListener('scroll', refEdge, { passive: true });
+      refBuild();
+    }
+    REF.say = ''; REF.bad = false; REF.ring = ''; REF.more = false;
+    sh.onClose = () => { clearInterval(REF.timer); REF.timer = 0; REF.run = ''; REF.step = ''; REF.moved = false; ++REF.seq; };      /* a send already with the wallet goes on as Pro's own */
+    sh.open();
+    /* whatever the tab changes shows here at once */
+    var tab = $('panelRefer');
+    if (!REF.watch && tab && typeof MutationObserver === 'function') {
+      REF.watch = new MutationObserver(() => { if (REF.sh.isOpen) { refRefused(); paintRefer(); } });
+      REF.watch.observe(tab, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class', 'disabled'] });
+    }
+    refShare(); refEarned();
+    clearInterval(REF.timer);
+    REF.timer = setInterval(() => { if (!document.hidden) { refShare(); refEarned(); } }, 20000);
+    paintRefer();
+  }
+  function refBuild() {
+    var sh = REF.sh, r = REF.R = {};
+    REF.canShare = typeof navigator.share === 'function';
+    txt(sh.title, 'Refer friends');
+    /* the card */
+    r.lab = h('div', 'sm-label', ''); r.rate = h('span', 'sm-pill is-up', '');
+    r.pitchB = h('b', null, ''); r.pitchT = h('span', null, '');
+    r.pitch = h('div', 'sm-rf-pitch', [r.pitchB, r.pitchT, h('span', null, 'You get it in USDC.')]);
+    r.code = h('b', 'sm-rf-code', '');
+    r.in = refInput('smRefCode', 'Your code', 'your_code', () => { refGo('make', r.in.value); });
+    r.link = h('div', 'sm-rf-link', [h('span', 'sm-rf-pre', REF_SITE), r.code, r.in]);
+    r.link.addEventListener('click', ev => { if (ev.target !== r.in && !r.in.hidden && !r.in.disabled) r.in.focus(); });
+    r.copy = btn('sm-btn is-ghost', 'Copy link', () => { var c = refCode(); if (c) copyText(refLink(c), r.copy); });
+    r.share = btn('sm-btn is-primary', 'Share', refShareGo);
+    r.make = btn('sm-btn is-primary is-wide', 'Make my code', () => { refGo('make', r.in.value); });
+    r.keys = h('div', 'sm-rf-keys', [r.copy, r.share, r.make]);
+    r.qr = h('canvas', 'sm-rf-qr'); r.qr.setAttribute('role', 'img'); r.qr.setAttribute('aria-label', 'QR code of your link'); r.qr.hidden = true;
+    r.qrOff = h('div', 'sm-rf-qr is-off', [h('i'), h('i'), h('i')]); r.qrOff.setAttribute('aria-hidden', 'true');      /* where the QR code will stand: its three corner marks, faint */
+    r.tipB = h('b', null, ''); r.tipT = h('span', null, '');
+    r.strip = h('div', 'sm-rf-show', [r.qr, r.qrOff, h('p', 'sm-rf-tip', [r.tipB, r.tipT])]);
+    r.pass = h('div', 'sm-rf-pass', [h('div', 'sm-rf-head', [r.lab, r.rate]), r.pitch, r.link, r.keys, r.strip]);
+    /* what it has earned, and the extra codes' money when some waits */
+    r.amt = h('span', null, ''); r.note = h('p', 'sm-fine', '');
+    r.claimT = h('span', null, ''); r.claim = btn('sm-btn is-ghost', '', () => { refGo('claim'); });
+    r.claimRow = h('div', 'sm-rf-claim', [r.claimT, r.claim]);
+    r.earn = h('div', 'sm-rf-earn', [h('div', 'sm-label', 'Earned so far'), h('div', 'sm-big', [r.amt, h('small', null, 'USDC')]), r.note, r.claimRow]);
+    r.how3 = h('li', null, '');
+    r.byV = h('span', null, ''); r.by = h('div', 'sm-kv', [h('span', null, 'Referred by'), r.byV]);
+    r.how = h('div', 'sm-rf-how', [h('div', 'sm-label', 'How it works'), h('ol', null, [h('li', null, 'Send your link, or show its QR code.'), h('li', null, 'Your friend makes a first trade on confetti.'), r.how3]), r.by]);
+    /* more codes: quiet, behind one key */
+    r.moreSum = h('span', null, '');
+    r.moreKey = btn('sm-rf-more', [h('span', 'sm-t', [h('b', null, 'More codes'), r.moreSum]), h('i', null, '›')], () => { REF.more = !REF.more; paintRefer(); });
+    r.list = h('div', 'sm-rf-list');
+    r.vin = refInput('smRefMore', 'Another code', 'another_code', () => { refGo('create', r.vin.value); });
+    r.vbox = h('div', 'sm-rf-box', r.vin);
+    r.vgo = btn('sm-btn is-ghost', 'Create code', () => { refGo('create', r.vin.value); });
+    r.codes = h('div', 'sm-rf-codes', [h('p', 'sm-fine', 'Each extra code is a small contract of its own that pays only you. What it earns waits there until you claim it to your wallet.'),
+      r.list, h('div', 'sm-label', 'Make another code'), h('div', 'sm-rf-new', [r.vbox, r.vgo])]);
+    r.codes.id = 'smRefCodes'; r.moreKey.setAttribute('aria-controls', r.codes.id);
+    add(sh.body, [r.pass, r.earn, r.how, r.moreKey, r.codes]);
+    r.say = sayLine();
+    r.go = btn('sm-btn is-primary', '', doConnect);
+    add(sh.foot, [r.say, r.go]);
+  }
+  function paintRefer() {
+    var sh = REF.sh, r = REF.R;
+    if (!sh || !sh.isOpen || !r) return;
+    var v = refView(), st = v.state, none = st === 'none', make = st === 'make', have = st === 'have', pct = refPct(), run = REF.run;
+    var word = !run ? '' : REF.step === 'net' ? 'Getting your wallet ready…' : REF.step === 'chain' ? (run === 'claim' ? 'Sending it to your wallet…' : 'Making your code…') : api.account().busy ? CONFIRM : 'Checking…';
+    /* the card */
+    txt(r.lab, none ? 'Invite friends' : make ? 'Make your link' : 'Your link');
+    txt(r.rate, pct ? 'earns ' + pct : ''); show(r.rate, !none && !!pct);
+    show(r.pitch, none); show(r.link, !none); show(r.keys, !none);
+    txt(r.pitchB, pct ? 'Earn ' + pct : 'Earn USDC');
+    txt(r.pitchT, (pct ? 'of' : 'A share of') + ' what your friends’ trades pay in.');
+    cls(r.link, 'sm-rf-link' + (make ? ' is-make' + (REF.ring === 'make' ? ' is-bad' : '') : ''));
+    show(r.code, !make); show(r.in, make); r.in.disabled = !!run;
+    txt(r.code, have ? v.code : ''); cls(r.code, 'sm-rf-code' + (have ? '' : ' is-wait'));
+    if (have && r.code._n !== v.code.length) { r.code._n = v.code.length; r.code.style.setProperty('--n', String(Math.max(8, v.code.length))); }
+    show(r.copy, !make); show(r.share, !make && REF.canShare); show(r.make, make);
+    cls(r.copy, 'sm-btn ' + (REF.canShare ? 'is-ghost' : 'is-primary is-wide')); r.copy.disabled = !have; r.share.disabled = !have;
+    txt(r.make, run === 'make' ? word : 'Make my code'); cls(r.make, 'sm-btn is-primary is-wide' + (run === 'make' ? ' is-busy' : '')); r.make.disabled = !!run;
+    var link = have ? refLink(v.code) : '';
+    if (!have) { r.qr.hidden = true; r.qr._for = ''; }
+    else if (r.qr._for !== link) { r.qr._for = link; r.qr.hidden = false; r.qr.width = 0; drawQr(r.qr, link); refQrFit(40); }
+    var qr = have && !r.qr.hidden, hint = proText('referHint');
+    show(r.qrOff, !qr);
+    txt(r.tipB, none ? 'Your own link and QR code' : have ? (qr ? 'Meeting in person?' : 'Your link is ready') : make ? 'Pick your code' : 'One moment');
+    txt(r.tipT, none ? 'Connect your wallet to make them.' : have ? (qr ? 'Your friend scans this and opens confetti with your code.' : 'Copy it or share it with the keys above.') : make ? REF_RULES : /configured/.test(hint) ? hint : 'Reading your code from the chain…');
+    /* earned */
+    show(r.earn, !none);
+    var sum = api.demo ? usd(0) : REF.got && REF.got.a === v.account ? usd(REF.got.n) : /^\$/.test(v.earned) ? v.earned : '$—';
+    txt(r.amt, sum); cls(r.amt, /[1-9]/.test(sum) ? 'sm-up' : '');      /* money made is green, as everywhere in Simple */
+    txt(r.note, (pct ? 'Your ' + pct : 'Your share') + ' lands in your trading money as your friends trade.');
+    show(r.claimRow, !!v.due);
+    txt(r.claimT, v.due ? v.due + ' is waiting in your extra codes.' : '');
+    txt(r.claim, run === 'claim' ? word : 'Claim ' + v.due + ' to your wallet'); cls(r.claim, 'sm-btn is-ghost' + (run === 'claim' ? ' is-busy' : '')); r.claim.disabled = !!run;
+    /* how it works, and who referred this wallet */
+    txt(r.how3, 'You earn ' + (pct || 'a share') + ' of what their trades pay in.');
+    var by = v.by.replace(/ · set on your first fill$/, ' · from your first trade');
+    show(r.by, !!by && by !== '—' && by !== 'none'); txt(r.byV, by);
+    /* more codes */
+    show(r.moreKey, v.more); show(r.codes, v.more && REF.more);
+    r.moreKey.setAttribute('aria-expanded', v.more && REF.more ? 'true' : 'false');
+    txt(r.moreSum, v.total === '…' || v.total === '—' ? '' : /retrying/.test(v.total) ? 'not loaded yet' : v.total);
+    var sig = JSON.stringify(v.rows);
+    if (REF.rows !== sig) {
+      REF.rows = sig; r.list.textContent = '';
+      v.rows.forEach(x => {
+        var c = x.link ? btn('sm-copy', 'Copy', () => { copyText(x.link, c); }) : null;
+        if (c) c.setAttribute('aria-label', 'Copy the link of ' + x.name);
+        add(r.list, h('div', 'sm-rf-row', [h('div', 'sm-t', [h('b', null, x.name), h('i', null, (x.earned || '—') + ' earned' + (x.due ? ' · ' + x.due + ' to claim' : ''))]), c]));
+      });
+    }
+    cls(r.vbox, 'sm-rf-box' + (REF.ring === 'create' ? ' is-bad' : ''));
+    r.vin.disabled = !!run;
+    txt(r.vgo, run === 'create' ? word : 'Create code'); cls(r.vgo, 'sm-btn is-ghost' + (run === 'create' ? ' is-busy' : '')); r.vgo.disabled = !!run;
+    /* the foot: what the last press came to, and for a visitor the way in */
+    show(r.go, none); txt(r.go, api.wallet().has ? 'Connect wallet' : 'Open in your wallet app');
+    txt(r.say, REF.say); cls(r.say, 'sm-say' + (REF.say && REF.bad ? ' is-bad' : ''));
+    refEdge();
+  }
+  /* more of the sheet below: its foot shows an edge, as Home's bar does over the list */
+  function refEdge() {
+    var sh = REF.sh, b = sh.body, more = b.scrollHeight - b.clientHeight - b.scrollTop > 2;
+    if (sh.d.classList.contains('is-more') !== more) sh.d.classList.toggle('is-more', more);
+  }
+  /* The QR code at 3 CSS px a module (drawQr draws 6 canvas px a module), so every square is a whole number of screen pixels
+     at any density. drawQr may first have to fetch qr.js: looked at again until it has drawn, or has given up (hidden). */
+  function refQrFit(tries) {
+    var cv = REF.R.qr;
+    if (cv.hidden) { paintRefer(); return; }
+    if (cv.width > 0) { cv.style.width = cv.style.height = cv.width / 2 + 'px'; return; }
+    if (tries > 0) setTimeout(() => { refQrFit(tries - 1); }, 150);
+  }
+  /* the phone's share sheet with the link (the key is there only where the browser has one) */
+  function refShareGo() {
+    var c = refCode(), link = c ? refLink(c) : '';
+    if (!link) return;
+    try { navigator.share({ title: 'confetti', text: 'Trade on confetti with my link.', url: link }).catch(e => { if (!e || e.name !== 'AbortError') copyText(link, REF.R.share); }); }
+    catch (e) { copyText(link, REF.R.share); }
+  }
+  /* One of the tab's three sends, by the tab's own key: make (its Register form), create (its Create code form), claim (its
+     Claim key). The form is filled in and submitted as a tap on its button would, so the tab runs its checks in its own
+     order: the code's shape, whether it is taken, the wallet and its network, then the send. What it answers comes back as
+     the form's hint in red (refRefused) or as a toast (refHeard). A wallet that is not on HyperEVM (Simple's Connect leaves
+     it where its ETH is) is moved there when the tab says so, and the same press goes in once more. */
+  function refGo(kind, code) {
+    if (REF.run || early()) return;
+    if (api.account().busy) { refSay('One moment: the last thing you sent is still going through.', true); return; }
+    REF.run = kind; REF.moved = false; REF.code = String(code || ''); REF.say = ''; REF.bad = false; REF.ring = '';
+    refPress();
+  }
+  function refPress() {
+    var kind = REF.run, mine = ++REF.seq;
+    REF.step = 'ask'; paintRefer();
+    /* the tab never leaves a press unanswered; if it somehow does, the key comes back */
+    setTimeout(() => { if (REF.seq === mine && REF.step === 'ask' && !api.account().busy) refEnd('That did not start. Press again.', true); }, 25000);
+    if (kind === 'claim') { REF.sync = true; try { $('vaultClaim').click(); } finally { REF.sync = false; } return; }
+    var make = kind === 'make', form = $(make ? 'referForm' : 'vaultForm'), field = $(make ? 'referCode' : 'vaultCode');
+    field.value = REF.code;
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    refRefused();
+  }
+  /* the tab refused the code in its form's hint: its shape, or it is taken */
+  function refRefused() {
+    if (REF.step !== 'ask' || REF.run === 'claim' || !REF.run) return;
+    var id = REF.run === 'make' ? 'referHint' : 'vaultHint', n = $(id);
+    if (!n || !n.classList.contains('is-err')) return;
+    var s = proText(id), taken = /^Code "(.+)" is taken\.$/.exec(s);
+    refEnd(taken ? 'The code ' + taken[1] + ' is taken. Try another one.' : plain(s), true, REF.run);
+  }
+  /* a toast of the tab while a send of this sheet is running: true when it was this send's (then the sheet says it) */
+  function refHeard(text, kind) {
+    var run = REF.run;
+    if (!run) return false;
+    if (kind === 'pending') { REF.step = 'chain'; paintRefer(); return true; }
+    if (kind === 'err') {
+      var m = /^(?:Register|Create|Claim) failed: ([\s\S]*)$/.exec(text), why = m ? m[1] : text;
+      /* without the tab's own "... failed:" it is this send's only when it is one of the refusals the tab makes before it
+         sends (said inside the press itself, or in its own words); anything else is some other part of the page speaking */
+      if (!m && !REF.sync && text !== api.gate() && !/^(Connect a wallet first|Switch the wallet to HyperEVM|ethers\.js not loaded|Exchange address not configured|This exchange does not settle|Referrals address unknown|Extra codes are not available)/.test(text)) return false;
+      if (/Switch the wallet to HyperEVM/.test(why) && !REF.moved) {
+        var mine = ++REF.seq, live = () => REF.seq === mine && REF.sh.isOpen;
+        REF.moved = true; REF.step = 'net'; paintRefer();
+        timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.').then(() => { if (live()) refPress(); },
+          e => { if (live()) refEnd(/another network/i.test(String(e && e.message)) ? plain(e.message) : errText(e), true); });
+        return true;
+      }
+      refEnd(plain(why), true);
+      return true;
+    }
+    if (kind === 'ok' && /^Code \S+ is yours/.test(text)) {
+      if (run === 'create') REF.R.vin.value = ''; else REF.R.in.value = '';
+      refEnd('Code ' + /^Code (\S+) /.exec(text)[1] + ' is yours.', false);
+      return true;
+    }
+    if (kind === 'ok' && /to your wallet/.test(text)) { refEnd(plain(text), false); return true; }
+    if (!kind && /^Demo: /.test(text)) { refEnd('Demo: pretend money. Nothing is sent.', false); return true; }
+    return false;
+  }
+
 
   /* ---- the sheet: dollars, Boost, both outcomes in dollars, one Open ---- */
 
@@ -4764,6 +5039,7 @@
     who = api.wallet().account || null; loadPend();
     applyMode();
     if (shown()) bootCoin();
+    if (shown()) refShare();      /* the menu's "earn 15%" is the chain's own number */
     /* trade.html?levels=2: the $FETTI page's "Get a level" key, the level sheet open on Level 2 */
     try { var lvq = new URLSearchParams(location.search).get('levels'); if (lvq && shown()) setTimeout(() => { if (fx()) openLevels(Number(lvq) || null); }, 600); } catch (e) { /* none asked for */ }
     BOOT.hash = '';
