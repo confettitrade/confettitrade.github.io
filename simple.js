@@ -1768,7 +1768,7 @@
   var FT = { bal: null, rf: null, rw: null, allow: null };
   /* FETTI as a way to add money is switched off (the owner, 2026-11-21: "pause this immediately"). false: the way is not
      offered anywhere on the form and can never be the picked way. true brings it back exactly as it was. */
-  var FETTI_PAY = false;
+  var FETTI_PAY = true;
   function fcfg() { var c = api.cfg() || {}, s = c.swap || {}; return { tok: (c.contracts || {}).confetti, router: s.router, pair: s.pair, whype: s.whype, cap: Number(s.fettiMovePct) > 0 && Number(s.fettiMovePct) <= 10 ? Number(s.fettiMovePct) : 2 }; }
   function setReserves(r, f) { var w0 = BigInt(f.whype) < BigInt(f.tok); FT.rw = BigInt(w0 ? r[0] : r[1]); FT.rf = BigInt(w0 ? r[1] : r[0]); }
   function readFetti() {
