@@ -1771,7 +1771,7 @@
     var est = estimateClose(p, inst, px, queueEmpty);
     var bust = px18ToNum(posBust18(p));
     var busted = bust > 0 && (p.isLong ? px <= bust : px >= bust);
-    return { pnl: busted ? -posIn(p) : est.net, worth: busted ? 0 : Math.max(0, est.payout), busted: busted };
+    return { pnl: busted ? -posColl(p) : est.net, worth: busted ? 0 : Math.max(0, est.payout), busted: busted };
   }
   function renderHoverPnl(param) {
     var box = $('chartHoverPnl'), host = $('chartBox');
@@ -2421,7 +2421,7 @@
          the result against everything that went in, the open fee included; pnl stays the exchange's own figure. */
       r.tradeFee = Math.min(feeOnStake(pos.margin, posFeeX10(pos)), Math.max(0, r.payout));
       r.payout -= r.tradeFee;
-      r.net = r.payout - posIn(pos);      /* (amt2) the money itself: the borrow so far is in it, and it is never worse than all that went in */
+      r.net = r.payout - posColl(pos);    /* the owner, 2026-11-23: counted from what is in the trade, the open fee left out of the result */
       return r;
     }
     /* the collateral (v5: margin plus added margin) caps a loss and comes back with the result */
@@ -14068,7 +14068,7 @@
     var est = estimateClose(p, inst, px, queueEmpty);
     /* against what went in (both size charges counted, and the borrow so far: netPnl's rule). (amt3) At or past the
        price it closes itself at, the exchange liquidates it first: nothing comes back */
-    var inAmt = posIn(p), bust = tpslBust(p);
+    var inAmt = posColl(p), bust = tpslBust(p);
     if (bust > 0 && px > 0 && (p.isLong ? px <= bust : px >= bust)) est = { net: -inAmt, payout: 0 };
     return { away: now > 0 ? px / now - 1 : NaN, pnl: est.net, pct: inAmt > 0 ? est.net / inAmt : 0, margin: inAmt, back: est.payout };   /* back: what a close there gives back */
   }
@@ -16248,7 +16248,7 @@
         return { id: it.pid, sym: m ? m.symbol : '', sz: m ? m.szDecimals : null, isLong: p.isLong, lev: p.leverage, margin: posIn(p), entry: p.entry, px: it.px,
           stake: isV5() ? p.margin : null, closeCost: isV5() ? cc : null, back: Math.max(0, posColl(p) - cc),
           added: p.added > 0 ? p.added : 0, boost: Number(levShown(p)), part: pmPartOf(it.pid), can: pmCan(),
-          endPx: it.room.liq, away: it.room.away, near: it.room.cls, share: it.share, pnl: netPnl(le || e, posIn(p)), payout: le ? le.payout : e.payout, delayed: !!e.delayed,
+          endPx: it.room.liq, away: it.room.away, near: it.room.cls, share: it.share, pnl: netPnl(le || e, posColl(p)), payout: le ? le.payout : e.payout, delayed: !!e.delayed,
           status: st, est: !!le || !!fastOf(p.instrumentId),      /* est: pnl / payout are the live estimate (the card's ≈), not the figure at the last print */
           /* the take profit / stop loss rule: its levels, tpslStatus ('' while it waits; closing, held: why, ...) and, while
              its close is on the way, which level fired */
