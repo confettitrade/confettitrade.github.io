@@ -55,9 +55,9 @@
     --focus: 0 0 0 2px var(--page), 0 0 0 4px var(--accent);
     color-scheme: light;
   }
-  /* every sheet over Simple dims the page the same way (Pro's own: the modals, the phone sheets, the share card, the wallet chooser) */
+  /* every sheet over Simple dims the page the same way (Pro's own: the modals, the phone sheets, the wallet chooser) */
   html[data-mode="simple"] .modal::backdrop, html[data-mode="simple"] dialog.ph-sheet::backdrop,
-  html[data-mode="simple"] .cs-modal::backdrop, html[data-mode="simple"] dialog[aria-label="Choose a wallet"]::backdrop { background: rgba(42, 37, 32, 0.45); }
+  html[data-mode="simple"] dialog[aria-label="Choose a wallet"]::backdrop { background: rgba(42, 37, 32, 0.45); }
 
   /* ---- tokens --------------------------------------------------------------- */
   .sm-root, .sm-sheet {
@@ -1166,7 +1166,8 @@ body.cream-page .pts-bar { display: none; }
 }
 /* ---- the trade card at the end (the owner, 2026-11-19: two mock-ups and "can you use those at the end"). The card share.js
    draws, as wide as the column and 16:9 like the PNG, sits under the end screen's words; it is a key like everything here that
-   does something (a tap shares it), so it gets the paper key's rim and lip, its corners only just rounded. ---- */
+   does something (a tap opens its sheet), so it gets the paper key's rim and lip, its corners only just rounded. The sheet
+   it opens (the card's choices, Share) is share.js's own, with its own styles: every Share on every page opens that one. ---- */
 @media screen {
   :is(.sm-root, .sm-sheet) .sm-card { --k-r: 8px; --k-lip: 3px; --k-face: #f9edcf; display: block; width: 100%; margin: 22px 0 8px; padding: 0; overflow: hidden; }
   .sm-card canvas { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; opacity: 0; transition: opacity 160ms ease-out; }
@@ -1175,100 +1176,16 @@ body.cream-page .pts-bar { display: none; }
   .sm-panel-foot .sm-card-go { margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) { .sm-card canvas { transition: none; } }
 }
-/* ---- the card's choices (the owner, 2026-11-21: "make it so they customize the pnl cards too. removeable wallet address.
-   removable trade amount."). One small sheet, opened by the card or by Share your trade. The card is on top, flat (it is the
-   picture, not a key) and stays there while the choices under it scroll on a short phone. Then the two switches side by
-   side, each a paper key with a track and a knob (ink when on, sunk paper when off, the knob's side as well as the colour);
-   how the result shows, the three keys of every choice here; the four looks as small cards, the chosen one pressed in; the
-   caption in a box sunk into the paper, as every typed thing is; and the sheet's one black key. ---- */
+/* ---- the History rows' Share on the cream pages (portfolio.html on a phone): the key that opens that sheet. It was the one
+   flat box on a page of keys; now a paper key like the rest (the same place and size, 44 px, its words unchanged). ---- */
 @media screen {
-  .sm-cz-pv { flex: none; display: flex; justify-content: center; align-items: flex-start; padding: 2px var(--sm-pad) 14px; border-bottom: 1px solid var(--rule); }
-  .sm-cz-pv canvas {
-    display: block; flex: none; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: 8px; background: #f9edcf;
-    box-shadow: 0 0 0 1px var(--key-rim, #8a7f66), 0 10px 18px -10px rgba(42, 37, 32, 0.55);
-    opacity: 0; transition: opacity 160ms ease-out;
+  body.cream-page .ph-hist-share {
+    border: 1px solid var(--key-rim); border-radius: 10px; background: var(--raised);
+    box-shadow: 0 3px 0 var(--key-rim), 0 8px 10px -5px var(--key-shade), inset 0 1px 0 var(--key-hi);
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out; -webkit-user-select: none; user-select: none; touch-action: manipulation;
   }
-  .sm-cz-pv.is-in canvas { opacity: 1; }
-  .sm-cz .sm-sh-body { padding-top: 0; padding-bottom: 12px; }
-  .sm-cz-g { margin-top: 12px; }
-  .sm-cz-g > .sm-label { display: flex; align-items: center; height: 20px; margin-bottom: 7px; }      /* one height, with or without the words at its right: nothing shifts when they come */
-  .sm-cz-g > .sm-label .sm-hint { line-height: 20px; }
-  /* the two switches */
-  .sm-cz-sws { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 3px; }
-  :is(.sm-root, .sm-sheet) .sm-cz-sw { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 48px; padding: 0 10px 0 14px; font-size: 16px; font-weight: 600; text-align: left; }
-  .sm-cz-sw > span { min-width: 0; white-space: nowrap; }
-  .sm-cz-tog { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--key-rim, #8a7f66), inset 0 2px 3px rgba(42, 37, 32, 0.18); transition: background-color 160ms ease-out; }
-  .sm-cz-tog::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); box-shadow: 0 0 0 1px var(--key-rim, #8a7f66), 0 1px 2px rgba(42, 37, 32, 0.35); transition: transform 160ms ease-out; }
-  .sm-cz-sw[aria-checked="true"] .sm-cz-tog { background: var(--ink); box-shadow: inset 0 0 0 1px var(--key-ink-rim, #0f0d0b); }
-  .sm-cz-sw[aria-checked="true"] .sm-cz-tog::after { transform: translateX(18px); box-shadow: 0 0 0 1px var(--key-ink-rim, #0f0d0b), 0 1px 2px rgba(0, 0, 0, 0.4); }
-  /* a switch that is on is not a key pressed in: it stays up, and its track says on */
-  dialog.sm-sheet.sm-cz button.sm-cz-sw.sm-cz-sw[aria-checked="true"] {
-    background: var(--raised); color: var(--ink); border-color: var(--key-rim); transform: none;
-    box-shadow: 0 var(--k-now, 3px) 0 var(--key-rim), 0 calc(var(--k-now, 3px) + 5px) 10px -5px var(--key-shade), inset 0 1px 0 var(--key-hi);
-  }
-  dialog.sm-sheet.sm-cz button.sm-cz-sw.sm-cz-sw[aria-checked="true"]:active { --k-now: 1px; transform: translateY(2px); }
-  dialog.sm-sheet.sm-cz button.sm-cz-sw.sm-cz-sw[aria-checked="true"]:focus-visible { box-shadow: var(--focus), 0 var(--k-now, 3px) 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
-  .sm-cz-sw[disabled] { opacity: 0.45; }
-  /* the looks: four small cards */
-  .sm-cz-looks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-bottom: 3px; }
-  :is(.sm-root, .sm-sheet) .sm-cz-look { display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; min-height: 64px; padding: 5px 5px 6px; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; }
-  .sm-cz-look canvas { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: 5px; background: var(--sunken); box-shadow: 0 0 0 1px rgba(42, 37, 32, 0.28); }
-  .sm-cz-look > span { white-space: nowrap; }
-  /* the caption */
-  .sm-cz-cap {
-    display: block; width: 100%; height: 48px; margin: 0; padding: 0 14px; border: 0; border-radius: 10px; background: var(--raised); color: var(--ink);
-    font: inherit; font-size: 17px; outline: none; caret-color: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--key-rim, #8a7f66), inset 0 3px 5px rgba(42, 37, 32, 0.16);
-  }
-  .sm-cz-cap::placeholder { color: var(--ink-faint); }
-  .sm-sheet .sm-cz-cap:focus, .sm-sheet .sm-cz-cap:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--ink), inset 0 3px 5px rgba(42, 37, 32, 0.16); }
-  /* beside Result: said in ink, it is about what the card gives away */
-  .sm-cz .sm-label.is-amt .sm-hint.sm-cz-hint { color: var(--ink); white-space: nowrap; }
-  /* what the key did: a few seconds, over the foot of the choices, just above the key; nothing moves for it */
-  .sm-cz .sm-sh-foot { position: relative; }
-  .sm-cz-note {
-    position: absolute; left: var(--sm-pad); right: var(--sm-pad); bottom: 100%; z-index: 2; margin: 0 0 4px; padding: 11px 14px; border-radius: 10px;
-    background: var(--ink); color: var(--page); font-size: 15px; line-height: 1.35; overflow-wrap: anywhere;
-    box-shadow: 0 8px 16px -8px rgba(20, 17, 14, 0.6); animation: sm-fade 180ms ease-out;
-  }
-  .sm-cz-note:empty { display: none; }
-  /* typing the caption on a phone: the keyboard takes half the screen, so the sheet may use all that is left, the other
-     choices wait, and the card takes what room there is over the line being typed and the key */
-  dialog.sm-sheet.sm-cz.is-kb { max-height: 100vh; max-height: 100dvh; }
-  .sm-cz.is-kb .sm-cz-g:not(.is-cap) { display: none; }
-  .sm-cz.is-kb .sm-sh-body { flex: none; overflow: visible; }
-  .sm-cz.is-kb .sm-cz-pv { flex: 1 1 0; min-height: 0; overflow: hidden; container-type: size; }
-  .sm-cz.is-kb .sm-cz-pv canvas { width: min(100cqw, 100cqh * 1672 / 941); }
-  dialog.sm-sheet.sm-cz.is-kb { height: 90vh; height: 90dvh; }
-  @media (max-height: 700px) { dialog.sm-sheet.sm-cz.is-kb { height: 100vh; height: 100dvh; } }
-  /* a short phone: more choices wait under the fold, and the foot's edge says so */
-  .sm-cz .sm-sh-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 20px; pointer-events: none; background: linear-gradient(rgba(250, 246, 237, 0), var(--raised)); opacity: 0; transition: opacity 160ms ease-out; }
-  .sm-cz.has-more .sm-sh-foot::before { opacity: 1; }
-  @media (max-width: 374px) {
-    :is(.sm-root, .sm-sheet) .sm-cz-sw { padding: 0 8px 0 10px; font-size: 15px; }
-    :is(.sm-root, .sm-sheet) .sm-cz-look { padding: 4px 4px 5px; font-size: 12px; }
-  }
-  /* a phone under 820 px tall: the same sheet a little closer together, so everything is in view without a scroll from
-     360 x 780 up (shorter phones scroll the choices under the card) */
-  @media (max-height: 820px) {
-    .sm-cz-pv { padding-bottom: 12px; }
-    .sm-cz .sm-sh-body { padding-bottom: 10px; }
-    .sm-cz-g { margin-top: 10px; }
-    .sm-cz-g > .sm-label { margin-bottom: 6px; }
-    :is(.sm-root, .sm-sheet) .sm-cz-sw { min-height: 44px; }
-    :is(.sm-root, .sm-sheet) .sm-cz-look { gap: 4px; padding-bottom: 5px; }
-  }
-  /* a wide screen: the sheet takes the end panel's own place, from under the top bar to the bottom and as wide as that
-     panel, so there is one panel there and not a sheet over the lower half of another. No grab handle: nothing to pull */
-  @media (min-width: 641px) {
-    dialog.sm-sheet.sm-cz { top: 64px; width: 380px; max-width: none; height: auto; max-height: none; border-top: 0; }
-    .sm-cz .sm-sh-head { min-height: 64px; padding-top: 8px; }
-    .sm-cz .sm-sh-head::before { content: none; }
-    .sm-cz .sm-sh-foot { padding-bottom: 16px; }
-  }
-  @media (min-width: 641px) and (max-width: 1023px) { dialog.sm-sheet.sm-cz { width: 340px; } }
-  @media (min-width: 1280px) { dialog.sm-sheet.sm-cz { width: 400px; } }
-  @media (prefers-reduced-motion: reduce) { .sm-cz-pv canvas, .sm-cz-tog, .sm-cz-tog::after, .sm-cz .sm-sh-foot::before { transition: none; } .sm-cz-note { animation: none; } }
+  body.cream-page .ph-hist-share:active { background: var(--raised); transform: translateY(2px); box-shadow: 0 1px 0 var(--key-rim), 0 6px 10px -5px var(--key-shade), inset 0 1px 0 var(--key-hi); }
+  body.cream-page .ph-hist-share:focus-visible { box-shadow: var(--focus), 0 3px 0 var(--key-rim), inset 0 1px 0 var(--key-hi); }
 }
 /* ---- Close part and Add to this trade (v5; the owner, 2026-11-04: "can we make it so that you can close a % of your position",
    2026-11-19: "we are still doing top ups and partial closes right").
@@ -1427,6 +1344,20 @@ body.cream-page .pts-bar { display: none; }
   .sm-root .sm-kv.sm-pb > a::after { content: ""; position: absolute; inset: -10px -6px; }       /* a real target around the small key */
 }
 
+/* ---- (cf_FILLFEEL) the trade looks filled from the press (the owner, 2026-11-21: "make the site look like it fills faster", then
+   "skip this and just make it look filled"). An order on its way is drawn with the open trade's own card and rows (simple.js
+   posCard, ffLook), so there is nothing of its own to style: no wait state, no line, no burst. What is here:
+   .is-handing, the slide away of a sheet that gives way to the card its press is on (the order sheet, Close part): the slide it
+   always had, quick off the mark, so the card is in view sooner; a sheet closed by its ✕ or a swipe slides as it did.
+   .is-over, the card of an order that did not open: its top, "Not opened", what happened and its key.
+   .is-ff-wait, the trade's picture on a result's screen shown from the press on Close: its place is kept, the picture itself
+   comes with the real figures. ---- */
+@media screen {
+  dialog.sm-sheet.is-out.is-gone.is-handing { animation-timing-function: cubic-bezier(0.3, 0.7, 0.4, 1), ease-in; }
+  .sm-pos.is-over > .sm-btn { margin-bottom: 4px; }
+  .sm-root .sm-card.is-ff-wait canvas, .sm-panel-body .sm-card.is-ff-wait canvas { opacity: 0; }
+}
+
 /* ---- Refer friends (the owner, 2026-11-21: "switch the refer site to the new layout"). The menu's Refer friends opens a
    sheet of Simple's own (simple.js openRefer), where it used to throw the page into Pro.
    .sm-rf-pass: the card. The paper itself (the page colour and its dots) inside the ink line of a trade card, so the link
@@ -1539,4 +1470,55 @@ body.cream-page .pts-bar { display: none; }
   .sm-sheet.is-rf .sm-sh-foot { position: relative; z-index: 1; transition: box-shadow 150ms ease-out; }
   .sm-sheet.is-rf.is-more .sm-sh-foot { box-shadow: 0 -1px 0 var(--rule), 0 -12px 16px -12px rgba(42, 37, 32, 0.28); }
   @media (prefers-reduced-motion: reduce) { .sm-rf-more i, .sm-sheet.is-rf .sm-sh-foot { transition: none; } }
+}
+
+/* ---- One-tap trading (the owner, 2026-11-21: "when iu click on one tap trading from the menu it brings up the old layout",
+   "make one tap the default for all users make them all use it"). The menu's One-tap trading opens a sheet of Simple's own
+   (simple.js openOneTap), where it used to throw the page into Pro.
+   The card is the Refer friends card (.sm-rf-pass: the paper and its dots inside the ink line of a trade card) holding what a
+   trade card holds, in the trade card's own parts: a first line (what it is, how long it lasts), the state large in the brand
+   face (as a trade's result), one sentence, a line and a slim bar (the trade card's .sm-room: the trades its HYPE is good for)
+   and three facts on one ruled line (.sm-facts). One shape in every state, so nothing moves when the state changes; the state
+   word is one size for all of them, set from the card's own width so "Not set up yet" fits a 320 px phone on one line.
+   Under the card everything is flat, as in Refer friends. The keys are in the sheet's foot, by the thumb. ---- */
+@media screen {
+  .sm-ot-pass { margin-top: 4px; padding-bottom: 8px; }
+  .sm-ot-pass .sm-pill.is-warn { background: var(--warn-soft); color: var(--warn); }
+  .sm-ot-pass .sm-pill.is-plain { background: var(--sunken); color: var(--ink-muted); }
+  .sm-ot-word { display: block; height: 48px; margin-top: 6px; font-family: var(--font-brand); font-weight: 700; font-size: 27px; line-height: 48px; letter-spacing: -0.02em; white-space: nowrap; }
+  @supports (width: 1cqw) { .sm-ot-word { font-size: min(44px, calc(100cqw / (var(--n, 14) * 0.69))); } }
+  .sm-ot-word.is-on { color: var(--sm-pos-t); } .sm-ot-word.is-warn { color: var(--warn); } .sm-ot-word.is-bad { color: var(--sm-neg-t); }
+  /* not read yet: a quiet bar where the word will stand (no shimmer) */
+  .sm-ot-word.is-wait { width: 46%; height: 24px; margin: 18px 0 10px; background: var(--rule); border-radius: 4px; }
+  .sm-ot-sub { min-height: 46px; margin: 4px 0 0; font-size: 16px; line-height: 23px; color: var(--ink-muted); text-wrap: pretty; }
+  .sm-ot-meter { margin-top: 12px; }
+  .sm-ot-meter .sm-room-l { height: 24px; line-height: 24px; font-size: 16px; }
+  .sm-ot-meter .sm-room-v { font-size: 17px; }
+  .sm-ot-meter .sm-room-bar { height: 8px; margin-top: 6px; }
+  .sm-ot-meter.is-late .sm-room-v { color: var(--ink); }
+  /* not set up: the track where its HYPE will show, drawn empty (as the square where a QR code will stand in Refer friends) */
+  .sm-ot-meter.is-off .sm-room-bar { background: var(--raised); outline: 1px dashed var(--sm-edge); outline-offset: -1px; }
+  .sm-ot-meter.is-off .sm-room-bar i { display: none; }
+  .sm-ot-facts { margin-top: 14px; }
+  .sm-ot-facts .sm-fact { min-height: 48px; padding: 6px 0 4px; }
+  .sm-ot-know { margin: 14px 0 0; font-size: 14px; line-height: 1.45; text-wrap: pretty; }
+  /* the keys: one, or Top up and Renew side by side near its end */
+  .sm-ot-keys { display: grid; grid-template-columns: 1fr; gap: 10px; padding-bottom: 4px; }
+  .sm-ot-keys.is-two { grid-template-columns: 1fr 1.6fr; }
+  .sm-ot-keys .sm-btn { height: 52px; padding: 0 8px; font-size: 17px; white-space: nowrap; }
+  .sm-ot-keys .sm-btn[hidden] { display: none; }
+  /* the foot: one line over the keys (two lines kept, so the keys never move for it), the HYPE the wallet sends in ink, as
+     the amount in Add money's wallet line; a hairline parts it from the sheet, with a shade while more is below, as in
+     Refer friends */
+  .sm-sheet.is-ot .sm-sh-foot .sm-say { min-height: 42px; text-wrap: balance; }
+  .sm-sheet.is-ot .sm-sh-foot .sm-say b { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .sm-sheet.is-ot .sm-sh-foot { position: relative; z-index: 1; padding-top: 12px; box-shadow: 0 -1px 0 var(--rule); transition: box-shadow 150ms ease-out; }
+  .sm-sheet.is-ot .sm-sh-body { padding-bottom: 10px; }
+  .sm-sheet.is-ot.is-more .sm-sh-foot { box-shadow: 0 -1px 0 var(--rule), 0 -12px 16px -12px rgba(42, 37, 32, 0.28); }
+  @media (max-width: 374px) {
+    .sm-ot-pass { padding: 12px 12px 6px; }
+    .sm-ot-sub { font-size: 15px; line-height: 21px; min-height: 63px; }
+    .sm-ot-keys .sm-btn { font-size: 16px; padding: 0 4px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .sm-sheet.is-ot .sm-sh-foot { transition: none; } }
 }

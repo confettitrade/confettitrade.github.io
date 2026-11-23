@@ -461,6 +461,12 @@
     'error InsufficientStake(uint256 staked, uint256 requested)'
   ];
 
+  /* Referrals.sol (contracts.referrals), the one fragment this file calls, as trade.js has it: the wallet's own code, for
+     the QR code on its trade card. */
+  var REFERRALS_ABI = [
+    'function codeOf(address account) view returns (string)'
+  ];
+
   /* FETTI (contracts.confetti, the token v3 already used): plain ERC-20. */
   var CONFETTI_ABI = [
     'function balanceOf(address account) view returns (uint256)',
@@ -1938,32 +1944,39 @@
       return line;
     }
 
-    /* A block's timestamp; one retry (the public RPC rate-limits), then null: the card goes without its chart */
-    function timeOf(b) {
-      if (blockTs[b] != null) return Promise.resolve(blockTs[b]);
-      function get() {
-        return read.provider.getBlock(b).then(function (blk) {
-          if (!blk) throw new Error('block ' + b + ' not found');
-          blockTs[b] = Number(blk.timestamp);
-          return blockTs[b];
-        });
-      }
-      return get().catch(function () {
-        return new Promise(function (ok) { setTimeout(ok, 1500); }).then(get);
-      }).catch(function () { return null; });
+    /* The trade card's two extras, as the trade page fills them, each read-only and once per wallet: the wallet's own
+       referral code (Referrals.codeOf) and its FETTI level (fetti.js, when the page has it and money back is on).
+       Not known, or not read yet: the card goes without (the plain confetti.trade QR code, no level). */
+    var cardX = { addr: '', code: '', fx: false };
+    function cardLevel(a) {
+      var F = window.ConfettiFetti;
+      if (!F || !cfg) return 0;
+      if (!cardX.fx) { cardX.fx = true; F.setup(cfg, { demo: !!DEMO }); }
+      if (!F.on()) return 0;
+      F.loadMe(a, 60000);
+      var s = F.standing(a);
+      return s.known ? s.level : 0;
+    }
+    function cardWarm() {
+      var a = pf && wallet.account && sameAddr(pf.addr, wallet.account) ? pf.addr.toLowerCase() : '';
+      if (!a) return;
+      cardLevel(a);
+      if (cardX.addr === a || !read.provider || !cfg.contracts.referrals) return;
+      cardX.addr = a; cardX.code = '';
+      new window.ethers.Contract(cfg.contracts.referrals, REFERRALS_ABI, read.provider).codeOf(a).then(function (c) {
+        if (cardX.addr === a) cardX.code = /^[a-z0-9_]{3,16}$/.test(c) ? c : '';
+      }, function () { if (cardX.addr === a) cardX.addr = ''; });      /* asked again on the next poll */
     }
 
-    /* What the share card needs for one winning close: r its PositionClosed row, o its open (pf.opened) */
+    /* What the trade card needs for one winning close: r its PositionClosed row, o its open (pf.opened). The result
+       against what went in, as this page's rows say them: what went in is the stake that close closed (what part closes
+       left of it) and, on v5, what opening it took. */
     function shareTrade(r, o) {
-      var addr = pf.addr;
-      return Promise.all([timeOf(o.block), timeOf(r.block)]).then(function (ts) {
-        var inst = mk.byInstId[o.instrumentId];
-        return {
-          id: String(r.args.positionId), sym: symOf(o.instrumentId), coin: inst ? inst.coin : null, szDecimals: inst ? inst.szDecimals : null,
-          side: o.isLong ? 'long' : 'short', lev: o.leverage, margin: o.margin, entry: o.entry,
-          exit: px18(r.args.exitPx18), pnl: rowNet(r), openTs: ts[0], closeTs: ts[1], account: addr
-        };
-      });
+      var pid = String(r.args.positionId), stake = pf.left[pid] != null ? pf.left[pid] : o.margin;
+      return {
+        id: pid, sym: symOf(o.instrumentId), side: o.isLong ? 'long' : 'short', lev: o.leverage, margin: stake + rowFees(r).open,
+        pnl: rowNet(r), account: pf.addr, code: sameAddr(cardX.addr, pf.addr) ? cardX.code : '', level: cardLevel(pf.addr)
+      };
     }
 
     function render() {
@@ -2038,6 +2051,7 @@
     function refresh() {
       if (!pf || DEMO) { render(); return Promise.resolve(); }
       var s = pf;
+      cardWarm();
       return readHead().then(function () {
         return Promise.all([
           readAccount().catch(function (e) {
@@ -2058,7 +2072,6 @@
     }
 
     function init() {
-      if (window.ConfettiShare) window.ConfettiShare.use({ postInfo: postInfo });
       var more = $('pfMore');
       if (more) more.addEventListener('click', function () { if (pf) { pf.shown += HIST_PAGE; render(); } });
       /* crossing 640 px (a rotate, a resize) redraws the lists in the other layout */

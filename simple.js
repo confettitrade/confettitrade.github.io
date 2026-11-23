@@ -18,7 +18,7 @@
   var ZERO = '0x0000000000000000000000000000000000000000';
   var NAMES = {
     BTC: 'Bitcoin', ETH: 'Ether', SOL: 'Solana', DOGE: 'Dogecoin', XRP: 'XRP', LINK: 'Chainlink', PUMP: 'Pump', FARTCOIN: 'Fartcoin',
-    VIRTUAL: 'Virtuals', WIF: 'dogwifhat', MELANIA: 'Melania', FLOKI: 'Floki', PENGU: 'Pudgy Penguins', PEOPLE: 'ConstitutionDAO', TRUMP: 'Trump', PEPE: 'Pepe'
+    VIRTUAL: 'Virtuals', WIF: 'dogwifhat', MELANIA: 'Melania', FLOKI: 'Floki', PENGU: 'Pudgy Penguins', PEOPLE: 'ConstitutionDAO', TRUMP: 'Trump', PEPE: 'Pepe', ZEC: 'Zcash'
   };
   /* The chains a wallet's ETH is read on and sent from. keep: ETH left for that chain's own network fee. */
   var CH = {
@@ -389,6 +389,7 @@
     if (!shown()) return;
     /* which level fired, kept for its result ("closed by your take profit") wherever the person is when it fires */
     if (api.wallet().account) api.positions().forEach(x => { if (x.auto && x.auto.fired) AUTO.fired[x.id] = x.auto.fired; });
+    ffSync(); ffDoneCheck();      /* (cf_FILLFEEL) each order's own place, from its press to its trade; a close shown ahead of the chain */
     paintTop();
     if (isDesktop()) {
       paintDesktopLeft();
@@ -404,6 +405,7 @@
     if (PART.sh && PART.sh.isOpen) paintPart();      /* Close part / Add to this trade, the same */
     if (LV.sh && LV.sh.isOpen) paintLevels();        /* FETTI levels (fetti.js), on a phone and on a desktop */
     if (REF.sh && REF.sh.isOpen) paintRefer();       /* Refer friends, the same */
+    if (OT.sh && OT.sh.isOpen) paintOneTap();        /* One-tap trading, the same */
     addr();
   }
   /* The list scrolls under the bottom bar, never behind it: while more is below, the bar has an edge (so a row cut at the
@@ -419,7 +421,7 @@
 
   function paintDesktopLeft() {
     var w = api.wallet(), a = api.account(), mk = api.markets();
-    var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? api.openings() : [];
+    var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? ffOrders() : [];
     var st = homeState(w, a), p = ADD.pend;
     /* the result card also says which price the trade ended at once that is known (v5: "price at 12:03:05, Pyth") */
     var resAt = S.res ? ((api.result(S.res.pid) || {}).at || '') : '';
@@ -499,7 +501,7 @@
     if (DK.R.fx) fxFill(DK.R.fx);
 
     /* update trade rows */
-    var ps2 = w.account && a.loaded ? api.positions() : [], os2 = w.account ? api.openings() : [];
+    var ps2 = w.account && a.loaded ? api.positions() : [], os2 = w.account ? ffOrders() : [];
     ps2.forEach(x => {
       var r = DK.R.rows['p' + see(x)]; if (!r) return;
       var st2 = x.status;
@@ -509,7 +511,7 @@
       txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
       txt(r.c, x.delayed || !isFinite(x.pnl) ? 'price delayed' : pct(x.pnl / x.margin)); cls(r.c, tone(x.pnl));
     });
-    os2.forEach(o => { var r = DK.R.rows['o' + o.key]; if (r) { txt(r.sub, plainStatus(o.say)); cls(r.sub, o.tone === 'bad' ? 'sm-dn' : ''); } });
+    os2.forEach(o => { var r = DK.R.rows['o' + o.key]; if (r) ffRowLook(r, o); });      /* (cf_FILLFEEL) an order on its way: its trade's row */
 
     /* update coin rows */
     var mk2 = api.markets();
@@ -544,12 +546,18 @@
 
     var m = market(S.sym), q = api.price(S.sym), w = api.wallet(), a = api.account();
     var ps = w.account && a.loaded ? api.positions().filter(x => x.sym === S.sym) : [];
-    var os = w.account ? api.openings().filter(o => o.sym === S.sym) : [];
+    var allOs = w.account ? ffOrders() : [], os = allOs.filter(o => o.sym === S.sym);
 
     var allPs = w.account && a.loaded ? api.positions() : [];
-    var sig = ['center', S.sym, S.pid, ps.map(x => x.id).join(','), os.map(o => o.key).join(','), allPs.map(x => x.id).join(','), COIN.tf, S.place].join('|');
+    /* (cf_FILLFEEL) an order on its way stands here as the trade it becomes (ffLook): among this coin's cards and among "All
+       your open trades", the strip that is in view on a wide screen; one that will not become a trade: what became of it */
+    var overs = os.filter(o => !ffLook(o)), psD = ffLooks(os).concat(ps), allD = ffLooks(allOs).concat(allPs);
+    var sig = ['center', S.sym, S.pid, psD.map(x => x.id).join(','), overs.map(o => o.key).join(','), allD.map(x => x.id).join(','), COIN.tf, S.place].join('|');
     if (DK.centerSig !== sig) {
       DK.centerSig = sig;
+      /* (cf_FILLFEEL) built again when an order or a trade comes or goes: this coin's chart, alive and on screen, is kept as it
+         is (made anew it stood empty for a moment each time), and so is how far the middle is scrolled */
+      var was = DK.CR, keepC = !!(m && was && was.chart && was.chart.isConnected && smChart.api && smChart.host === was.chartHost && smChart.coin === m.coin), y0 = inner.scrollTop;
       inner.textContent = '';
       DK.CR = { cards: {} };
 
@@ -564,10 +572,11 @@
       add(inner, DK.CR.stats);
 
       /* chart: LightweightCharts container */
-      var chart = h('div', 'sm-chart' + (ps.length ? ' is-set' : ''));
-      DK.CR.chartHost = h('div', 'sm-chart-lw');
-      DK.CR.csay = h('div', 'sm-chart-say', '');
-      add(chart, [DK.CR.chartHost, DK.CR.csay]);
+      var chart = keepC ? was.chart : h('div', 'sm-chart');
+      cls(chart, 'sm-chart' + (psD.length || overs.length ? ' is-set' : ''));      /* an order has its trade's place from the press */
+      DK.CR.chart = chart; DK.CR.chartHost = keepC ? was.chartHost : h('div', 'sm-chart-lw');
+      DK.CR.csay = keepC ? was.csay : h('div', 'sm-chart-say', '');
+      if (!keepC) add(chart, [DK.CR.chartHost, DK.CR.csay]);
       add(inner, chart);
 
       /* timeframe and mode buttons */
@@ -585,15 +594,16 @@
       add(inner, DK.CR.tf);
 
       /* initialize chart after layout */
-      setTimeout(() => { initSmChart(DK.CR.chartHost, m.coin, m.sz); }, 0);
+      if (!keepC) setTimeout(() => { initSmChart(DK.CR.chartHost, m.coin, m.sz); }, 0);
 
       /* positions */
-      if (ps.length || os.length) {
+      if (psD.length || overs.length) {
         var trades = h('div', 'sm-trades');
-        os.forEach(o => { trades.appendChild(buildPosCardDesktop(o, true)); });
-        ps.forEach(x => { trades.appendChild(buildPosCardDesktop(x, false)); });
-        var tl = h('div', 'sm-label', (ps.length + os.length > 1 ? 'Your trades on ' : 'Your trade on ') + S.sym); tl.style.marginTop = '28px'; add(inner, [tl, trades]);
+        overs.forEach(o => { var s = o.slot || ffSlot(o.key); if (s) trades.appendChild(ffOverCard({ k: 'o' + o.key, s: s, o: o }).n); });
+        psD.forEach(x => { trades.appendChild(buildPosCardDesktop(x)); });
+        var tl = h('div', 'sm-label', (psD.length + overs.length > 1 ? 'Your trades on ' : 'Your trade on ') + S.sym); tl.style.marginTop = '28px'; add(inner, [tl, trades]);
       }
+      if (keepC) inner.scrollTop = y0;
 
       /* Up/Down bar */
       dirbar.hidden = false;
@@ -605,13 +615,12 @@
 
       /* All open trades section: all positions across all coins */
       var allTr = el.allTrades;
-      if (allPs.length) {
+      if (allD.length) {
         allTr.hidden = false;
         allTr.textContent = '';
         DK.AT = { cards: {} };
         add(allTr, h('div', 'sm-label', 'All your open trades'));
-        allPs.sort((a2, b2) => (b2.openedAt || 0) - (a2.openedAt || 0));
-        allPs.forEach(x => {
+        allD.forEach(x => {
           var c = DK.AT.cards[x.id] = { pnl: h('span', 'sm-all-pnl', '—'), close: h('button', 'sm-all-close', 'Close'), room: h('span', 'sm-room-s') };
           var coin = h('span', 'sm-all-coin', x.sym); coin.addEventListener('click', () => { selectCoin(x.sym, x.id); });
           var pill = c.pill = h('span', 'sm-all-pill ' + (x.isLong ? 'sm-pill is-up' : 'sm-pill is-dn'), (x.isLong ? '▲ ' : '▼ ') + boostOf(x) + '×');
@@ -619,6 +628,7 @@
           c.close.addEventListener('click', () => { if (c.close._act) { if (!early()) c.close._act(); return; } closeGo(x.id); });
           c.auto = h('span', 'sm-all-auto', ''); c.auto.hidden = true;      /* its take profit and stop loss once set (kept current below) */
           var card = h('div', 'sm-all-card', [coin, pill, inAmt, c.room, c.pnl, c.close, c.auto]);
+          if (x.ff) ffGuard(card);
           allTr.appendChild(card);
         });
       } else {
@@ -647,7 +657,7 @@
     }
 
     /* trade cards: P&L, the Close button, and why a close did not happen */
-    ps.forEach(x => {
+    psD.forEach(x => {
       var c = DK.CR.cards && DK.CR.cards[x.id]; if (!c) return;
       var mine = COIN.closing === x.id, err = COIN.errs[x.id] || '';
       txt(c.pnl, (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(c.pnl, 'sm-pnl ' + tone(x.pnl));
@@ -662,24 +672,19 @@
       var say = err || (sb ? (again ? 'It did not close. Your trade is still open.' : own ? OWN_SAY : 'It is taking longer than usual. One press finishes it.') : '');
       var as = say ? '' : autoSay(x);      /* else: a take profit / stop loss that fired, or waits on hold */
       txt(c.say, say || as); cls(c.say, 'sm-say' + (say ? ' is-bad' : ' is-warn')); show(c.say, !!(say || as));
+      otKey(c.go, c.say, x);      /* one-tap for everyone: this close's wallet step, said on its key */
       txt(c.entry, price(x.entry, x.sz)); txt(c.end, price(x.endPx, x.sz));
       txt(c.in, usdS(x.margin) + ' × ' + boostOf(x));
       autoKeySet(c.ak, x, !!(x.status || mine));
       partKeysSet(c.pk, x, !!(x.status || mine));
       poweredSet(c.pb);
+      ffLate(c, x); ffPartLook(c, x);
     });
-    /* an order held up: its key gets the money back (or finishes it), as on a phone */
-    os.forEach(o => {
-      var c = DK.CR.cards && DK.CR.cards['o' + o.key]; if (!c) return;
-      txt(c.say, plainStatus(o.say));
-      var ob = o.kind === 'end' ? '' : o.btn;
-      show(c.go, !!ob); txt(c.go, ob ? (/back/.test(ob) ? ob : 'Finish opening now') : '');
-      c.go._act = ob ? () => { api.openingAct(o.key); } : null;
-    });
+    overs.forEach(o => { var c = DK.CR.cards && DK.CR.cards['o' + o.key]; if (c) ffOverPaint(c, o); });
 
     /* all trades section: update P&L */
     if (DK.AT && DK.AT.cards) {
-      allPs.forEach(x => {
+      allD.forEach(x => {
         var c = DK.AT.cards[x.id]; if (!c) return;
         var ok = !x.delayed && isFinite(x.pnl);
         txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-all-pnl ' + (ok ? tone(x.pnl) : ''));
@@ -688,7 +693,7 @@
         var st = x.status, sb = st && !st.final && st.btn ? st.btn : '', again = /again/i.test(sb), own = !!(sb && !again && st.own);
         c.close._act = sb ? () => { heldCloseGo(x.id, own); } : null;
         c.close.disabled = !sb && (!!COIN.closing || !!st);
-        c.close.textContent = sb ? (again ? 'Close again' : own ? 'Close now' : 'Finish now') : st && st.final ? 'Closed' : st || COIN.closing === x.id ? 'Closing…' : 'Close';
+        c.close.textContent = sb ? (again ? 'Close again' : own ? 'Close now' : 'Finish now') : st && st.final ? 'Closed' : OT.close && OT.close.pid === x.id ? 'In your wallet…' : st || COIN.closing === x.id ? 'Closing…' : 'Close';
         if (sb) c.close.title = again ? 'It did not close. Your trade is still open.' : own ? OWN_SAY : 'It is taking longer than usual. One press finishes it.'; else c.close.removeAttribute('title');
         var a = x.auto || {}, at = [a.tp != null ? 'Take profit ' + price(a.tp, x.sz) : '', a.sl != null ? 'Stop loss ' + price(a.sl, x.sz) : ''].filter(Boolean).join(' · ');
         txt(c.auto, at); show(c.auto, !!at);
@@ -705,26 +710,21 @@
     });
   }
 
-  function buildPosCardDesktop(x, isOpening) {
-    var card = h('div', 'sm-pos' + (isOpening ? ' is-quiet' : ''));
-    var c = { pnl: h('div', 'sm-pnl'), say: h('p', 'sm-say is-bad') };
-    c.in = h('span', 'sm-in', usdS(x.margin) + ' × ' + (isOpening ? x.lev : boostOf(x)));
+  function buildPosCardDesktop(x) {
+    var card = h('div', 'sm-pos');
+    var c = { n: card, pnl: h('div', 'sm-pnl'), say: h('p', 'sm-say is-bad') };
+    c.in = h('span', 'sm-in', usdS(x.margin) + ' × ' + boostOf(x));
     var hdr = h('div', 'sm-pos-h', [h('span', null, [sidePill(x.isLong), c.in])]);
     add(card, hdr);
-    if (!isOpening) {
-      c.room = roomNew();
-      c.go = btn('sm-btn is-primary', '', () => { if (c.go._act) { if (!early()) c.go._act(); return; } if (!COIN.closing && !early()) closeGo(x.id); });
-      /* the phone card's figures under the key: where it opened, where it closes itself, its take profit and stop loss,
-         then Close part and Add to this trade (v5) */
-      c.entry = h('span', null, '—'); c.end = h('span', 'sm-dn', '—'); c.ak = autoKey(x); c.pk = partKeys(x); c.pb = poweredRow();
-      c.say.hidden = true; add(card, [c.pnl, c.room.n, c.go, c.say,
-        h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.ak.n, c.pk ? c.pk.n : null, c.pb])]);
-      DK.CR.cards[x.id] = c;
-    } else {
-      c.say = h('p', 'sm-say', plainStatus(x.say));
-      c.go = btn('sm-btn is-primary', '', () => { if (c.go._act && !early()) c.go._act(); }); c.go.hidden = true;
-      add(card, [c.say, c.go]); DK.CR.cards['o' + x.key] = c;
-    }
+    c.room = roomNew();
+    c.go = btn('sm-btn is-primary', '', () => { if (c.go._act) { if (!early()) c.go._act(); return; } if (!COIN.closing && !early()) closeGo(x.id); });
+    /* the phone card's figures under the key: where it opened, where it closes itself, its take profit and stop loss,
+       then Close part and Add to this trade (v5) */
+    c.entry = h('span', null, '—'); c.end = h('span', 'sm-dn', '—'); c.ak = autoKey(x); c.pk = partKeys(x); c.pb = poweredRow();
+    c.say.hidden = true; add(card, [c.pnl, c.room.n, c.go, c.say,
+      h('div', 'sm-kvs', [h('div', 'sm-kv', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-kv', [h('span', null, 'Closes itself at'), c.end]), c.ak.n, c.pk ? c.pk.n : null, c.pb])]);
+    DK.CR.cards[x.id] = c;
+    if (x.ff) ffGuard(card, () => c.go._ffLive ? c.go : null);      /* (cf_FILLFEEL) an order drawn as its trade: its keys wait for the trade */
     return card;
   }
 
@@ -885,16 +885,22 @@
     else if (fin != null) why = 'Finish the ' + (tpF.fin != null ? 'take profit' : 'stop loss') + ' price: did you mean ' + price(fin, t.sz) + '?';
     else if (tp != null || sl != null) why = tpF.bad || slF.bad || autoWhy(api.autoCheck(oo, tp, sl) || '');
 
+    /* one-tap for everyone, as on a phone (paintOrder): said above the key before the press, what the wallet shows while it is
+       asked, and Add money as the key for a wallet short of the HYPE for it */
+    var ot = !why ? otWhy(oo) : '', otShort = !!ot && !DK.busy && otView().short;
+    if (otShort) why = OT_SHORT;
     /* a take profit or stop loss typed: what to know about it stands above the button (as on a phone) */
-    var note = !why && !DK.orderErr && (tp != null || sl != null) ? (onChain ? CHAIN_ALWAYS : (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open in this browser.') : '';
+    var note = DK.busy && DK.ot ? DK.ot : ot && !otShort && !DK.orderErr ? otNote(ot)
+      : !why && !DK.orderErr && (tp != null || sl != null) ? (onChain ? CHAIN_ALWAYS : (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open in this browser.') : '';
     if (onChain && sl != null) txt(DK.OR.autoFine, chainStop(lev));
     show(DK.OR.autoFine, (tp == null && sl == null) || (onChain && sl != null));
-    txt(DK.OR.say, why || DK.orderErr || note); cls(DK.OR.say, 'sm-say' + ((why && !autoWait(why)) || DK.orderErr ? ' is-bad' : ''));
-    var word = DK.busy ? (!api.demo && (!api.session().live || t.oneTap) ? CONFIRM : 'Opening…') : '';
-    DK.OR.go._add = needMoney && !t.block && !DK.busy;
+    txt(DK.OR.say, why || DK.orderErr || note); cls(DK.OR.say, 'sm-say' + ((why && !autoWait(why)) || DK.orderErr ? ' is-bad' : DK.busy && DK.ot ? ' is-warn' : ''));
+    /* (cf_FILLFEEL) the key answers by going down, with its own words: the wallet's turn is said, never a wait ("Opening…") */
+    var word = DK.busy && (DK.ot || (!api.demo && (!api.session().live || t.oneTap))) ? CONFIRM : '';
+    DK.OR.go._add = (needMoney || otShort) && !t.block && !DK.busy;
     txt(DK.OR.go, word || (DK.OR.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' · ' + usdS(amt2) + ' × ' + lev));
-    cls(DK.OR.go, 'sm-btn ' + (DK.OR.go._add ? 'is-primary' : up ? 'is-up' : 'is-dn') + (word ? ' is-busy' : ''));
-    DK.OR.go.disabled = !!word || (!!why && !DK.OR.go._add);
+    cls(DK.OR.go, 'sm-btn ' + (DK.OR.go._add ? 'is-primary' : up ? 'is-up' : 'is-dn') + (DK.busy ? ' is-busy' : ''));
+    DK.OR.go.disabled = !!DK.busy || (!!why && !DK.OR.go._add);
   }
 
   function desktopOrderGo() {
@@ -903,17 +909,19 @@
     if (DK.OR.go.disabled) return;
     var amt = parseFloat(String(DK.orderTyped).replace(/[^0-9.]/g, '')) || 0, want = DK.OR.want || {};
     var o = { sym: DK.orderSym, isLong: DK.orderLong, margin: amt, lev: DK.orderLev, maxed: DK.orderAll, tp: want.tp != null ? want.tp : null, sl: want.sl != null ? want.sl : null };
-    var s = api.session(), t = api.trade(o) || {};
+    var s = api.session(), t = api.trade(o) || {}, ot = otWhy(o);
     /* this press has a token: closing the panel ends it, and a press that has ended sends nothing */
     var mine = DK.busy = Date.now() + Math.random();
-    DK.orderErr = ''; S.claim = true; S.lastErr = null; paint();
-    (!api.demo && (!s.live || t.oneTap) ? timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.') : Promise.resolve()).then(() => {
+    DK.orderErr = ''; DK.ot = ot ? otAsk(ot, 'Then this trade opens.') : ''; S.claim = true; S.lastErr = null; paint();
+    /* one-tap for everyone: the wallet is asked that one thing first (otStep), then the open goes out through one-tap */
+    (ot ? otStep(o) : !api.demo && (!s.live || t.oneTap) ? timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.') : Promise.resolve()).then(() => {
+      DK.ot = '';
       if (DK.busy !== mine || DK.panel !== 'order') { S.claim = false; return; }
-      var why = api.open(o); DK.busy = false; S.claim = false;
+      var why = api.open(o); DK.busy = false; S.claim = false; if (!why) { ffTap(o); ffAsk(); }
       if (why) { DK.orderErr = plain(why); paint(); return; }
       if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); lsSet('confetti.trade.lev.' + o.sym, String(o.lev));
       closePanel();
-    }, e => { if (DK.busy !== mine) return; DK.busy = false; S.claim = false; DK.orderErr = errText(e); paint(); });
+    }, e => { DK.ot = ''; if (DK.busy !== mine) return; DK.busy = false; S.claim = false; DK.orderErr = errText(e); paint(); });
   }
 
   function paintDesktopAdd() {
@@ -1029,7 +1037,7 @@
   function homeState(w, a) { return !w.account ? 'visitor' : !a.loaded ? 'loading' : (a.available >= 1 || a.inTrades > 0) ? 'money' : 'empty'; }
   function paintHome() {
     var w = api.wallet(), a = api.account(), mk = api.markets();
-    var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? api.openings() : [];
+    var ps = w.account && a.loaded ? api.positions() : [], os = w.account ? ffOrders() : [];
     var st = homeState(w, a), p = ADD.pend;
     var sig = ['home', st, w.has, p ? p.rail + p.state : '', S.res ? S.res.key : '', S.away.map(x => x.key).join(','), ps.map(x => x.id).join(','), os.map(x => x.key).join(','),
       mk.map(m => m.sym).join(','), api.applePayOn(), a.inTrades > 0, old4Sig(), fxShow(w, st)].join('|');
@@ -1049,7 +1057,7 @@
       txt(r.v, x.delayed || !isFinite(x.pnl) ? '—' : (x.est ? '≈ ' : '') + usdP(x.pnl)); cls(r.v, tone(x.pnl));
       txt(r.c, x.delayed || !isFinite(x.pnl) ? 'price delayed' : pct(x.pnl / x.margin)); cls(r.c, tone(x.pnl));
     });
-    os.forEach(function (o) { var r = R.rows['o' + o.key]; if (r) { txt(r.sub, plainStatus(o.say)); cls(r.sub, o.tone === 'bad' ? 'sm-dn' : ''); } });
+    os.forEach(function (o) { var r = R.rows['o' + o.key]; if (r) ffRowLook(r, o); });      /* (cf_FILLFEEL) an order on its way: its trade's row */
     mk.forEach(m => {
       var r = R.rows['m' + m.sym], q = api.price(m.sym); if (!r || !q) return;
       var move = q.prev > 0 && q.px > 0 ? q.px / q.prev - 1 : NaN;
@@ -1308,11 +1316,8 @@
     add(sub, item('Docs', '', null, 'docs.html'));
     add(sub, item('Contracts', '', null, 'contracts.html'));
     add(list, sub);
-    /* one-tap trading status */
-    if (w.account && !api.demo) {
-      var s = api.session();
-      add(list, item('One-tap trading', s.live ? 'On' : 'Off', () => { api.pro('menu'); setMode('pro'); }));
-    }
+    /* one-tap trading: Simple's own sheet, its state on the line (the demo's is pretend, like its money) */
+    if (w.account && otS().can) add(list, item('One-tap trading', otHint(), openOneTap));
     /* refer: Simple's own sheet (a visitor sees what it brings and a Connect key) */
     add(list, MENU.ref = item('Refer friends', refMenuHint(), openRefer));
     refShare();
@@ -3211,13 +3216,14 @@
   function syncSmPriceLines() {
     if (!smChart.series) return;
     var t = api.chart.theme();
-    var ps = api.positions().filter(function (x) { return x.sym === S.sym; });
+    /* (cf_FILLFEEL) an order on its way has its lines too, as the trade it becomes (its levels' lines are not to be moved yet) */
+    var ps = ffLooks(api.wallet().account ? ffOrders() : [], S.sym).concat(api.positions().filter(function (x) { return x.sym === S.sym; }));
     var lines = [];
     ps.forEach(function (p) {
       if (p.entry > 0) lines.push({ px: p.entry, title: 'You opened at', color: t.ink, style: 2 });
       if (p.endPx > 0) lines.push({ px: p.endPx, title: 'Closes itself at', color: t.accent, style: 0 });
-      if (p.auto && p.auto.tp != null) lines.push({ px: p.auto.tp, title: 'Take profit', color: t.pos, style: 2, pid: p.id, kind: 'tp' });
-      if (p.auto && p.auto.sl != null) lines.push({ px: p.auto.sl, title: 'Stop loss', color: t.neg, style: 2, pid: p.id, kind: 'sl' });
+      if (p.auto && p.auto.tp != null) lines.push({ px: p.auto.tp, title: 'Take profit', color: t.pos, style: 2, pid: p.id, kind: p.ff ? '' : 'tp' });
+      if (p.auto && p.auto.sl != null) lines.push({ px: p.auto.sl, title: 'Stop loss', color: t.neg, style: 2, pid: p.id, kind: p.ff ? '' : 'sl' });
     });
     var sig = lines.map(function (l) { return l.px + ':' + l.title; }).join('|');
     if (sig === smChart.lineSig || smChart.drag) return;      /* a line being dragged stays where the pointer has it */
@@ -3364,12 +3370,14 @@
     var sym = S.sym, w = api.wallet(), a = api.account(), q = api.price(sym), m = market(sym);
     if (!q || !m) { back(); return; }
     var ps = w.account && a.loaded ? api.positions().filter(x => x.sym === sym) : [];
-    var os = w.account ? api.openings().filter(o => o.sym === sym) : [];
+    var os = w.account ? ffOrders().filter(o => o.sym === sym) : [];
     var lims = w.account ? api.limits.orders().filter(o => o.sym === sym) : [];
     if (S.pid != null && !ps.some(x => x.id === S.pid)) S.pid = null;
-    var mode = ps.length || os.length || lims.length ? 'trade' : 'chart';
-    var sig = ['coin', sym, mode, COIN.tf, ps.map(x => x.id).join(','), os.map(o => o.key).join(','), lims.map(o => o.id).join(',')].join('|');
-    if (S.sig !== sig) { S.sig = sig; buildCoin(sym, mode, ps, os, lims); }
+    /* (cf_FILLFEEL) what stands on the screen: an order on its way as the trade it becomes, then the trades (ffItems). An order
+       that reached the chain, filled, or did not open keeps its card's place (ffMorph); anything else is built anew */
+    var items = ffItems(sym, ps, os), mode = items.length || lims.length ? 'trade' : 'chart';
+    var sig = ['coin', sym, mode, COIN.tf, items.map(it => it.k + it.kind.charAt(0)).join(','), lims.map(o => o.id).join(',')].join('|');
+    if (S.sig !== sig && !ffMorph(sig, sym, mode, items, lims)) { S.sig = sig; buildCoin(sym, mode, ps, os, lims); }
     var move = q.prev > 0 && q.px > 0 ? q.px / q.prev - 1 : NaN, pt = price(q.px, q.sz);
     flash(R.px, q.px); txt(R.px, pt); cls(R.px, 'sm-price' + (pt.length > 9 ? ' is-long' : '')); R.px.style.color = q.at && Date.now() - q.at < 15000 ? '' : 'var(--ink-muted)';
     txt(R.chg, isFinite(move) ? arrow(move) + pct(move) + ' today' : ''); cls(R.chg, 'sm-chg ' + tone(move));
@@ -3388,17 +3396,10 @@
     /* update tf and mode button states */
     if (R.lineBtn) R.lineBtn.setAttribute('aria-pressed', COIN.mode === 'line' ? 'true' : 'false');
     if (R.candleBtn) R.candleBtn.setAttribute('aria-pressed', COIN.mode === 'candles' ? 'true' : 'false');
-    os.forEach(o => {
-      var c = R.cards['o' + o.key]; if (!c) return;
-      txt(c.pnl, o.kind === 'end' ? 'Not opened' : 'Opening…'); txt(c.pct, o.tone ? plainStatus(o.say) : fillWords(o.sym)); cls(c.pct, 'sm-pnlp ' + (o.tone === 'bad' ? 'sm-dn' : 'sm-mute'));
-      /* an order that did not open: one press opens the sheet again for the same coin and side; one held up: one press finishes it */
-      var ob = o.btn, ended = o.kind === 'end' && !ob;
-      show(c.go, !!ob || ended);
-      txt(c.go, ended ? 'Try again' : ob ? (/back/.test(ob) ? ob : 'Finish opening now') : '');
-      c.go._act = () => { if (ended) openOrder(o.sym, o.isLong); else if (ob) api.openingAct(o.key); };
-    });
-    ps.forEach(x => {
-      var c = R.cards['p' + see(x)]; if (!c) return;
+    items.forEach(it => { var c = it.kind === 'over' && R.cards[it.k]; if (c) ffOverPaint(c, it.o); });
+    items.forEach(it => {
+      var x = it.x, c = x && R.cards[it.k]; if (!c || c.kind === 'over') return;
+      if (!x.ff) see(x);
       var ok = !x.delayed && isFinite(x.pnl);
       txt(c.pnl, ok ? (x.est ? '≈ ' : '') + usdP(x.pnl) : '—'); cls(c.pnl, 'sm-pnl ' + (ok ? tone(x.pnl) : 'sm-mute') + (c.pnlK || ''));
       txt(c.pct, ok ? pct(x.pnl / x.margin) : 'The price is delayed'); cls(c.pct, 'sm-pnlp ' + (ok ? tone(x.pnl) : 'sm-mute'));
@@ -3424,10 +3425,12 @@
       txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy; c.close._act = act;
       var as = say ? '' : autoSay(x);      /* else: a take profit / stop loss that fired, or waits on hold, says so here */
       txt(c.say, say || as); cls(c.say, 'sm-say' + (err && say === err ? ' is-bad' : as ? ' is-warn' : '')); show(c.say, !!(say || as));
+      otKey(c.close, c.say, x);      /* one-tap for everyone: this close's wallet step, said on its key */
       headSet(c, x);
       autoKeySet(c.ak, x, !!(st || mine));
       partKeysSet(c.pk, x, !!(st || mine));
       poweredSet(c.pb);
+      ffLate(c, x); ffPartLook(c, x);
     });
     /* limit order updates */
     lims.forEach(lm => {
@@ -3456,6 +3459,7 @@
       txt(c.close, label); cls(c.close, 'sm-btn is-primary' + (busy ? ' is-busy' : '')); c.close.disabled = busy; c.close._act = act;
       var as = say ? '' : autoSay(x);      /* else only a take profit / stop loss that fired or waits on hold */
       txt(c.say, say || as); cls(c.say, 'sm-say' + (as ? ' is-warn' : '')); show(c.say, !!(say || as));
+      otKey(c.close, c.say, x);
       headSet(c, x);
       autoKeySet(c.ak, x, !!(st || mine));
       partKeysSet(c.pk, x, !!(st || mine));
@@ -3509,8 +3513,24 @@
     var room = main.clientHeight + (sn ? sn.offsetHeight : 0) - 8;
     while (COIN.tmode < 2 && card.getBoundingClientRect().bottom - main.getBoundingClientRect().top + main.scrollTop + extra > room) tradeTop(COIN.tmode + 1);
   }
+  /* a trade's card on its coin's screen. (cf_FILLFEEL) Its own function, under its own key: an order on its way has this card
+     too, drawn as the trade it becomes (x.ff, ffLook), and the real trade's card takes its place where it stands (ffMorph) */
+  function posCard(x, k) {
+    var c = R.cards[k || 'p' + x.id] = { kind: x.ff ? 'look' : 'pos', pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), now: h('span', null, '—'), end: h('span', null, '—'), say: sayLine(), room: roomNew() };
+    c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
+    c.ak = autoKey(x); c.set = c.ak.n;      /* Take profit and Stop loss, under where it opened and where it closes itself */
+    c.pk = partKeys(x); c.pb = poweredRow();      /* then Close part and Add to this trade (v5), and whose pipes the page reads through */
+    /* (cf_POS_CARD) where it opened and where it closes itself: one ruled line, side by side, each name above its price */
+    c.n = h('div', 'sm-pos', [posHead(c, x, x.sym), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
+      h('div', 'sm-kvs', [h('div', 'sm-facts', [h('div', 'sm-fact', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-fact sm-fact-now', [h('span', null, 'Price now'), c.now]), h('div', 'sm-fact', [h('span', null, 'Closes itself at'), c.end])]), c.set, c.pk ? c.pk.n : null, c.pb])]);      /* (owner 11/21 "make it so you dont have to scroll to see current price") the price now sits on the card itself */
+    if (x.ff) ffGuard(c.n, () => c.close._ffLive ? c.close : null);      /* its keys wait for the trade */
+    return c;
+  }
   function buildCoin(sym, mode, ps, os, lims) {
     var main = el.main, cta = el.cta, trade = mode === 'trade', m = market(sym);
+    /* (cf_FILLFEEL) this coin's chart, alive and on screen, is kept as it is: the screen is built again when a trade comes or goes,
+       and a chart made anew stood empty for a moment each time */
+    var keep = !!(R.chartBox && R.chartBox.isConnected && smChart.api && smChart.host === R.chartHost && smChart.coin === m.coin);
     main.className = 'sm-main' + (trade ? ' is-trade' : ' is-fit'); main.textContent = ''; cta.textContent = ''; cta.className = 'sm-cta is-two';
     R.cards = {};
     add(main, [h('div', 'sm-cname', nameOf(sym)), h('div', 'sm-cbar', [R.px = h('span', 'sm-price', ''), R.chg = h('span', 'sm-chg', '')])]);
@@ -3518,9 +3538,8 @@
     R.stats = h('div', 'sm-stats', '');
     add(main, R.stats);
     /* LightweightCharts container */
-    R.chartHost = h('div', 'sm-chart-lw');
-    R.csay = h('div', 'sm-chart-say', '');
-    var chartBox = h('div', 'sm-chart' + (trade ? ' is-set' : ''), [R.chartHost, R.csay]);
+    if (!keep) { R.chartHost = h('div', 'sm-chart-lw'); R.csay = h('div', 'sm-chart-say', ''); R.chartBox = h('div', 'sm-chart', [R.chartHost, R.csay]); }
+    var chartBox = R.chartBox; cls(chartBox, 'sm-chart' + (trade ? ' is-set' : ''));
     /* timeframe and mode buttons */
     var tfBar = h('div', 'sm-tf');
     CHART_TF.forEach(function (t) {
@@ -3539,31 +3558,15 @@
     tfBar.appendChild(candleBtn);
     add(main, [chartBox, tfBar]);
     /* initialize chart after layout */
-    setTimeout(() => { initSmChart(R.chartHost, m.coin, m.sz); }, 0);
+    if (!keep) setTimeout(() => { initSmChart(R.chartHost, m.coin, m.sz); }, 0);
     var up = btn('sm-dir is-up', ['▲ Up', h('i', null, '(Click here to open)')], () => { openOrder(sym, true); });
     var dn = btn('sm-dir is-dn', ['▼ Down', h('i', null, '(Click here to open)')], () => { openOrder(sym, false); });
     add(cta, [up, dn]);
-    R.box = null;
+    R.box = null; R.ffBuilt = ffStamp(sym, mode, lims);
     if (!trade) return;
-    function head(x) { return h('div', 'sm-pos-h', [h('span', null, [x.sym, sidePill(x.isLong, x.lev)]), h('span', 'sm-in', usdS(x.margin) + ' in')]); }
-    var total = ps.length + os.length + lims.length;
+    var items = ffItems(sym, ps, os), total = items.filter(it => it.kind !== 'hold').length + lims.length;
     var box = h('div', 'sm-trades', h('div', 'sm-label', total > 1 ? 'Your trades on ' + sym : 'Your trade on ' + sym));
-    os.forEach(o => {
-      var c = R.cards['o' + o.key] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', '') };
-      c.go = btn('sm-btn is-primary', '', () => { if (c.go._act) c.go._act(); }); c.go.hidden = true;
-      c.n = h('div', 'sm-pos', [head(o), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.go]);
-      box.appendChild(c.n);
-    });
-    ps.forEach(x => {
-      var c = R.cards['p' + x.id] = { pnl: h('div', 'sm-pnl sm-mute', ''), pct: h('div', 'sm-pnlp', ''), entry: h('span', null, '—'), now: h('span', null, '—'), end: h('span', null, '—'), say: sayLine(), room: roomNew() };
-      c.close = btn('sm-btn is-primary', '', () => { if (c.close._act) c.close._act(); else closeGo(x.id); });
-      c.ak = autoKey(x); c.set = c.ak.n;      /* Take profit and Stop loss, under where it opened and where it closes itself */
-      c.pk = partKeys(x); c.pb = poweredRow();      /* then Close part and Add to this trade (v5), and whose pipes the page reads through */
-      /* (cf_POS_CARD) where it opened and where it closes itself: one ruled line, side by side, each name above its price */
-      c.n = h('div', 'sm-pos', [posHead(c, x, x.sym), h('div', 'sm-pnlrow', [c.pnl, c.pct]), c.room.n, c.say, c.close,
-        h('div', 'sm-kvs', [h('div', 'sm-facts', [h('div', 'sm-fact', [h('span', null, 'You opened at'), c.entry]), h('div', 'sm-fact sm-fact-now', [h('span', null, 'Price now'), c.now]), h('div', 'sm-fact', [h('span', null, 'Closes itself at'), c.end])]), c.set, c.pk ? c.pk.n : null, c.pb])]);      /* (owner 11/21 "make it so you dont have to scroll to see current price") the price now sits on the card itself */
-      box.appendChild(c.n);
-    });
+    items.forEach(it => { if (it.kind !== 'hold') box.appendChild(ffBuild(it).n); });      /* (cf_FILLFEEL) the orders as their trades, then the trades */
     /* limit orders waiting to fire */
     lims.forEach(lm => {
       function limHead() { return h('div', 'sm-pos-h', [h('span', null, [sym, sidePill(lm.isLong, lm.lev), h('i', 'sm-wait-tag', 'Limit')]), h('span', 'sm-in', usdS(lm.margin) + ' in')]); }
@@ -3603,9 +3606,255 @@
       main.appendChild(allBox);
     }
     /* opened from that trade's row on Home: its card is brought into view */
-    var pick = S.pickOnce && S.pid != null && R.cards['p' + S.pid]; S.pickOnce = false;
+    var pick = S.pickOnce && S.pid != null && R.cards[ffKeyOf(S.pid)]; S.pickOnce = false;
     if (pick && ps.length > 1 && ps[0].id !== S.pid) setTimeout(() => { if (pick.n.isConnected) pick.n.scrollIntoView({ block: 'nearest' }); }, 60);
   }
+  /* ---- (cf_FILLFEEL) The trade looks filled from the press (the owner, 2026-11-21: "make the site look like it fills faster",
+     then, told of a plan with a line that fills and a small burst: "skip this and just make it look filled").
+     How long a fill takes is the chain's and the keeper's. From the press on Open, an order on its way is drawn as the trade it
+     becomes: the open trade's own card (posCard) and rows, with the figures the page's own code gives for it filled at the
+     price now (fig: trade.js openingFigures, the Pro card's own), the price it opened at and the price it closes itself at
+     held as they stood at the press. No wait state, no line, no words. When the chain says it is open the real trade's card
+     takes the order's place where it stands (ffMorph: the screen is not built again, the chart stays) and the real figures
+     stand where the page's own stood. Its keys are the trade's keys; one pressed before the trade is really open says so in
+     a line at the bottom of the screen and does nothing else.
+     Only an order that does not go to plan changes its card. One that takes longer says so in the card's own line (and its
+     key finishes it, where the page offers that). One that did not open (refused, refunded, the wallet said no, out of time)
+     is only its top, "Not opened", what happened and its key (try again, or get the money back), in the words there were:
+     nobody is left believing in a trade that is not there.
+     A close does the same: the result's screen comes at the press with the result as it stands then (ffClosed) and takes the
+     real figures when the chain has them; a close that is refused or held up goes back to the trade's card, which says so
+     (ffDoneCheck). A part closing shows the smaller trade at once (ffPartLook).
+     FF.slots: one per order, from its press to its trade (an order's key changes when it reaches the chain, then the trade
+     has an id of its own), so its card, the prices held at the press and the levels typed for it stay one thing. ---- */
+  var FF = { slots: [], n: 0, known: {}, primed: false, tap: null, can: null, who: null, part: {} };
+  var NOT_YET = 'One moment: this trade is still opening. Try again in a few seconds.', PART_YET = 'One moment: the part is still closing. Try again in a few seconds.', DONE_YET = 'One moment: the last figures are still coming in. Try again in a few seconds.';
+  function ffSame(s, y) { return s.sym === y.sym && s.isLong === !!y.isLong && Number(s.lev) === Number(y.lev); }
+  function ffSlot(okey) { return FF.slots.filter(s => s.okey === okey)[0] || null; }
+  function ffSlotOf(pid) { pid = String(pid); return FF.slots.filter(s => s.pid === pid)[0] || null; }
+  /* an order that waits in place a moment: gone from the orders, its trade not read yet */
+  function ffWaits(s) { return !!s && !s.okey && s.pid == null && !s.pre && !s.fail && FF.slots.indexOf(s) >= 0; }
+  /* a press on Open that went out: its order's place keeps the levels typed for it */
+  function ffTap(o) { FF.tap = { sym: o.sym, isLong: !!o.isLong, lev: o.lev, margin: o.margin, at: Date.now(), tp: o.tp != null && isFinite(o.tp) ? o.tp : null, sl: o.sl != null && isFinite(o.sl) ? o.sl : null }; }
+  /* An order the wallet is still being asked about (the first trade: one-tap, once; a wallet that confirms each one): the
+     page's own code has taken it (api.open said yes, its ticket waits on the wallet) and it is not in the list of orders yet.
+     It has its place already; the list's own entry takes the place over the moment the wallet has sent it, and if the
+     wallet says no the place says so (ffSync). While it is asked, the place says what happens, not a passing message. */
+  function ffAsk() {
+    var t = FF.tap;
+    if (!t || api.ticket().phase !== 'wallet') return false;
+    FF.tap = null; S.claim = true;
+    FF.slots.push({ id: ++FF.n, sym: t.sym, isLong: t.isLong, lev: t.lev, margin: t.margin, tp: t.tp, sl: t.sl, pid: null, okey: '', pre: t.at });
+    return true;
+  }
+  function ffSync() {
+    var w = api.wallet(), a = api.account(), now = Date.now();
+    if (w.account !== FF.who) { FF.who = w.account || null; FF.slots = []; FF.known = {}; FF.primed = false; FF.part = {}; }      /* another account: its own orders and trades */
+    if (!w.account) return;
+    var os = api.openings(), live = {}, pids = {};
+    os.forEach(o => { live[o.key] = o; });
+    FF.slots.forEach(s => { if (s.okey && !live[s.okey]) { s.okey = ''; s.lost = now; } });
+    os.forEach(o => {
+      if (ffSlot(o.key)) return;
+      var s = FF.slots.filter(z => !z.okey && z.pid == null && !z.fail && ffSame(z, o))[0];
+      if (!s) {
+        var t = FF.tap && ffSame(FF.tap, o) && now - FF.tap.at < 90000 ? FF.tap : null;
+        if (t) FF.tap = null;
+        FF.slots.push(s = { id: ++FF.n, sym: o.sym, isLong: !!o.isLong, lev: o.lev, margin: o.margin, tp: t ? t.tp : null, sl: t ? t.sl : null, pid: null });
+      }
+      if (s.pre) S.claim = false;
+      s.okey = o.key; s.lost = 0; s.pre = 0; s.end = o.kind === 'end';
+    });
+    /* an asked order whose wallet step ended with no order sent: the wallet said no (its place says so, for as long as the
+       page's own such notes stay), or nothing is known (its place goes, after the moment an entry may still come) */
+    var tk = api.ticket();
+    FF.slots.forEach(s => {
+      if (!s.pre || s.okey || (tk.phase === 'wallet' && now - s.pre < 120000)) return;
+      s.pre = 0; S.claim = false;
+      if (tk.phase === 'error' || tk.phase === 'refunded' || tk.phase === 'unknown') { s.fail = plain(tk.msg) || 'It did not go through. Nothing was taken.'; s.failAt = now; api.ticketDone(); }
+      else s.lost = now;
+    });
+    if (a.loaded) {
+      api.positions().forEach(x => {
+        var id = String(x.id);
+        pids[id] = true; FF.can = !!x.can;
+        if (FF.known[id]) return;
+        FF.known[id] = true;
+        if (!FF.primed) return;      /* the trades there were when the page came up were opened before it */
+        var s = FF.slots.filter(z => !z.okey && z.pid == null && !z.end && !z.pre && !z.fail && ffSame(z, x))[0];
+        if (s) { s.pid = id; s.landed = now; }
+      });
+      FF.primed = true;
+    }
+    /* a slot lives as long as what it stands for: its order, its trade, a wallet's no for a quarter of a minute */
+    FF.slots = FF.slots.filter(s => s.okey || s.pre || (s.fail ? now - s.failAt < 15000 : s.pid != null ? (!a.loaded || pids[s.pid] || now - s.landed < 5000) : now - s.lost < 1500));
+    Object.keys(FF.part).forEach(pid => { if (ffPartOver(pid)) delete FF.part[pid]; });
+  }
+  /* The orders on their way, as every list of them is drawn: the ones the wallet is still asked about (or said no to) first,
+     in the shape of the page's own entries, then the page's own (api.openings()) */
+  function ffOrders() {
+    var mine = FF.slots.filter(s => (s.pre || s.fail) && !s.okey && s.pid == null).map(s => s.fail
+      ? { key: 'w' + s.id, kind: 'end', sym: s.sym, isLong: s.isLong, lev: s.lev, margin: s.margin, say: s.fail, tone: 'bad', btn: '', share: 0, fig: null, slot: s }
+      : { key: 'w' + s.id, kind: 'ask', sym: s.sym, isLong: s.isLong, lev: s.lev, margin: s.margin, say: '', tone: '', btn: '', share: 0, fig: api.figure ? api.figure({ sym: s.sym, isLong: s.isLong, margin: s.margin, lev: s.lev }) : null, slot: s });
+    return mine.concat(api.openings());
+  }
+  /* an order that will not become a trade by itself: it did not open, or its time ran out (one press gets the money back) */
+  function ffOver(o) { return o.kind === 'end' || /back/.test(o.btn) || o.tone === 'bad'; }
+  /* An order as the trade it becomes: an entry of api.positions()' shape, for the trade's own card and rows. The price it
+     opened at and the price it closes itself at are held from the first figures (the press); what it has made and what a
+     close gives back are the page's own figures for it filled at the price now, so nothing jumps when the real ones come.
+     null: not to be drawn as a trade (ffOver) */
+  function ffLook(o) {
+    var s = o.slot || ffSlot(o.key), f = o.fig, ok = !!(f && f.fresh);
+    if (!s || ffOver(o)) return null;
+    if (ok && s.entry == null && f.entry > 0) { s.entry = f.entry; s.endPx = f.endPx; s.sz = f.sz; }
+    var px = ok ? f.px : NaN, away = px > 0 && s.endPx > 0 ? Math.max(0, s.isLong ? (px - s.endPx) / px : (s.endPx - px) / px) : NaN;
+    var full = s.entry > 0 && s.endPx > 0 ? Math.abs(s.entry - s.endPx) / s.entry : NaN, share = isFinite(away) && full > 0 ? Math.min(1, away / full) : NaN;
+    return { id: 'f' + s.id, ff: s, ffO: o, sym: s.sym, sz: s.sz != null ? s.sz : f ? f.sz : null, isLong: s.isLong, lev: s.lev, boost: s.lev, margin: o.margin,
+      entry: s.entry, px: px, endPx: s.endPx, away: away, share: share, near: share < 0.2 ? 'is-red' : share < 0.5 ? 'is-amber' : '',
+      pnl: ok ? f.pnl : NaN, payout: ok ? f.payout : NaN, delayed: !ok || s.entry == null, est: true, status: null, part: 0,
+      can: FF.can != null ? FF.can : !!api.part && Number((api.cfg() || {}).version) >= 5, auto: s.tp != null || s.sl != null ? { tp: s.tp, sl: s.sl } : null };
+  }
+  /* every order drawn as its trade, on one coin or on all */
+  function ffLooks(os, sym) { return os.filter(o => sym == null || o.sym === sym).map(ffLook).filter(Boolean); }
+  /* the card of a trade, real or still an order, by the trade's id */
+  function ffKeyOf(pid) { var s = ffSlotOf(pid); return s ? 's' + s.id : 'p' + pid; }
+  /* What stands on a coin's screen, in the order it is drawn: the orders (as their trades: look; or what became of them:
+     over), an order waiting a moment for its trade to be read (hold), then the trades (pos). A card keeps its key from the
+     order's press to the trade's end, so it is never taken away and put back */
+  function ffItems(sym, ps, os) {
+    var out = [];
+    os.forEach(o => { var s = o.slot || ffSlot(o.key), x = ffLook(o); if (s) out.push(x ? { k: 's' + s.id, kind: 'look', x: x, o: o, s: s } : { k: 's' + s.id, kind: 'over', o: o, s: s }); });
+    FF.slots.forEach(s => { if (s.sym === sym && ffWaits(s)) out.push({ k: 's' + s.id, kind: 'hold', s: s }); });
+    ps.forEach(x => { out.push({ k: ffKeyOf(x.id), kind: 'pos', x: x }); });
+    return out;
+  }
+  function ffStamp(sym, mode, lims) { return [sym, mode, lims.map(o => o.id).join(',')].join('|'); }
+  function ffBuild(it) { return it.kind === 'over' ? ffOverCard(it) : posCard(it.x, it.k); }
+  /* the coin's screen as it stands, brought in line with what should stand on it without building it again: an order's card
+     turned into its trade's card in the same place (or into what became of it). false: build it (something else changed) */
+  function ffMorph(sig, sym, mode, items, lims) {
+    var box = R.box, todo = [], want = {};
+    if (!S.sig || mode !== 'trade' || !box || !box.isConnected || R.ffBuilt !== ffStamp(sym, mode, lims)) return false;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i], c = R.cards[it.k];
+      want[it.k] = true;
+      if (!c || !c.n.isConnected) { if (it.kind === 'hold') continue; return false; }
+      if (it.kind !== 'hold' && c.kind !== it.kind) todo.push(it);
+    }
+    if (Object.keys(R.cards).some(k => /^(s|p)\d/.test(k) && !want[k])) return false;
+    todo.forEach(it => { var old = R.cards[it.k], c = ffBuild(it); old.n.replaceWith(c.n); });
+    /* in the order a fresh build gives */
+    var nodes = items.filter(it => R.cards[it.k]).map(it => R.cards[it.k].n), have = Array.prototype.filter.call(box.children, n => nodes.indexOf(n) >= 0);
+    if (nodes.some((n, j) => have[j] !== n)) { var after = have[have.length - 1].nextSibling; nodes.forEach(n => { box.insertBefore(n, after); }); }
+    S.sig = sig;
+    return true;
+  }
+  /* a key of a card or a row that draws an order as its trade, pressed before the trade is really open: said, nothing done.
+     The one key such a card may really offer (finish an order that is held up) goes through. Also the result's screen shown
+     from the press on Close, for the keys that hand out its picture (words) */
+  function ffGuard(n, live, words) {
+    n.addEventListener('click', ev => {
+      var b = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+      if (!b || !n.contains(b) || (live && live() === b)) return;
+      ev.preventDefault(); ev.stopPropagation(); snack(words || NOT_YET);
+    }, true);
+  }
+  /* an order's card as its trade, when it takes longer than it should: said in the card's own line, in the words there were;
+     held up with a key of the page's own (finish it): the card's one key is that key. c.close on a phone, c.go on a wide screen */
+  function ffLate(c, x) {
+    var o = x.ffO, key = c.close || c.go, late = !!o && (!!o.tone || !!o.btn);
+    key._ffLive = !!(late && o.btn);
+    if (!late) return;
+    txt(c.say, plainStatus(o.say)); cls(c.say, 'sm-say is-warn'); show(c.say, true);
+    if (o.btn) { txt(key, 'Finish opening now'); key._act = () => { api.openingAct(o.key); }; }
+  }
+  /* what became of an order that will not become a trade: its top, "Not opened", what happened, its key */
+  function ffOverCard(it) {
+    var s = it.s, dk = isDesktop(), c = { kind: 'over', ff: s, pnl: h('div', 'sm-pnl sm-mute', 'Not opened'), say: sayLine() };
+    c.go = btn('sm-btn is-primary', '', () => { if (c.go._act && !early()) c.go._act(); });
+    c.n = h('div', 'sm-pos is-over', [dk ? h('div', 'sm-pos-h', [h('span', null, [sidePill(s.isLong), h('span', 'sm-in', usdS(s.margin) + ' × ' + s.lev)])])
+      : h('div', 'sm-pos-h', [h('span', null, [s.sym, sidePill(s.isLong, s.lev)]), h('span', 'sm-in', usdS(s.margin) + ' in')]), dk ? c.pnl : h('div', 'sm-pnlrow', c.pnl), c.say, c.go]);
+    if (dk) DK.CR.cards[it.k] = c; else R.cards[it.k] = c;
+    return c;
+  }
+  function ffOverPaint(c, o) {
+    var s = c.ff, ended = o.kind === 'end', ob = ended ? '' : o.btn;
+    txt(c.say, plainStatus(o.say)); cls(c.say, 'sm-say' + (o.tone === 'bad' ? ' is-bad' : ''));
+    /* its key: one press opens the order again for the same coin and side; out of time: one press gets the money back, and
+       while that press is on its way the key waits */
+    txt(c.go, ended ? 'Try again' : ob || 'One moment…'); cls(c.go, 'sm-btn is-primary' + (ended || ob ? '' : ' is-busy')); c.go.disabled = !(ended || ob);
+    c.go._act = ended ? () => { if (s.fail) s.failAt = 0; (isDesktop() ? openOrderDesktop : openOrder)(s.sym, s.isLong); } : ob ? () => { api.openingAct(o.key); } : null;
+  }
+  /* a row of "Your trades" for an order: its trade's row; one that will not become a trade, or takes longer: what the page says of it */
+  function ffRowLook(r, o) {
+    var x = ffLook(o), late = !x || !!o.tone || !!o.btn, off = !x || x.delayed || !isFinite(x.pnl);
+    txt(r.sub, late ? plainStatus(o.say) : usdS(x.margin) + ' in'); cls(r.sub, o.tone === 'bad' ? 'sm-dn' : '');
+    if (x && !late) roomShort(r.room, x, ' · ', false); else { txt(r.room, ''); cls(r.room, 'sm-room-s'); }
+    txt(r.v, !x ? usdS(o.margin) : off ? '—' : '≈ ' + usdP(x.pnl)); cls(r.v, x && !off ? tone(x.pnl) : '');
+    txt(r.c, !x ? '' : off ? 'price delayed' : pct(x.pnl / x.margin)); cls(r.c, x && !off ? tone(x.pnl) : '');
+  }
+
+  /* ---- a close looks closed from the press ---- */
+  /* The result's screen, at the press on Close, with the result as the card stood: what it had made, what a close gives
+     back. Marked est until the chain's own result takes its place (onResult); nothing is drawn where the figures are not
+     fresh, and then the card says "Closing…" as it did */
+  function ffClosed(pid) {
+    var x = api.positions().filter(p => p.id === pid)[0];
+    if (!x || x.delayed || !isFinite(x.pnl) || !isFinite(x.payout) || !shown() || sheets.length) return;
+    var d = { key: 'c' + pid + '~', pid: pid, sym: x.sym, isLong: x.isLong, lev: boostOf(x), margin: x.margin, liq: false, pnl: x.pnl, paid: x.payout, lost: 0, back: 0, exit: '', by: '', est: true, at: Date.now() };
+    see(x); d.paidIn = fxPaid(S.seen[pid], false);
+    if (!isDesktop()) { if (S.place === 'coin') { S.done = d; S.place = 'done'; S.sig = ''; } }
+    else if ((!DK.panel || DK.panel === 'done') && !document.querySelector('dialog[open]')) openDoneDesktop(d);
+  }
+  /* the result's screen shown ahead of the chain: back to the trade's card the moment the close is known not to have gone
+     through, or to be held up. The card says which, in the words there were */
+  function ffDoneCheck() {
+    var bad = d => {
+      if (!d || !d.est) return false;
+      var x = api.positions().filter(p => p.id === d.pid)[0], st = x && x.status;
+      return !!COIN.errs[d.pid] || !!(st && st.btn) || (!!x && !st && COIN.closing !== d.pid && Date.now() - d.at > 1500);
+    };
+    if (S.place === 'done' && bad(S.done)) { var d = S.done; S.done = null; S.place = 'coin'; S.sym = d.sym; S.pid = d.pid; S.sig = ''; }
+    if (DK.panel === 'done' && bad(DK.done)) closePanel();
+  }
+  /* that screen until the real result is in: the trade's picture comes with the real figures (its place is kept), and the
+     keys that hand it out say so if pressed: a picture of figures that may still change is not handed out */
+  function ffDoneWait(box, foot) {
+    Array.prototype.forEach.call(box.querySelectorAll('.sm-card'), n => { n.classList.add('is-ff-wait'); ffGuard(n, null, DONE_YET); });
+    Array.prototype.forEach.call(foot.querySelectorAll('.sm-btn.is-ghost'), n => { ffGuard(n, null, DONE_YET); });
+  }
+  /* and its line for the price it closed at keeps its room, so nothing moves when the line comes */
+  function ffDoneHold(at) { if (at.hidden) { txt(at, '\u00a0'); at.hidden = false; } }
+
+  /* ---- a part closing shows the smaller trade at once ---- */
+  function ffPartOver(pid) {
+    var e = FF.part[pid], x = api.positions().filter(p => p.id === pid)[0], st = x && x.status, l = api.part ? api.part.last(pid) : null;
+    return !e || !x || !!COIN.errs[pid] || !!(st && st.btn) || !!(l && l.at >= e.at) || (!st && COIN.closing !== pid && Date.now() - e.at > 1500);
+  }
+  /* the card of a trade whose part is closing (after the card's own paint): what stays in it, its result and what a close
+     gives back, each less the part; the line for what the part gave back, as the sheet said it; its keys as an open
+     trade's. The chain's own figures take their places when the part has closed; a part that did not close is said by
+     the card as before. c.close / c.in on a phone, c.go on a wide screen */
+  function ffPartLook(c, x) {
+    var e = FF.part[x.id], key = c.close || c.go;
+    if (!e || !c.pnl) return;
+    var f = 1 - e.bps / 10000, ok = !x.delayed && isFinite(x.pnl), stays = e.stays != null ? e.stays : x.margin * f;
+    if (c.in) txt(c.in, usdS(stays) + (c.close ? ' in' : ' × ' + boostOf(x)));
+    if (ok) txt(c.pnl, '≈ ' + usdP(x.pnl * f));
+    txt(key, 'Close · take about ' + (isFinite(x.payout) && !x.delayed ? usd(x.payout * f) : usdS(x.margin * f)));
+    if (c.close) cls(key, 'sm-btn is-primary');
+    key.disabled = false; key._act = () => { snack(PART_YET); };
+    show(c.say, false);
+    autoKeySet(c.ak, x, false);
+    if (c.pk) {
+      c.pk.close.disabled = c.pk.add.disabled = false;
+      var k = 'est' + e.bps + '|' + e.take;
+      if (c.pk.didKey !== k) { c.pk.didKey = k; c.pk.did.textContent = ''; add(c.pk.did, ['Closed ' + pctS(e.bps) + ': ', h('b', null, usd(e.take)), ' is back in your trading money (', h('b', tone(e.pnl), usdP(e.pnl)), ').']); }
+      show(c.pk.did, true);
+    }
+  }
+
   function toPro(sym) { api.pro('candles', sym); setMode('pro', true); }  /* a look at the candles: the next visit opens in Simple again */
   /* The line, scaled to the range plus the trades' prices that sit near it (up to one and a half ranges beyond it): a price
      further away is said at the chart's top or bottom edge with an arrow, so a far one never flattens the line. The labels
@@ -3654,10 +3903,29 @@
     COIN.errs[pid] = ''; S.claim = true;
     timed(api.toHyperEvm(), 30000, '').then(() => { api.closeAct(pid); }, () => { COIN.errs[pid] = STAYED + 'it did not close. Try again.'; }).then(() => { S.claim = false; kick(); });
   }
-  function closeGo(pid) {
-    var s = api.session();
-    if (COIN.closing || early()) return;
-    COIN.errs[pid] = ''; COIN.closing = pid; S.claim = true; S.lastErr = null; kick();
+  /* One-tap for everyone: a Close that one-tap cannot carry yet (a trader who arrives with a trade open and no one-tap, or
+     whose one-tap has run out or ended) first asks the wallet that one thing (otStep); the card's key says the wallet's turn
+     and its line what the wallet shows (otKey). After the yes the close goes out through one-tap, shown as every close is. A
+     no leaves one line on the card and the same Close key.
+     A wallet short of the HYPE for the step: the line says so and Add money opens. One case is left to Pro's own way, as
+     before: a wallet that could not give one-tap enough to run on but can still pay for one send itself (v.own) is never
+     kept from closing a trade; it confirms that close in the wallet. */
+  function closeGo(pid, stepped) {
+    var s = api.session(), ot = stepped ? '' : otWhy(), v = ot ? otView() : null;
+    if (COIN.closing || (!stepped && early())) return;
+    if (ot && v.short && !v.own) { COIN.errs[pid] = OT_SHORT; S.lastErr = null; kick(); setTimeout(addMoneyAny, 250); return; }
+    if (ot && !v.short) {
+      COIN.errs[pid] = ''; COIN.closing = pid; S.claim = true; S.lastErr = null;
+      OT.close = { pid: pid, say: otAsk(ot, 'Then this trade closes.') }; kick();
+      otStep(null).then(() => { OT.close = null; COIN.closing = null; closeGo(pid, true); }, e => {
+        OT.close = null; COIN.closing = null; S.claim = false; COIN.errs[pid] = e.plain; kick();
+        if (e.add) setTimeout(addMoneyAny, 250);
+      });
+      return;
+    }
+    COIN.errs[pid] = ''; COIN.closing = pid; S.claim = true; S.lastErr = null;
+    ffClosed(pid);      /* (cf_FILLFEEL) the result's screen at once, as the card stood; the chain's own result takes its place */
+    kick();
     /* the wallet signs a close only when one-tap is not on: then it is asked onto HyperEVM first, and that wait ends by itself
        (after it, a late yes in the wallet only moves the wallet: the close is not sent behind the person's back) */
     (!api.demo && !s.live ? timed(api.toHyperEvm(), 30000, '') : Promise.resolve()).then(() => api.close(pid)).then(ok => {
@@ -3678,6 +3946,9 @@
     if (res.trig) { d.trig = res.trig; d.closedAt = res.closedAt || 0; if (res.trig.kind !== 2) d.by = res.trig.kind === 0 ? 'tp' : 'sl'; }
     /* it ended while Confetti was closed: its own card on Home, beside any others */
     if (res.away) { d.away = true; if (!S.away.some(x => x.key === d.key)) S.away.push(d); redo(); return; }
+    /* (cf_FILLFEEL) its result's screen is up already, from the press on Close: the real figures take its place there */
+    if (S.done && S.done.est && S.done.pid === pid && S.place === 'done') { S.done = d; S.res = null; redo(); return; }
+    if (DK.done && DK.done.est && DK.done.pid === pid && DK.panel === 'done') { DK.done = d; S.res = null; redo(); return; }
     if (shown() && !isDesktop() && S.place === 'coin' && S.sym === d.sym && !sheets.length) { S.done = d; S.place = 'done'; S.sig = ''; }
     /* a wide screen on that coin, nothing open over it: the result (and its card) comes up in the right-hand panel */
     else if (shown() && isDesktop() && !DK.panel && S.sym === d.sym && !document.querySelector('dialog[open]')) { openDoneDesktop(d); return; }
@@ -3732,201 +4003,65 @@
       /* money back (fetti.js): what this trade brings back, or would at Level 1 */
       var fl = fxLine(d); if (fl) add(main, fl);
       /* the trader's own card, under the screen's words */
-      if (card) add(main, cardKey(d, () => { cardGo(d, snack); }));
+      if (card) add(main, cardKey(d, () => { cardGo(d); }));
       add(cta, btn('sm-btn is-primary', 'Trade again', () => { S.done = null; S.place = 'coin'; S.sym = d.sym; S.pid = null; S.sig = ''; paint(); }));
-      if (card) add(cta, btn('sm-btn is-ghost', 'Share your trade', () => { cardGo(d, snack); }));
+      if (card) add(cta, btn('sm-btn is-ghost', 'Share your trade', () => { cardGo(d); }));
+      if (d.est) ffDoneWait(main, cta);      /* (cf_FILLFEEL) shown from the press: its picture and Share wait for the real figures */
     }
-    txt(R.bal, a.loaded ? usd(a.available) : '…');
+    txt(R.bal, a.loaded ? usd(a.available + (d.est ? d.paid : 0)) : '…');
     doneAt(d, R.at, R.tx);
+    if (d.est) ffDoneHold(R.at);
   }
 
   /* ---- the trade card at the end (the owner, 2026-11-19: two mock-ups, then "can you use those at the end"). Every end
      screen shows the trader's own card in his design, green for a win and red for a loss: share.js draws it from the same
      figures the screen says (what went in, what it made or lost, the coin, the side, the boost), with the short address and a
      QR code to confetti.trade carrying the trader's own referral code.
-     The owner, 2026-11-21: "make it so they customize the pnl cards too. removeable wallet address. removable trade amount."
-     A tap on the card or on Share your trade opens one small sheet: the card on top, drawn again at every choice, and under it
-     two switches (the address, the amount put in), how the result shows (both, the percent, the dollars), four looks (his
-     own first) and a line of the trader's own. The choices are kept on this device for each wallet (share.js: cardPrefs);
-     the caption belongs to one trade and is not kept. The sheet's one black key hands the PNG to the phone's share sheet, or
-     saves it where there is none. What is switched off is not on the card, not in the PNG and not in what a screen reader
-     hears. The PNG is made as the choices settle: a share sheet has to open in the tap's own moment. ---- */
+     The owner, 2026-11-21: "make it so they customize the pnl cards too. removeable wallet address. removable trade amount.",
+     then "make it so when you click share on portfolio page it shows the new pnl cards". A tap on the card or on Share your
+     trade opens the card's sheet, and that sheet is share.js's own (ConfettiShare.open): the one every Share on every page
+     opens, with the card on top, the trader's choices under it and the key that shares or saves the PNG. Here it only joins
+     Simple's sheets (the phone's back, a change of view and the double-tap guard treat it like any other), and when it
+     closes the end screen's own card wears the choices made in it. ---- */
 
-  var CARD = { sig: '', p: null, card: null, o: null, okey: null, caps: {}, auto: false, sh: null, R: null, d: null, keys: [], t: 0, raf: 0, said: '' };
-  function cardOn() { var cs = window.ConfettiShare; return !!(cs && cs.tradeCard && cs.drawCardInto && cs.shareCard && cs.cardPrefs && cs.cardLooks); }
+  var CARD = { caps: {}, keys: [] };
+  function cardOn() { var cs = window.ConfettiShare; return !!(cs && cs.open && cs.drawCardInto && cs.cardAlt && cs.cardPrefs); }
   /* the trader's own referral code, as Pro's Refer panel shows it (trade.js reads it from the chain when the wallet connects) */
   function refCode() { var n = $('rfCode'), c = n ? String(n.textContent || '').trim() : ''; return /^[a-z0-9_]{3,16}$/.test(c) ? c : ''; }
   function cardOf(d) { return { sym: d.sym, isLong: d.isLong, lev: d.lev, margin: d.margin, pnl: d.pnl, account: api.wallet().account || '', code: refCode(), level: fxBadge() }; }
-  /* the trader's choices: the ones kept on this device for this wallet, and this trade's own caption */
-  function cardO(d) {
-    var a = String(api.wallet().account || '').toLowerCase();
-    if (!CARD.o || CARD.okey !== a) { CARD.o = window.ConfettiShare.cardPrefs.get(a); CARD.okey = a; CARD.auto = false; }
-    var o = CARD.o;
-    return { addr: o.addr, amount: o.amount, result: o.result, look: o.look, caption: CARD.caps[d.key] || '' };
-  }
-  function cardSig(d) { var o = cardO(d); return [d.key, o.addr, o.amount, o.result, o.look, o.caption].join('|'); }
-  function cardMake(d) {
-    var sig = cardSig(d);
-    if (CARD.sig === sig && CARD.card) return Promise.resolve(CARD.card);
-    if (CARD.sig === sig && CARD.p) return CARD.p;
-    CARD.sig = sig; CARD.card = null;
-    var p = CARD.p = window.ConfettiShare.tradeCard(cardOf(d), cardO(d)).then(c => { if (CARD.p === p) { CARD.card = c; CARD.p = null; } return c; },
-      e => { if (CARD.p === p) CARD.p = null; throw e; });
-    return p;
-  }
-  /* the card in words, for a screen reader: only what the card shows (never the address) */
-  function cardAlt(d) {
-    var o = cardO(d), says = [d.sym + (d.isLong ? ' up ' : ' down ') + d.lev + '×'];
-    if (o.result !== 'usd') says.push(pct(d.pnl / d.margin));
-    if (o.result !== 'pct') says.push(usdP(d.pnl));
-    if (o.amount) says.push(usd(d.margin) + ' in');
-    return 'Your trade card: ' + says.join(', ') + '.';
-  }
+  /* the trader's choices: the ones kept on this device for this wallet (share.js: cardPrefs), and this trade's own caption */
+  function cardO(d) { var o = window.ConfettiShare.cardPrefs.get(api.wallet().account || ''); o.caption = CARD.caps[d.key] || ''; return o; }
   /* the card itself, a key as wide as the screen: drawn at its own size on the page with the trader's choices, and again
-     when they change; the PNG is made for the share */
+     when they change. In words, for a screen reader: only what the card shows (never the address) */
   function cardKey(d, onTap) {
     var cv = h('canvas'), n = btn('sm-card', cv, onTap);
     cv.setAttribute('aria-hidden', 'true');
     var tries = 0;
     n._draw = function draw() {
       var w = n.clientWidth;
-      n.setAttribute('aria-label', cardAlt(d) + ' Share it');
+      n.setAttribute('aria-label', window.ConfettiShare.cardAlt(cardOf(d), cardO(d)) + ' Share it');
       if (!w) { if (++tries < 60) requestAnimationFrame(draw); return; }
       window.ConfettiShare.drawCardInto(cv, cardOf(d), w, cardO(d)).then(() => { n.classList.add('is-in'); }, () => { n.hidden = true; });
     };
     n._draw();
     CARD.keys = CARD.keys.filter(k => document.contains(k)).concat([n]);
-    cardMake(d).catch(noop);
     return n;
   }
-
-  /* -- the card's sheet -- */
   function cardGo(d) {
     if (!cardOn()) return;
-    var sh = cardSheet();
-    CARD.d = d; CARD.said = '';
-    CARD.R.cap.value = CARD.caps[d.key] || '';
-    paintCard();
-    sh.open();
-    cardDraw();
-    cardMake(d).catch(noop);
-  }
-  function cardSheet() {
-    if (CARD.sh) return CARD.sh;
-    var cs = window.ConfettiShare, sh = CARD.sh = makeSheet('Card'), R = CARD.R = {};
-    sh.d.classList.add('sm-cz');
-    txt(sh.title, 'Share your trade');
-    /* the card stays in view over the choices while they scroll (a short phone) */
-    R.cv = h('canvas'); R.cv.setAttribute('role', 'img');
-    R.pv = h('div', 'sm-cz-pv', R.cv);
-    sh.d.insertBefore(R.pv, sh.body);
-    var sw = (label, k, says) => {
-      var b = btn('sm-cz-sw', [h('span', null, label), h('i', 'sm-cz-tog')], () => { cardSet(k, b.getAttribute('aria-checked') !== 'true'); });
-      b.setAttribute('role', 'switch'); b.setAttribute('aria-label', says);
-      return b;
-    };
-    R.addr = sw('Address', 'addr', 'Address: your wallet address on the card'); R.amount = sw('Amount in', 'amount', 'Amount in: what you put in, on the card');
-    R.res = h('div', 'sm-seg'); R.res.setAttribute('role', 'group'); R.res.setAttribute('aria-label', 'Show the result as');
-    [['both', 'Both'], ['pct', 'Percent'], ['usd', 'Dollars']].forEach(x => { var b = btn(null, x[1], () => { CARD.auto = false; cardSet('result', x[0]); }); b._v = x[0]; R.res.appendChild(b); });
-    R.looks = h('div', 'sm-cz-looks'); R.looks.setAttribute('role', 'group'); R.looks.setAttribute('aria-label', 'Look');
-    cs.cardLooks.forEach(l => {
-      var cv = h('canvas'); cv.setAttribute('aria-hidden', 'true');
-      var b = btn('sm-cz-look', [cv, h('span', null, l.name)], () => { cardSet('look', l.id); });
-      b._v = l.id; b._cv = cv; R.looks.appendChild(b);
+    var me = null;
+    window.ConfettiShare.open(cardOf(d), {
+      key: d.key,
+      opened: ctl => { me = { d: ctl.dialog, close: ctl.close }; S.since = Date.now(); sheets.push(me); hPush(); },
+      /* closed (as makeSheet's close does it), and the end screen's own card wears the choices */
+      closed: (fromPop, o) => {
+        sheets = sheets.filter(s => s !== me);
+        if (!fromPop) { hBack(); var p = S.ptr; if (p && Date.now() - p.t < 700) S.shut = { x: p.x, y: p.y, t: Date.now() }; }
+        if (o) CARD.caps[d.key] = o.caption;
+        CARD.keys = CARD.keys.filter(k => document.contains(k)); CARD.keys.forEach(k => { k._draw(); });
+        kick();
+      }
     });
-    R.cap = h('input', 'sm-cz-cap'); R.cap.type = 'text'; R.cap.id = 'smCardCap'; R.cap.maxLength = cs.cardCapMax || 40; R.cap.placeholder = 'Add a line of your own';
-    R.cap.setAttribute('enterkeyhint', 'done'); R.cap.setAttribute('autocomplete', 'off'); R.cap.setAttribute('autocapitalize', 'sentences');
-    R.cap.addEventListener('input', () => { if (!CARD.d) return; CARD.caps[CARD.d.key] = R.cap.value; cardChanged(true); });
-    R.cap.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); R.cap.blur(); } });
-    R.cap.addEventListener('focus', () => { setTimeout(() => { fitKeyboard(); cardKb(); }, 0); });
-    R.cap.addEventListener('blur', cardKb);
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', cardKb);
-    var capLab = h('label', 'sm-label is-amt', ['Caption', h('span', 'sm-hint', 'Optional')]); capLab.htmlFor = 'smCardCap';
-    add(sh.body, [
-      h('div', 'sm-cz-g', [h('div', 'sm-label', 'Show on the card'), h('div', 'sm-cz-sws', [R.addr, R.amount])]),
-      h('div', 'sm-cz-g', [h('div', 'sm-label is-amt', ['Result', R.hint = h('span', 'sm-hint sm-cz-hint', '')]), R.res]),
-      h('div', 'sm-cz-g', [h('div', 'sm-label', 'Look'), R.looks]),
-      h('div', 'sm-cz-g is-cap', [capLab, R.cap])]);
-    /* what the key did (saved, and under which name), said over the choices' foot for a few seconds: nothing moves for it */
-    R.say = sayLine(); R.say.className = 'sm-cz-note'; R.go = btn('sm-btn is-primary', '', cardShare);
-    add(sh.foot, [R.say, R.go]);
-    sh.body.addEventListener('scroll', cardMore, { passive: true });
-    /* closed: the end screen's own card wears the choices */
-    sh.onClose = () => {
-      clearTimeout(CARD.t); sh.d.classList.remove('is-kb');
-      var d = CARD.d; CARD.d = null;
-      CARD.keys = CARD.keys.filter(k => document.contains(k)); CARD.keys.forEach(k => { k._draw(); });
-      if (d) cardMake(d).catch(noop);
-    };
-    return sh;
-  }
-  /* more choices under the fold (a short phone): the foot's edge fades over them until the last is in view */
-  function cardMore() { var sh = CARD.sh, b = sh && sh.body; if (b) sh.d.classList.toggle('has-more', b.scrollHeight - b.clientHeight - b.scrollTop > 6); }
-  /* a choice: kept for this wallet on this device, and the card drawn again */
-  function cardSet(k, v) {
-    var d = CARD.d, o = CARD.o;
-    if (!d || !o) return;
-    /* the dollars beside the percent give the amount away, so with the amount off the result shows as the percent, and
-       comes back with the amount, unless the trader chose how it shows */
-    if (k === 'amount' && !v && o.result === 'both') { o.result = 'pct'; CARD.auto = true; }
-    else if (k === 'amount' && v && CARD.auto && o.result === 'pct') { o.result = 'both'; CARD.auto = false; }
-    o[k] = v;
-    window.ConfettiShare.cardPrefs.set(CARD.okey, o);
-    cardChanged(false);
-  }
-  function cardChanged(typing) {
-    CARD.said = '';
-    paintCard(); cardDraw();
-    clearTimeout(CARD.t);
-    CARD.t = setTimeout(() => { if (CARD.d) cardMake(CARD.d).catch(noop); }, typing ? 350 : 120);
-  }
-  function paintCard() {
-    var d = CARD.d, R = CARD.R;
-    if (!d || !R) return;
-    var o = cardO(d), on = b => b ? 'true' : 'false';
-    R.addr.setAttribute('aria-checked', on(o.addr)); R.amount.setAttribute('aria-checked', on(o.amount));
-    R.addr.disabled = !api.wallet().account;
-    each(R.res, b => { b.setAttribute('aria-pressed', on(b._v === o.result)); });
-    each(R.looks, b => { b.setAttribute('aria-pressed', on(b._v === o.look)); });
-    R.cv.setAttribute('aria-label', cardAlt(d) + (o.caption.trim() ? ' ' + o.caption.trim() : ''));
-    if (CARD.can == null) CARD.can = !!window.ConfettiShare.cardCanShare();
-    txt(R.go, CARD.can ? 'Share' : 'Save the picture');
-    /* beside the three keys, when the choice undoes the switch above it */
-    txt(R.hint, !o.amount && o.result === 'both' ? 'Both gives the amount away' : '');
-    txt(R.say, CARD.said);
-  }
-  /* the card and the four looks, drawn once a frame at most */
-  function cardDraw() {
-    if (CARD.raf || !CARD.d) return;
-    CARD.raf = requestAnimationFrame(() => {
-      CARD.raf = 0;
-      var d = CARD.d, R = CARD.R, cs = window.ConfettiShare;
-      if (!d || !R) return;
-      var o = cardO(d), raw = cardOf(d), w = R.pv.clientWidth ? R.cv.clientWidth : 0;
-      if (!w) { if (CARD.sh && CARD.sh.isOpen) cardDraw(); return; }      /* the sheet is not laid out yet */
-      cs.drawCardInto(R.cv, raw, w, o).then(() => { R.pv.classList.add('is-in'); }, noop);
-      cardMore();
-      each(R.looks, b => { var bw = b._cv.clientWidth; if (bw) cs.drawCardInto(b._cv, raw, bw, { addr: o.addr, amount: o.amount, result: o.result, look: b._v, caption: o.caption }).catch(noop); });
-    });
-  }
-  /* typing the caption with the phone's keyboard up: the card, the line being typed and the key share what is left */
-  function cardKb() {
-    var sh = CARD.sh, vv = window.visualViewport;
-    if (!sh || !sh.isOpen) return;
-    var kb = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
-    var on = kb > 80 && document.activeElement === CARD.R.cap;
-    if (sh.d.classList.contains('is-kb') !== on) { sh.d.classList.toggle('is-kb', on); cardDraw(); }
-    cardMore();
-  }
-  function cardShare() {
-    var d = CARD.d;
-    if (!d) return;
-    clearTimeout(CARD.t);
-    var told = s => { CARD.said = s; paintCard(); clearTimeout(CARD.st); if (s) CARD.st = setTimeout(() => { CARD.said = ''; paintCard(); }, 6000); };
-    var go = card => window.ConfettiShare.shareCard(card).then(r => { told(r === 'saved' ? 'Your card is saved: ' + card.name : ''); });
-    var c = CARD.sig === cardSig(d) ? CARD.card : null;
-    if (c) { go(c); return; }
-    cardMake(d).then(go, () => { told('The card could not be made just now. Try again in a moment.'); });
   }
 
   /* a wide screen's end screen: the right-hand panel, with the result's words, the card and its keys */
@@ -3942,17 +4077,18 @@
       var win = d.pnl > 0.004, flat = Math.abs(d.pnl) <= 0.004, card = cardOn(), R2 = DK.DR = { bal: h('b', null, ''), say: sayLine(), at: h('p', 'sm-fine', ''), tx: h('a', 'sm-link', 'See it on the chain') };
       R2.tx.target = '_blank'; R2.tx.rel = 'noopener'; R2.tx.hidden = true;
       R2.at.hidden = true;      /* which price it ended at, and from what moment (v5); empty on a market without it */
-      var say = s => { txt(R2.say, s); };
       head.querySelector('h2').textContent = d.sym + ' closed';
       head.querySelector('.sm-x').onclick = closePanel;
       body.textContent = ''; foot.textContent = '';
       add(body, [h('div', 'sm-ok' + (win ? '' : flat ? ' is-flat' : ' is-loss'), win ? '✓' : flat ? '=' : '×'),
         h('div', 'sm-label', doneLabel(d)), h('div', 'sm-big ' + tone(d.pnl), usdP(d.pnl)), h('p', 'sm-mid', doneMid(d, R2.bal)), R2.at, R2.tx, fxLine(d),
-        card ? cardKey(d, () => { cardGo(d, say); }) : null]);
-      add(foot, [R2.say, btn('sm-btn is-primary', 'Trade again', closePanel), card ? btn('sm-btn is-ghost sm-card-go', 'Share your trade', () => { cardGo(d, say); }) : null]);
+        card ? cardKey(d, () => { cardGo(d); }) : null]);
+      add(foot, [R2.say, btn('sm-btn is-primary', 'Trade again', closePanel), card ? btn('sm-btn is-ghost sm-card-go', 'Share your trade', () => { cardGo(d); }) : null]);
+      if (d.est) ffDoneWait(body, foot);      /* (cf_FILLFEEL) shown from the press: its picture and Share wait for the real figures */
     }
-    txt(DK.DR.bal, a.loaded ? usd(a.available) : '…');
+    txt(DK.DR.bal, a.loaded ? usd(a.available + (d.est ? d.paid : 0)) : '…');
     doneAt(d, DK.DR.at, DK.DR.tx);
+    if (d.est) ffDoneHold(DK.DR.at);
   }
 
   /* ---- take profit and stop loss (the owner, 2026-11-19: "we need to bring back stop loss and take profit", "just make it
@@ -4149,8 +4285,13 @@
     /* (amt5) the chain's price cannot be read just now: a typed level is not judged against the chart, the button waits */
     if (!why && !same && !none && !fin && (rt.wait || rs.wait)) why = 'One moment: reading the price.';
     var local = !!(x.auto && x.auto.local);      /* v6: a browser rule from before; saving it puts it on chain */
-    txt(r.go, same && !(local && !none) ? 'Done' : same ? 'Save them' : fin ? 'Take the price offered' : none ? 'Remove both' : had ? 'Save changes' : tp != null && sl != null ? 'Set both' : tp != null ? 'Set take profit' : 'Set stop loss');
-    r.go.disabled = !same && !fin && !!why;
+    /* one-tap for everyone: a save that one-tap cannot carry yet first asks the wallet that one thing (autoStep). While it is
+       asked the key says the wallet's turn and the line what it shows; a wallet short of the HYPE for it gets Add money */
+    var otN = AUTO.ot ? '' : autoOt(x, tp, sl, same && !(local && !none)), otShort = !!otN && !why && otView().short;
+    if (otShort) why = OT_SHORT;
+    txt(r.go, AUTO.ot ? CONFIRM : otShort ? 'Add money' : same && !(local && !none) ? 'Done' : same ? 'Save them' : fin ? 'Take the price offered' : none ? 'Remove both' : had ? 'Save changes' : tp != null && sl != null ? 'Set both' : tp != null ? 'Set take profit' : 'Set stop loss');
+    cls(r.go, 'sm-btn is-primary' + (AUTO.ot ? ' is-busy' : ''));
+    r.go.disabled = !!AUTO.ot || (!same && !fin && !!why && !otShort); r.go._add = otShort; r.off.disabled = !!AUTO.ot;
     /* v6, on chain: they close it with this page closed. That stands right above the key, in view on every phone (the
        reason a key is off comes first); under the boxes: how a stop fills, and that a change goes from the wallet
        without one-tap */
@@ -4159,10 +4300,11 @@
        keeps only the last two sets of levels, so changes made now can drop it. Said where the key is, before it is pressed */
     var cr = ch && x.auto.crossed && x.auto.crossed.which === 'sl' && x.auto.crossed.slow && x.auto.crossed.own ? x.auto.crossed : null;
     var owed = cr && !same ? 'Your stop loss was reached at ' + clockOf(cr.at) + ' and has not closed the trade yet. Changing it now can give up closing at its price.' : '';
-    txt(r.say, why || owed || (ch ? CHAIN_ALWAYS : '')); cls(r.say, 'sm-say' + (why && !autoWait(why) ? ' is-bad' : owed ? ' is-warn' : '')); show(r.say, !!why || ch);
+    txt(r.say, AUTO.ot || why || owed || (ch ? CHAIN_ALWAYS : '')); cls(r.say, 'sm-say' + (AUTO.ot ? ' is-warn' : why && !autoWait(why) ? ' is-bad' : owed ? ' is-warn' : '')); show(r.say, !!AUTO.ot || !!why || ch);
     show(r.off, had && !none);
-    var s = api.session(), fine = honest() + (!api.autoKept() ? ' This browser is not saving site data, so it lasts only while this tab is open.' : !s.live && !api.demo ? ' Your wallet asks you to confirm the close.' : '');
-    if (ch) fine = (sl != null ? chainStop(boostOf(x)) : '') + (!s.live && !api.demo && !same ? (sl != null ? ' ' : '') + 'Your wallet asks you to confirm the change.' : '');
+    var once = otN && !otShort ? otOnce(otN) : '';
+    var fine = honest() + (!api.autoKept() ? ' This browser is not saving site data, so it lasts only while this tab is open.' : once ? ' ' + once : '');
+    if (ch) fine = (sl != null ? chainStop(boostOf(x)) : '') + (once ? (sl != null ? ' ' : '') + once : '');
     else if (x.auto && x.auto.paused) fine = 'Paused on this market: while it is paused, they close this trade only while Confetti is open here. ' + fine;
     txt(r.fine, fine); show(r.fine, !!fine);
   }
@@ -4186,19 +4328,39 @@
       f.picks.hidden = false;
     });
   }
-  function autoGo() {
+  /* One-tap for everyone, for a take profit and a stop loss: why this save needs the wallet's one step first ('' when it does
+     not). A level on chain is sent now, and one this browser keeps closes the trade later, both through one-tap; only taking
+     this browser's own levels off sends nothing. */
+  function autoOt(x, tp, sl, nothing) {
+    if (nothing || !x) return '';
+    return (x.auto && x.auto.chain) || (api.autoChain && api.autoChain(x.sym)) || tp != null || sl != null ? otWhy() : '';
+  }
+  function otOnce(why) { return why === 'wait' ? '' : nb('Your wallet asks once to ' + (why === 'expired' ? 'renew' : why === 'gas' ? 'top up' : 'turn on') + ' one-tap trading. After that, no popups.'); }
+  /* the step for a save: true when it was started (the save follows the wallet's yes, by `then`) */
+  function autoStep(ot, then) {
+    var pid = AUTO.pid;
+    if (!ot) return false;
+    AUTO.err = ''; AUTO.ot = otAsk(ot, 'Then your changes are saved.'); S.claim = true; paintAuto();
+    otStep(null).then(() => { AUTO.ot = ''; S.claim = false; if (AUTO.pid === pid && AUTO.sh.isOpen) { paintAuto(); then(); } },      /* the key is its own again before it is pressed for the trader */
+      e => { AUTO.ot = ''; S.claim = false; if (AUTO.pid === pid && AUTO.sh.isOpen) { AUTO.err = e.plain; paintAuto(); } });
+    return true;
+  }
+  function autoGo(ev, stepped) {
     var r = AUTO.R, pid = AUTO.pid;
-    if (pid == null || early() || r.go.disabled) return;
+    if (pid == null || AUTO.ot || (stepped !== true && early()) || r.go.disabled) return;
+    if (r.go._add) { AUTO.sh.close(); setTimeout(addMoneyAny, 200); return; }
     /* an unfinished number is taken first (as Pro's Save does): the box reads it again and the next press saves */
     if (r.tp.fin != null || r.sl.fin != null) { [r.tp, r.sl].forEach(f => { if (f.fin != null) f.i.value = String(f.fin); }); paintAuto(); return; }
     var tp = num(r.tp.i.value), sl = num(r.sl.i.value), x = autoOf(pid);
     if (tp === AUTO.was.tp && sl === AUTO.was.sl && !(x && x.auto && x.auto.local && (tp != null || sl != null))) { AUTO.sh.close(); return; }
+    if (stepped !== true && autoStep(autoOt(x, tp, sl), () => { autoGo(null, true); })) return;
     var w = api.autoSet(pid, tp, sl);       /* Pro's checks once more, at the press */
     if (w) { AUTO.err = autoWait(w) ? '' : autoWhy(w); paintAuto(); return; }      /* a wait is not a refusal: the line above the button says it */
     AUTO.sh.close(); kick();      /* the card under the sheet now shows the new levels: that is the answer */
   }
-  function autoOff() {
-    var pid = AUTO.pid; if (pid == null || early()) return;
+  function autoOff(ev, stepped) {
+    var pid = AUTO.pid; if (pid == null || AUTO.ot || (stepped !== true && early())) return;
+    if (stepped !== true && !otView().short && autoStep(autoOt(autoOf(pid), null, null), () => { autoOff(null, true); })) return;
     var w = api.autoSet(pid, null, null);      /* v6: refused on a market whose levels are paused, with why */
     if (w) { AUTO.err = autoWhy(w); paintAuto(); return; }
     AUTO.sh.close(); kick();
@@ -4224,9 +4386,6 @@
   function secsS(n) { return n + (n === 1 ? ' second' : ' seconds'); }
   /* " 50%" for the Close key of a trade whose close on its way is for a part ("Closing 50%…"); '' for a whole one */
   function partOf(x) { var b = x.part || (COIN.closing === x.id ? COIN.part : 0); return b ? ' ' + pctS(b) : ''; }
-  /* how long an order on this coin takes to fill, in the coin's own time (the chain's setting for it, through the page);
-     "A few seconds" until that is known */
-  function fillWords(sym) { var n = api.fill ? api.fill(sym) : null; return n > 0 ? 'About ' + secsS(n) : 'A few seconds'; }
   /* a trade card's top line. Its boost and what is in it change when a part closes or money is added: both are kept current */
   function posHead(c, x, who) {
     c.pill = sidePill(x.isLong, boostOf(x)); c.in = h('span', 'sm-in', usdS(x.margin) + ' in');
@@ -4346,7 +4505,7 @@
     if (!sh || !sh.isOpen) return;
     var v = api.part.view(), x = PART.pid != null ? autoOf(PART.pid) : null;
     /* the dialog let go (the close was filed, the money is in, or the trade is gone): so does its face */
-    if (!v || !x) { sh.close(); return; }
+    if (!v || !x) { if (PART.busy === 'send') ffHand(sh); else sh.close(); return; }      /* (cf_FILLFEEL) a press on its way: the sheet gives way to the card quick off the mark */
     if (v.tab === 'close') partClosePaint(r, v); else partAddPaint(r, v);
   }
   function partClosePaint(r, v) {
@@ -4368,12 +4527,16 @@
     txt(r.take, v.take != null ? usd(v.take) : v.wait ? 'Working it out…' : '—'); cls(r.take, v.take != null ? '' : 'is-off');
     txt(r.stay, v.stays == null ? '—' : v.full ? 'Nothing' : usd(v.stays)); cls(r.stay, v.stays == null ? 'is-off' : '');
     txt(r.fine, 'It closes in about ' + secsS(v.secs) + ', at the price then, so the amounts can move a little.');
-    txt(r.say, why); cls(r.say, 'sm-say' + (why ? ' is-bad' : '')); show(r.say, !!why);
-    var word = PART.busy === 'switch' ? 'Getting your wallet ready…' : PART.busy ? 'Closing…' : '';
+    /* one-tap for everyone: the wallet's one step first (partGo), on the key and in the line while it is asked */
+    var ot = PART.busy === 'ot';
+    txt(r.say, ot ? PART.ot : why); cls(r.say, 'sm-say' + (ot ? ' is-warn' : why ? ' is-bad' : '')); show(r.say, ot || !!why);
+    var word = ot ? CONFIRM : PART.busy === 'switch' ? 'Getting your wallet ready…' : PART.busy ? 'Closing…' : '';
     txt(r.go, word || (!v.ok ? 'Close part' : (v.full ? 'Close all' : 'Close ' + pctS(v.bps)) + (v.take != null ? ' · take about ' + usd(v.take) : '')));
     cls(r.go, 'sm-btn is-primary' + (word ? ' is-busy' : '')); r.go.disabled = !!word || !v.ok || v.take == null || !!v.busy;
-    /* the quiet line under the key, only when the wallet itself has to say yes (one-tap is not on) */
-    var wal = !api.demo && !s.live; txt(r.wal, wal ? 'Your wallet asks you to confirm.' : ''); show(r.wal, wal);
+    /* the quiet line under the key, only when the wallet has to say yes first: once, to set one-tap up (a wallet short of the
+       HYPE for that, which confirms this close itself, is told so) */
+    var once = PART.busy && !ot ? '' : otWhy(), ov = once ? otView() : null, wal = once ? (ov.short && ov.own ? 'Your wallet asks you to confirm.' : otOnce(once)) : !api.demo && !s.live ? 'Your wallet asks you to confirm.' : '';
+    txt(r.wal, wal); show(r.wal, !!wal);
   }
   function partAddPaint(r, v) {
     var busy = !!PART.busy || !!v.sending, cap = partCap(v), amt = v.amt, now = v.now, af = v.after, sz = v.sz;
@@ -4408,11 +4571,28 @@
     cls(r.go, 'sm-btn is-primary' + (word ? ' is-busy' : '')); r.go.disabled = !!word || !v.ok || !!v.busy;
     txt(r.wal, 'Your wallet asks you to confirm this one.'); show(r.wal, true);
   }
-  function partGo() {
+  function partGo(ev, stepped) {
     var r = PART.R, v = api.part.view(), s = api.session(), pid = PART.pid, close = !!v && v.tab === 'close';
-    if (!v || PART.busy || early() || r.go.disabled) return;
+    if (!v || PART.busy || (stepped !== true && early()) || r.go.disabled) return;
     PART.err = '';
-    if (close && v.full) { PART.sh.close(); closeGo(pid); return; }      /* All: the card's own Close, by its own path */
+    if (close && v.full) { ffHand(PART.sh); closeGo(pid); return; }      /* All: the card's own Close, by its own path */
+    /* one-tap for everyone: a part close that one-tap cannot carry yet first asks the wallet that one thing (otStep), then
+       goes out through one-tap. A no leaves its line and the same key; a wallet short of the HYPE for it is sent to Add money,
+       unless it can still pay for one send itself: that one confirms this close in the wallet, as before */
+    var ot = close && stepped !== true ? otWhy() : '', ov = ot ? otView() : null;
+    if (ot && !(ov.short && ov.own)) {
+      var run0 = PART.run = {};
+      PART.busy = 'ot'; PART.ot = otAsk(ot, 'Then the part closes.'); S.claim = true; S.lastErr = null; paintPart();
+      otStep(null).then(() => {
+        S.claim = false; if (PART.run !== run0) return;
+        PART.busy = ''; PART.run = null; if (PART.pid === pid && PART.sh.isOpen) { paintPart(); partGo(null, true); }
+      }, e => {
+        S.claim = false; if (PART.run !== run0) return;
+        PART.busy = ''; PART.run = null; PART.err = e.plain;
+        if (e.add && PART.sh.isOpen) { COIN.errs[pid] = e.plain; PART.sh.close(); setTimeout(addMoneyAny, 250); } else if (PART.sh.isOpen) paintPart();
+      });
+      return;
+    }
     /* when the wallet itself signs (the add always; a part close only while one-tap is not on) it is asked onto HyperEVM first,
        as Close does; that wait ends by itself, and a sheet closed meanwhile sends nothing */
     var wallet = !api.demo && (!close || !s.live), run = PART.run = {};
@@ -4420,7 +4600,11 @@
     (wallet ? timed(api.toHyperEvm(), 30000, '') : Promise.resolve()).then(() => {
       if (PART.run !== run || PART.pid !== pid || !PART.sh.isOpen) return null;
       PART.busy = 'send'; S.claim = true;
-      if (close) { COIN.errs[pid] = ''; COIN.closing = pid; COIN.part = v.bps; }
+      if (close) {
+        COIN.errs[pid] = ''; COIN.closing = pid; COIN.part = v.bps;
+        /* (cf_FILLFEEL) the card shows the smaller trade at once (ffPartLook), by the sheet's own figures */
+        var px = autoOf(pid); if (px && v.take != null) FF.part[pid] = { bps: v.bps, take: v.take, stays: v.stays, pnl: isFinite(px.pnl) ? px.pnl * v.bps / 10000 : 0, at: Date.now() };
+      }
       paintPart();
       return api.part.go();
     }).then(ok => {
@@ -4929,6 +5113,260 @@
     return false;
   }
 
+  /* ---- One-tap for everyone (the owner, 2026-11-21: "when iu click on one tap trading from the menu it brings up the old
+     layout", then "make one tap the default for all users make them all use it").
+     One-tap is Pro's own (trade.js): a key kept in this browser that may open and close this wallet's trades and set their take
+     profit and stop loss, and nothing else. The wallet turns it on with one confirmation, which also gives it a little HYPE to
+     run on, for 30 days. What is Simple's:
+     THE STEP (otStep). A press that one-tap cannot carry yet (Open, Close, Close part, a take profit or stop loss, a limit
+     order) first asks the wallet that one thing, by Pro's own step (api.oneTap: trade.js ensureOneTap, the transaction Pro
+     sends, to the byte), and only then sends the press, which goes through one-tap with no wallet. The sheet or the card the
+     press came from says what the wallet is asked while it is asked; a no leaves one line and the same key. Simple has no
+     switch for it and offers no way round it. (Adding to a trade is the wallet's own, as before: one-tap cannot send it.)
+     THE SHEET (openOneTap), the menu's One-tap trading, where the menu used to throw the page into Pro: its state in plain
+     words, about how many trades its HYPE is good for, how long it lasts, and its keys: Turn on, Top up, Renew (and Done when
+     nothing is needed). The three are that same step: it sets up, tops up and starts the 30 days again in one confirmation,
+     as Pro's does.
+     NOT ENOUGH HYPE (otView().short): the step is not started when the wallet could not leave one-tap enough to run on. The
+     place says so in one line and Add money is the way on: every order of that sheet tops the wallet's HYPE up (topUsd). One
+     exception, for a Close only: a wallet that can still pay for one send of its own closes its trade the old way (closeGo).
+     In the demo it is pretend, like the money: off until the first press, which shows the step as it will look.
+     Words: "one-tap", "your wallet", "HYPE"; never the machinery, never what a trade costs. ---- */
+
+  var OT = { sh: null, R: null, run: false, seq: 0, say: '', bad: false, add: false, demo: null, timer: 0, close: null };
+  var OT_LOW = 10, OT_SOON = 5 * 86400;      /* running low: under ten trades left; near its end: five days */
+  /* "one-tap" never breaks at its hyphen in a line of text (the hyphen that does not break, as the order sheet's note had it) */
+  function nb(s) { return String(s).replace(/([Oo])ne-tap/g, '$1ne\u2011tap'); }
+  var OT_SHORT = nb('Your wallet is short of the little HYPE one-tap runs on. Add money and that is topped up too.');
+  var OT_NO = 'You said no in your wallet, so nothing was sent. Press again when you are ready.';
+  function hypeS(wei) { var n = Number(wei) / 1e18; return n > 0 && n < 0.0001 ? 'under 0.0001' : String(Number(n.toFixed(4))); }
+  function addMoneyAny() { if (isDesktop()) openAddDesktop(); else openAdd(); }
+  /* The demo's one-tap: not set up until the first press turns it on, then 30 days and a full 0.02 HYPE.
+     trade.html?demo=1&onetap=on | low | renew | out | ended starts the demo in that state, so each one can be looked at. */
+  function otDemo() {
+    var d = OT.demo, now = Date.now() / 1000, q = '';
+    if (d) return d;
+    d = OT.demo = { set: false, exp: 0, hype: 0n };
+    try { q = new URLSearchParams(location.search).get('onetap') || ''; } catch (e) { /* not asked for */ }
+    if (/^(on|low|renew|out|ended)$/.test(q)) {
+      d.set = true; d.exp = now + (q === 'renew' ? 3 * 86400 + 7200 : q === 'ended' ? -7200 : 30 * 86400);
+      d.hype = q === 'low' ? 1000000000000000n + GAS_TRADE * 200000000n * 6n + 1n : q === 'out' ? 400000000000000n : 20000000000000000n;
+      if (q !== 'out' && q !== 'ended') api.oneTap().catch(noop);      /* trade.js's own pretend switch: this demo's trades need no step */
+    }
+    return d;
+  }
+  /* One-tap as trade.js has it (api.session), in the numbers the sheet and the step work with: can (this copy of the site has
+     one-tap at all), live, why it cannot carry a trade now ('first' | 'expired' | 'gas'), when it ends and the chain's clock
+     (seconds), the HYPE its key holds, the least it runs on, what a wallet step gives it at most and what the wallet keeps
+     back for that step, and the network's price now */
+  function otS() {
+    var s = api.session(), big = (x, d) => x != null ? BigInt(x) : d;
+    var o = { can: !!s.router, live: !!s.live, why: s.why || '', loaded: s.loaded !== false, elsewhere: !!s.elsewhere, exp: s.expiry != null ? Number(s.expiry) : null, now: s.now > 0 ? Number(s.now) : Date.now() / 1000,
+      hype: big(s.gasWei, null), need: big(s.needWei, 1000000000000000n), pack: big(s.packWei, 20000000000000000n), keep: big(s.keepWei, 2000000000000000n),
+      days: s.days || 30, fee: s.feeWei && s.feeWei > 0n ? BigInt(s.feeWei) : 200000000n };
+    if (api.demo) {
+      var d = otDemo();
+      o.can = o.loaded = true; o.elsewhere = false; o.exp = d.set ? d.exp : null; o.hype = d.set ? d.hype : null;
+      o.why = !d.set ? 'first' : d.exp <= o.now + 60 ? 'expired' : d.hype < o.need ? 'gas' : ''; o.live = !o.why;
+    }
+    return o;
+  }
+  /* What the sheet shows and the step checks. state: load (not read yet), off (not set up in this browser), on, low (under ten
+     trades of HYPE left), soon (under five days left), out (its HYPE is used up), ended (its days are over). trades: about how
+     many trades (an open and its close, measured: GAS_TRADE) its HYPE is still good for; left: the seconds it still lasts;
+     send: the HYPE a wallet step would give it now (trade.js: up to 0.02, less what the wallet keeps for the step itself);
+     fresh: the trades a full step is good for; short: the wallet could not leave it enough to run on, or pay for the step. */
+  function otView() {
+    var a = api.account(), s = otS(), per = GAS_TRADE * s.fee, t = x => Number((x > s.need ? x - s.need : 0n) / per);
+    var left = s.exp != null ? s.exp - s.now : null, trades = s.hype != null ? t(s.hype) : null;
+    var have = !api.demo && a.hypeWei != null ? BigInt(a.hypeWei) : null;
+    var send = have == null ? s.pack : have > s.keep ? (have - s.keep < s.pack ? have - s.keep : s.pack) : 0n, after = (s.hype || 0n) + send;
+    var st = !s.loaded ? 'load' : s.live ? (trades < OT_LOW ? 'low' : left != null && left < OT_SOON ? 'soon' : 'on') : s.why === 'expired' ? 'ended' : s.why === 'gas' ? 'out' : 'off';
+    /* own: short of what one-tap runs on, yet able to pay for one send of its own (a Close is never kept from such a wallet) */
+    return { s: s, state: st, live: s.live, trades: trades, left: left, send: send, fresh: t(s.pack), short: have != null && (after < s.need || have < GAS_SETUP * s.fee * 2n), own: have != null && have >= per * 2n };
+  }
+  /* why a press needs the step first ('' when one-tap carries it, and on a copy of the site that has no one-tap). o: the trade,
+     when the press is an open (one over the key's own limit per trade raises it in the same step: 'cap'). 'wait': the chain
+     has not been read yet (the first second of a visit): nothing is said or asked before it has (otStep reads it first) */
+  function otWhy(o) {
+    var s = otS(), t;
+    if (!s.can) return '';
+    if (!s.loaded) return 'wait';
+    if (!api.demo && o) { t = api.trade(o) || {}; return t.oneTap || ''; }
+    return s.live ? '' : s.why || 'first';
+  }
+  function otAbout(n) { return n >= 1000 ? 'over 1,000' : 'about ' + (n >= 100 ? Math.floor(n / 10) * 10 : n >= 20 ? Math.floor(n / 5) * 5 : n); }
+  function otSpan(sec) { var d = Math.round(sec / 86400), hr = Math.max(1, Math.floor(sec / 3600)); return sec >= 129600 ? d + ' days' : hr >= 24 ? '1 day' : hr === 1 ? '1 hour' : hr + ' hours'; }
+  function otDay(sec) { return new Date(sec * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+  /* above a key, before it is pressed: what the wallet will be asked, once */
+  function otNote(why) {
+    var v = otView(), hype = v.send > 0n ? ' with ' + hypeS(v.send) + ' HYPE' : '';
+    return nb(why === 'wait' ? '' : why === 'expired' ? 'One-tap trading has ended: your wallet asks once to renew it' + hype + '. After that, no popups.'
+      : why === 'gas' ? 'One-tap trading has run out: your wallet asks once to top it up' + hype + '. After that, no popups.'
+      : why === 'cap' ? 'This trade is over your one-tap limit: your wallet asks once to raise it.'
+      : 'First trade: your wallet asks once to turn on one-tap trading' + hype + '. After that, no popups.');
+  }
+  /* while the wallet is asked: what it shows, and what happens after its yes */
+  function otAsk(why, then) {
+    var v = otView(), pays = v.send > 0n && why !== 'cap';
+    if (why === 'wait') return nb('If your wallet asks, it is once, for one-tap trading. ' + then);
+    return nb((pays ? 'Your wallet shows one payment of ' + hypeS(v.send) + ' HYPE to ' + (why === 'expired' ? 'renew' : why === 'gas' ? 'top up' : 'turn on')
+      : 'One yes in your wallet ' + (why === 'expired' ? 'renews' : why === 'gas' ? 'tops up' : why === 'cap' ? 'raises the limit of' : 'turns on')) + ' one-tap trading. ' + then);
+  }
+  function otSay(text, addMoney) { var e = say(nb(text)); e.add = !!addMoney; return e; }
+  /* what stopped the step, in one line. trade.js's own timed-out wallet sentence is kept; everything unknown goes to the
+     console and the line claims nothing */
+  function otErr(e) {
+    var m = String((e && (e.shortMessage || e.message)) || ''), code = e && (e.code != null ? e.code : e.info && e.info.error && e.info.error.code);
+    if (e && e.plain != null) return e.plain;
+    if (e && e.smQuiet) return m;
+    if (code === 4001 || code === 'ACTION_REJECTED' || /user (rejected|denied|cancel)/i.test(m)) return OT_NO;
+    if (/insufficient funds|need a little HYPE/i.test(m)) return OT_SHORT;
+    if (/Switch the wallet to|another network/i.test(m)) return STAYED + 'nothing was sent. Press again and let it change.';
+    if (/local storage/i.test(m)) return 'This browser is not saving site data, and one-tap needs that. Allow it for this site, then press again.';
+    if (/^(One moment|Connect a wallet first)/.test(m)) return m;
+    if (api.gate() && m === api.gate()) return 'Trading is off right now. Try again in a little while.';
+    try { console.error('[simple] one-tap', e); } catch (x) { /* no console */ }
+    return 'One-tap did not turn on, so nothing was sent. Press again.';
+  }
+  /* The step: the chain's word on one-tap read first if it has not been (so one that is on is never set up again), the wallet
+     onto HyperEVM, Pro's own one-tap confirmation, then a look that it really carries trades now. Resolves when it does;
+     rejects with the one line to say (e.plain), and e.add when Add money is the way on. Nothing of the press it was for has
+     been sent when it rejects. o: the trade, when the press is an open. always: the sheet's own keys, which top up and renew a
+     one-tap that is on (a press of a trade never does: one that is on carries it). */
+  function otStep(o, always) {
+    return (otS().loaded ? Promise.resolve() : api.refresh().catch(noop)).then(() => {
+      var why = otWhy(o);
+      if (!why && !always) return null;
+      if (why === 'wait') throw otSay('Still reading your account. Press again in a moment.');
+      if (otView().short) throw otSay(OT_SHORT, true);
+      var net = api.demo ? Promise.resolve() : timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.');
+      return net.then(() => api.oneTap(o || null)).then(() => {
+        if (api.demo) { var d = otDemo(), s = otS(); d.hype = (d.set ? d.hype : 0n) + s.pack; d.set = true; d.exp = s.now + s.days * 86400; }
+        var left = otWhy(o);
+        if (left === 'gas') throw otSay('One-tap is set up, but it has too little HYPE to run on yet. Add money and that is topped up too.', true);
+        if (left) throw otSay('One-tap is set up, but this page has not seen it yet. Press again in a moment.');
+      }, e => { var line = otErr(e); throw otSay(line, line === OT_SHORT); });
+    });
+  }
+  /* a trade card's Close key while the step for that close is with the wallet (after the card's own paint): the key says the
+     wallet's turn, the card's line what it is asked */
+  function otKey(key, line, x) {
+    var c = OT.close;
+    if (!c || c.pid !== x.id) return;
+    txt(key, CONFIRM); cls(key, 'sm-btn is-primary is-busy'); key.disabled = true;
+    if (line) { txt(line, c.say); cls(line, 'sm-say is-warn'); show(line, true); }
+  }
+
+  /* the menu's line: its state in a word or two */
+  function otHint() {
+    var v = otView(), st = v.state;
+    return st === 'on' ? 'On' : st === 'soon' ? 'Ends in ' + otSpan(v.left) : st === 'low' ? 'Running low' : st === 'out' ? 'Run out' : st === 'ended' ? 'Ended' : st === 'off' ? 'Not set up yet' : '…';
+  }
+  function openOneTap() {
+    var sh = OT.sh;
+    if (!sh) { sh = OT.sh = makeSheet('OneTap', true); sh.d.classList.add('is-ot'); otBuild(); }
+    OT.say = ''; OT.bad = false; OT.add = false;
+    sh.onClose = () => { clearInterval(OT.timer); OT.timer = 0; };      /* a step already with the wallet goes on, as Pro's own */
+    sh.open();
+    api.refresh().catch(noop);
+    clearInterval(OT.timer);
+    OT.timer = setInterval(() => { if (document.hidden) return; if (!OT.run) api.refresh().catch(noop); paintOneTap(); }, 15000);
+    paintOneTap();
+  }
+  function otBuild() {
+    var sh = OT.sh, r = OT.R = {};
+    txt(sh.title, 'One-tap trading');
+    /* the card: one shape in every state. What it is and how long it lasts; its state, large; one sentence; how many trades
+       its HYPE is good for, as a line and a bar (the trade card's own); three facts */
+    r.pill = h('span', 'sm-pill', '');
+    r.word = h('b', 'sm-ot-word', ''); r.sub = h('p', 'sm-ot-sub', '');
+    r.mt = h('span', 'sm-room-t', ''); r.mv = h('span', 'sm-room-v', ''); r.bar = h('i');
+    r.meter = h('div', 'sm-room sm-ot-meter', [h('div', 'sm-room-l', [r.mt, r.mv]), h('div', 'sm-room-bar', r.bar)]);
+    r.f = [0, 1, 2].map(() => ({ k: h('span', null, ''), v: h('span', null, '') }));
+    r.pass = h('div', 'sm-rf-pass sm-ot-pass', [h('div', 'sm-rf-head', [h('div', 'sm-label', 'Your one-tap'), r.pill]), r.word, r.sub, r.meter,
+      h('div', 'sm-facts sm-ot-facts', r.f.map((f, i) => h('div', 'sm-fact' + (i === 1 ? ' sm-fact-now' : ''), [f.k, f.v])))]);
+    r.how3 = h('li', null, '');
+    r.how = h('div', 'sm-rf-how', [h('div', 'sm-label', 'How it works'), h('ol', null, [h('li', null, 'Your wallet says yes once.'), h('li', null, 'After that, opening and closing a trade is one tap. No popups.'), r.how3])]);
+    r.know = h('p', 'sm-fine sm-ot-know', nb('One-tap can only open and close your trades and set their take profit and stop loss. It can never take money out.'));
+    add(sh.body, [r.pass, r.how, r.know]);
+    r.say = sayLine();
+    r.alt = btn('sm-btn is-ghost', '', () => { otGo(true); }); r.go = btn('sm-btn is-primary', '', () => { otGo(false); });
+    add(sh.foot, [r.say, h('div', 'sm-ot-keys', [r.alt, r.go])]);
+  }
+  function paintOneTap() {
+    var sh = OT.sh, r = OT.R;
+    if (!sh || !sh.isOpen || !r) return;
+    if (!api.wallet().account) { sh.close(); return; }
+    var v = otView(), s = v.s, st = v.state, run = OT.run, set = st !== 'off' && st !== 'load', near = v.left != null && v.left < OT_SOON;
+    var hype = v.send > 0n ? hypeS(v.send) + ' HYPE' : '', full = hypeS(s.pack) + ' HYPE', days = s.days + ' days';
+    /* the card */
+    txt(r.pill, !set ? '' : st === 'ended' ? 'ended ' + otDay(s.exp) : otSpan(v.left) + ' left');
+    cls(r.pill, 'sm-pill' + (st === 'ended' ? ' is-dn' : st === 'out' ? ' is-plain' : near ? ' is-warn' : ' is-up')); show(r.pill, set);
+    var word = st === 'load' ? '' : st === 'off' ? 'Not set up yet' : st === 'low' ? 'Running low' : st === 'out' ? 'Run out' : st === 'ended' ? 'Ended' : 'On';
+    txt(r.word, word); if (r.word._n !== word.length) { r.word._n = word.length; r.word.style.setProperty('--n', String(Math.max(7, word.length))); }      /* as large as the card's width lets that word be */
+    cls(r.word, 'sm-ot-word' + (st === 'load' ? ' is-wait' : st === 'on' || st === 'soon' ? ' is-on' : st === 'low' ? ' is-warn' : st === 'out' || st === 'ended' ? ' is-bad' : ''));
+    txt(r.sub, st === 'load' ? 'Reading it from the chain…'
+      : st === 'off' ? (s.elsewhere ? 'It is on in another browser. Turning it on here moves it to this one.' : 'Turn it on once and every trade is one tap: your wallet stays out of the way.')
+      : st === 'low' ? 'Its HYPE is nearly used up. Top it up and your trades keep going through at one tap.'
+      : st === 'out' ? 'Its HYPE is used up. Top it up and your trades go through at one tap again.'
+      : st === 'ended' ? 'Its ' + days + ' are over. Renew it and your trades go through at one tap again.'
+      : st === 'soon' ? 'Your trades go through at one tap. It ends ' + otDay(s.exp) + ': renew it any time before.'
+      : 'Your trades go through at one tap. Your wallet stays out of the way.');
+    txt(r.mt, set ? 'Trades left' : 'Good for'); txt(r.mv, st === 'load' ? '—' : set ? (v.trades > 0 ? otAbout(v.trades) : 'none') : otAbout(v.fresh) + ' trades');
+    cls(r.meter, 'sm-room sm-ot-meter' + (!set ? ' is-late is-off' : st === 'ended' ? ' is-late' : st === 'out' || !(v.trades > 0) ? ' is-red' : st === 'low' ? ' is-amber' : ''));
+    var pc = set && s.hype != null && s.pack > 0n ? Math.min(100, Number(s.hype * 1000n / s.pack) / 10) : 0;
+    r.bar.style.width = pc + '%';
+    var facts = set ? [[st === 'ended' ? 'Ended on' : 'Lasts until', otDay(s.exp)], ['Kept in', 'this browser'], ['HYPE in it', (Number(s.hype || 0n) / 1e18).toFixed(4)]]
+      : [['Wallet asks', 'once'], ['Lasts', days], ['Runs on', full]];
+    r.f.forEach((f, i) => { txt(f.k, facts[i][0]); txt(f.v, st === 'load' ? '—' : facts[i][1]); });
+    txt(r.how3, 'It runs on a little of your HYPE and lasts ' + days + '. Then one yes renews it.');
+    /* the keys: one in ink, always. Turn on; Top up when its HYPE is low or used up; Renew near its end and after it; Done
+       when nothing is needed, with Top up beside it on paper. One step is behind all of them. Add money when the wallet is
+       short of the HYPE for it */
+    var needs = st === 'off' || st === 'out' || st === 'ended', toAdd = OT.add || (needs && v.short), calm = st === 'on' || st === 'soon', two = !toAdd && calm && !run;
+    var main = toAdd ? 'Add money' : st === 'load' ? 'One moment…' : st === 'off' ? 'Turn on one-tap' : st === 'ended' || st === 'soon' ? 'Renew for ' + days : st === 'on' ? 'Done' : 'Top up' + (hype ? ' · ' + hype : '');
+    txt(r.go, run ? CONFIRM : nb(main)); cls(r.go, 'sm-btn is-primary' + (run ? ' is-busy' : ''));
+    r.go.disabled = run || st === 'load'; r.go._add = toAdd; r.go._done = !toAdd && st === 'on';
+    txt(r.alt, 'Top up'); show(r.alt, two); r.alt.disabled = run;
+    r.alt.parentNode.classList.toggle('is-two', two);
+    /* the line over the keys: what the last press came to; while the wallet is asked, what it shows; else what a press does */
+    var line = run ? (v.send > 0n ? 'Your wallet shows one payment of ' + hype + '. Nothing is sent until you confirm.' : 'Your wallet asks you to confirm. Nothing is sent until you do.')
+      : OT.say ? OT.say : toAdd ? OT_SHORT : st === 'load' ? ''
+      : st === 'off' ? 'Your wallet asks once' + (hype ? ' and gives it ' + hype + ' to run on.' : '.')
+      : st === 'soon' || st === 'ended' ? 'Renewing starts ' + days + ' again' + (hype ? ' and sends it ' + hype + ' from your wallet.' : '. Your wallet asks once.')
+      : 'A top-up starts its ' + days + ' again' + (hype ? ' and sends it ' + hype + ' from your wallet.' : '. Your wallet asks once.');
+    /* the HYPE the wallet sends stands out in the line, as the amount does in Add money's own wallet line */
+    line = nb(line);
+    if (r.say._k !== line) {
+      var at = hype ? line.indexOf(hype) : -1;
+      r.say._k = line; r.say.textContent = '';
+      add(r.say, at < 0 ? [line] : [line.slice(0, at), h('b', null, hype), line.slice(at + hype.length)]);
+    }
+    cls(r.say, 'sm-say' + (!run && OT.say && OT.bad ? ' is-bad' : run || (!OT.say && toAdd) ? ' is-warn' : ''));
+    otEdge();
+  }
+  function otEdge() {
+    var sh = OT.sh, b = sh.body, more = b.scrollHeight - b.clientHeight - b.scrollTop > 2;
+    if (sh.d.classList.contains('is-more') !== more) sh.d.classList.toggle('is-more', more);
+  }
+  /* the sheet's keys: the one step (alt: Top up beside the main key), Done, or the way to the HYPE it lacks */
+  function otGo(alt) {
+    var r = OT.R, v = otView();
+    if (OT.run || early() || v.state === 'load') return;
+    if (!alt && r.go._add) { OT.sh.close(); setTimeout(addMoneyAny, 200); return; }
+    if (!alt && r.go._done) { OT.sh.close(); return; }
+    if (v.short) { OT.say = ''; OT.add = true; paintOneTap(); return; }
+    var was = v.state, mine = ++OT.seq;
+    OT.run = true; OT.say = ''; OT.bad = false; S.claim = true; paintOneTap();
+    otStep(null, true).then(() => {
+      OT.say = was === 'off' ? 'One-tap is on. From here, every trade is one tap.' : 'Done: one-tap is topped up and its ' + v.s.days + ' days start again.'; OT.bad = false;
+    }, e => { OT.say = e.add ? '' : e.plain; OT.bad = !e.add; OT.add = !!e.add; }).then(() => {
+      if (OT.seq === mine) OT.run = false;
+      S.claim = false; paintOneTap(); kick();
+    });
+  }
+
 
   /* ---- the sheet: dollars, Boost, both outcomes in dollars, one Open ---- */
 
@@ -5002,20 +5440,15 @@
     r.say = sayLine();
     r.go = btn('sm-btn', '', orderGo);
     add(sh.foot, [r.say, r.go]);
-    sh.onClose = () => { ORD.busy = false; S.claim = false; };
+    sh.onClose = () => { ORD.busy = false; ORD.ot = ''; S.claim = false; };
     sh.open(); paintOrder();
   }
   function num(v) { v = String(v || '').trim(); if (!v) return null; var n = Number(v.replace(/[^0-9.]/g, '')); return isFinite(n) && n > 0 ? n : NaN; }
   function paintOrder() {
     var r = ORD.R, sym = ORD.sym, up = ORD.isLong, amt = ordAmount(), lev = ORD.lev, a = api.account(), tk = api.ticket();
     var t = api.trade({ sym: sym, isLong: up, margin: amt, lev: lev }) || {}, mv = api.fmt.move(t.endPct);
-    /* an order this sheet handed to the Pro code (ORD.sent): the wallet (first trade: one-tap, once), then on its way; the sheet
-       steps aside. Before that the ticket's state is some earlier order's (a trade still open, one still going in) and says
-       nothing about this press */
-    if (ORD.busy && ORD.sent) {
-      if (tk.phase === 'error' || tk.phase === 'refunded' || tk.phase === 'unknown') { ORD.err = plain(tk.msg) || 'It did not go through. Nothing was taken.'; ORD.busy = false; S.claim = false; api.ticketDone(); }
-      else if (tk.phase !== 'wallet' && (tk.phase || api.openings().some(o => o.sym === sym) || (ORD.sent && Date.now() - ORD.sent > 20000))) { ORD.busy = false; S.claim = false; ORD.sh.close(); S.sig = ''; return; }
-    }
+    /* (cf_FILLFEEL) the sheet gives way the moment the page's own code has taken the order (orderGo): from then on the order's
+       card, drawn as its trade, says whatever becomes of it */
     if (document.activeElement !== r.amt && r.amt.value !== ORD.typed) r.amt.value = ORD.typed;
     each(r.chips, b => { b.setAttribute('aria-pressed', (b._v === 'all' ? ORD.all : !ORD.all && amt === b._v) ? 'true' : 'false'); b.disabled = !!ORD.busy; });
     each(r.seg, b => {
@@ -5059,48 +5492,85 @@
       else if (tp != null || sl != null) why = r.tp.bad || r.sl.bad || autoWhy(api.autoCheck(oo, tp, sl) || '');
       else if (ORD.limit && !(Number(ORD.limitPx) > 0)) why = 'Type a price for your limit order.';
     }
-    if (!why && !err && t.oneTap && !api.demo) note = t.oneTap === 'first' ? 'First trade: your wallet asks once to turn on one‑tap trading. After that, no popups.' : 'Your wallet asks once to renew one‑tap trading.';
+    /* one-tap for everyone: an open that one-tap cannot carry yet first asks the wallet that one thing (otStep). It is said
+       above the key before the press (in the demo too, where it is pretend); while the wallet is asked the line says what it
+       shows; a wallet short of the HYPE for it gets Add money as its key */
+    var ot = !why ? otWhy(oo) : '', otShort = !!ot && !ORD.busy && otView().short;
+    if (otShort) why = OT_SHORT;
+    if (ORD.busy && ORD.ot) note = ORD.ot;
+    else if (ot && !otShort && !err) note = otNote(ot);
     /* a take profit or stop loss typed: the one thing to know about it stands right above the button, in view on every phone */
     else if (!why && !err && (tp != null || sl != null)) note = onChain ? CHAIN_ALWAYS : (tp != null && sl != null ? 'Your take profit and stop loss fire' : tp != null ? 'Your take profit fires' : 'Your stop loss fires') + ' while Confetti is open ' + (isDesktop() ? 'in this browser.' : 'on this phone.');
     /* v6: under a stop on chain, how it fills (at every boost) */
     if (onChain && sl != null) txt(r.autoFine, chainStop(lev));
     show(r.autoFine, ORD.limit || (tp == null && sl == null) || (onChain && sl != null));      /* said above the button instead */
-    txt(r.say, why || err || note); cls(r.say, 'sm-say' + ((why && !autoWait(why)) || err ? ' is-bad' : ''));      /* the reason the button is off comes first */
-    var word = ORD.busy ? (tk.phase === 'wallet' || t.oneTap ? CONFIRM : 'Opening…') : '';
-    r.go._add = needMoney && !ORD.busy && !t.block;
+    txt(r.say, why || err || note); cls(r.say, 'sm-say' + ((why && !autoWait(why)) || err ? ' is-bad' : ORD.busy && ORD.ot ? ' is-warn' : ''));      /* the reason the button is off comes first */
+    /* (cf_FILLFEEL) the key answers by going down, with its own words: the wallet's turn is said, never a wait ("Opening…") */
+    var word = ORD.busy && (ORD.ot || (!api.demo && (tk.phase === 'wallet' || t.oneTap || !api.session().live))) ? CONFIRM : '';
+    r.go._add = (needMoney || otShort) && !ORD.busy && !t.block;
     if (ORD.limit) {
       txt(r.go, word || (r.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' at $' + ORD.limitPx + ' · ' + usdS(amt) + ' × ' + lev));
     } else {
       txt(r.go, word || (r.go._add ? 'Add money' : 'Open ' + (up ? 'UP' : 'DOWN') + ' · ' + usdS(amt) + ' × ' + lev));
     }
-    cls(r.go, 'sm-btn ' + (r.go._add ? 'is-primary' : up ? 'is-up' : 'is-dn') + (word ? ' is-busy' : ''));
-    r.go.disabled = !!word || (!!why && !r.go._add);
+    cls(r.go, 'sm-btn ' + (r.go._add ? 'is-primary' : up ? 'is-up' : 'is-dn') + (ORD.busy ? ' is-busy' : ''));
+    r.go.disabled = !!ORD.busy || (!!why && !r.go._add);
     r.go._o = { sym: sym, isLong: up, margin: amt, lev: lev, maxed: ORD.all, tp: tp, sl: sl, limit: ORD.limit, limitPx: Number(ORD.limitPx) };
   }
   function orderGo() {
     var r = ORD.R, o = r.go._o, s = api.session();
     if (ORD.busy || r.go.disabled || early()) return;
     if (r.go._add) { ORD.sh.close(); setTimeout(() => { openAdd(); }, 200); return; }
-    /* limit order: placed in browser, no wallet interaction */
-    if (o.limit && o.limitPx > 0) {
+    var ot = otWhy(o);
+    /* limit order: placed in browser, no wallet interaction (it opens later through one-tap, so one-tap is set up first) */
+    function place() {
       var res = api.limits.place(o.sym, o.isLong, o.margin, o.lev, o.limitPx);
       if (!res.ok) { ORD.err = res.err; paintOrder(); return; }
       snack('Limit placed: ' + (o.isLong ? 'Up' : 'Down') + ' ' + o.sym + ' at $' + o.limitPx + '. It fires while Confetti is open.');
       if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); lsSet('confetti.trade.lev.' + o.sym, String(o.lev));
       ORD.sh.close(); S.sig = ''; kick();
-      return;
     }
+    var lim = !!(o.limit && o.limitPx > 0);
+    if (lim && !ot) { place(); return; }
     /* this press has a token: closing the sheet ends it, and a press that has ended sends nothing */
     var mine = ORD.busy = Date.now() + Math.random(), t = api.trade(o) || {};
-    ORD.err = ''; ORD.sent = 0; S.claim = true; S.lastErr = null; paintOrder();
-    /* whenever the wallet will be asked (one-tap is not on, or cannot carry this order) it is asked onto HyperEVM first;
-       the demo has no wallet and asks nothing */
-    (!api.demo && (!s.live || t.oneTap) ? timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.') : Promise.resolve()).then(() => {
+    ORD.err = ''; ORD.ot = ot ? otAsk(ot, lim ? 'Then your order is placed.' : 'Then this trade opens.') : ''; S.claim = true; S.lastErr = null;
+    paintOrder();
+    function send() {
       if (ORD.busy !== mine || !ORD.sh.isOpen) return;
+      if (lim) { ORD.busy = false; S.claim = false; place(); return; }
       var why = api.open(o);
-      if (why) { ORD.busy = false; S.claim = false; ORD.err = plain(why); } else { ORD.sent = Date.now(); if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); lsSet('confetti.trade.lev.' + o.sym, String(o.lev)); }
-      if (ORD.sh.isOpen) paintOrder();
-    }, e => { if (ORD.busy !== mine) return; ORD.busy = false; S.claim = false; ORD.err = errText(e); if (ORD.sh.isOpen) paintOrder(); });
+      if (why) { ORD.busy = false; S.claim = false; ORD.err = plain(why); paintOrder(); return; }
+      S.claim = false; if (!o.maxed) lsSet(AMT_KEY, String(o.margin)); lsSet('confetti.trade.lev.' + o.sym, String(o.lev));
+      /* (cf_FILLFEEL) the page's own code has taken the order: the sheet gives way at once to the order's card, drawn as its
+         trade. Where the wallet is still to be asked the order is not in the list yet and has its place all the same (ffAsk);
+         a wallet that says no is said there, and Try again brings this sheet back with the same amount and boost */
+      ffTap(o); ffAsk(); ffHand(); S.sig = '';
+    }
+    /* one-tap for everyone: where one-tap cannot carry this open yet, the wallet is asked that one thing first (otStep: onto
+       HyperEVM, then Pro's own step); a no, or a wallet that never answers, leaves its line above the same key. Then the open
+       goes out through one-tap, as every one after it.
+       (cf_FILLFEEL) With no wallet to ask, the order goes out right behind the frame that shows the pressed key. On a copy of
+       the site without one-tap the wallet signs the open itself, and is asked onto HyperEVM first */
+    if (ot) { otStep(o).then(() => { ORD.ot = ''; send(); }, e => { ORD.ot = ''; if (ORD.busy !== mine) return; ORD.busy = false; S.claim = false; ORD.err = e.plain; if (ORD.sh.isOpen) paintOrder(); }); return; }
+    if (api.demo || (s.live && !t.oneTap)) { ffNext(send); return; }
+    timed(api.toHyperEvm(), 30000, STAYED + 'nothing was sent. Press again and let it change.').then(send, e => { if (ORD.busy !== mine) return; ORD.busy = false; S.claim = false; ORD.err = errText(e); if (ORD.sh.isOpen) paintOrder(); });
+  }
+  /* (cf_FILLFEEL) a sheet gives way to the card its press is on (the order sheet to its order's card, Close part to its trade's):
+     the same slide away, quick off the mark, so the card under it is in view sooner (is-handing, simple.css). A sheet's own
+     close, by its ✕ or a swipe, is as it was */
+  function ffHand(sh) {
+    sh = sh || ORD.sh;
+    var d = sh.d;
+    d.classList.add('is-handing'); sh.close();
+    setTimeout(() => { d.classList.remove('is-handing'); }, 240);
+  }
+  /* (cf_FILLFEEL) right behind the frame that shows the pressed key: a press is answered within one frame, and the work it
+     starts comes straight after (at once where there are no frames to wait for: a page out of sight) */
+  function ffNext(fn) {
+    var ran = false, run = () => { if (!ran) { ran = true; fn(); } };
+    if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(() => { setTimeout(run, 0); });
+    setTimeout(run, 80);
   }
 
   /* ---- start: trade.js calls this once, with its api ---- */

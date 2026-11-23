@@ -323,6 +323,17 @@
       "launch": true
     },
     {
+      "symbol": "ZEC",
+      "coin": "ZEC",
+      "hlAssetIndex": 214,
+      "szDecimals": 2,
+      "tier": "A",
+      "maxLeverage": 1000,
+      "oiCapPerSideUsd": 10000000,
+      "fastDelay": 2,
+      "launch": true
+    },
+    {
       "symbol": "SHIB",
       "coin": "kSHIB",
       "hlAssetIndex": 38,

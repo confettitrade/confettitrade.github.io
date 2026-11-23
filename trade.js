@@ -2105,8 +2105,10 @@
      choice is remembered per market (LS.lev). */
   function defaultLeverage(m) { return Math.min(20, maxLev(m)); }
 
-  /* On chain and open: a market the page may offer. Before the instruments are read, every market counts. */
-  function marketOnChain(m) { return !hasExchange() || !state.instrumentsLoaded || !!m.inst; }
+  /* On chain and open: a market the page may offer. Before the instruments are read, every market counts. A market the
+     config holds back ("launch": false: one added on chain before the site shows it) never does, whether the chain has it
+     or not: it is listed as coming soon and cannot be picked; config.json flips it on, no other change. */
+  function marketOnChain(m) { return m.launch !== false && (!hasExchange() || !state.instrumentsLoaded || !!m.inst); }
 
   /* The word beside the coin when it takes no new trades. */
   function marketTagText(m) {
@@ -9789,7 +9791,8 @@
       var tsn = isV6() ? trigSeenLine(pid, tf, sz) : '';
       if (tsn) lines.push(tsn);
       var win = pnl > 0 && !!window.ConfettiShare;
-      var openShare = function () { window.ConfettiShare.open(shareTrade(pid, a, closed.block, pos, pnl)); };
+      if (win) shareLevel();      /* read by the time Share is pressed */
+      var openShare = function () { window.ConfettiShare.open(shareTrade(pid, a, closed.block, pos, pnl), { account: wallet.account }); };
       var buttons = [{ label: 'Withdraw', act: 'withdraw', fn: function () { tourEvent('withdraw'); openWithdraw(); } }];
       if (win) buttons.push({ label: 'Share', fn: openShare });
       ui.phClosed = { text: 'Closed ' + (m ? m.symbol : label) + ' · ' + fmtUsd(pnl, true) + ' · ' + fmtUsd(paid) + ' back', until: Date.now() + 6000 };
@@ -9944,22 +9947,26 @@
     return host ? host.querySelector('[data-recent="' + key + '"]') : null;
   }
 
-  /* ---- share a winning close (share.js) ----------------------------------------------------------- */
+  /* ---- share a close (share.js: the trade card and its sheet) ------------------------------------- */
 
-  /* A block's timestamp; one retry (the public RPC rate-limits), then null: the card goes without its chart */
-  function blockTime(block) {
-    if (DEMO || block == null) return Promise.resolve(Math.floor(Date.now() / 1000));
-    if (hist.blockTs[block]) return Promise.resolve(hist.blockTs[block]);
-    function get() {
-      return read.provider.getBlock(block).then(function (b) {
-        if (!b) throw new Error('block ' + block + ' not found');
-        hist.blockTs[block] = Number(b.timestamp);
-        return hist.blockTs[block];
-      });
-    }
-    return get().catch(function () {
-      return new Promise(function (ok) { setTimeout(ok, 1500); }).then(get);
-    }).catch(function () { return null; });
+  /* the wallet's FETTI level for its card (fetti.js, when money back is on): 0 until it is read. Simple sets fetti.js up
+     when it is on screen; where it has not (the Pro page alone), once from here. Read-only. */
+  var shareFx = false;
+  function shareLevel() {
+    var F = window.ConfettiFetti, w = wallet.account;
+    if (!F || !w || !cfg) return 0;
+    if (!F.on() && !shareFx) { shareFx = true; F.setup(cfg, { demo: !!DEMO }); }
+    if (!F.on()) return 0;
+    F.loadMe(w, 60000);
+    var s = F.standing(w);
+    return s.known ? s.level : 0;
+  }
+  /* the level, read: at once when it is known (or there is none to know), else after one read, a second and a half at most */
+  function shareLevelRead() {
+    var F = window.ConfettiFetti, w = wallet.account;
+    shareLevel();
+    if (!F || !w || !F.on() || F.standing(w).known) return Promise.resolve();
+    return Promise.race([F.loadMe(w, 60000), new Promise(function (ok) { setTimeout(ok, 1500); })]).catch(function () {});
   }
 
   /* PositionOpened of pid: from the loaded history, else the logs up to the close (one query, then chunks back) */
@@ -9989,30 +9996,26 @@
     });
   }
 
-  /* What the card needs for one winning close: a = PositionClosed args, closeBlock its block,
-     pos the position as last read (or null: the open comes from its PositionOpened log). */
+  /* What the trade card needs for one close: a = PositionClosed args, closeBlock its block, pos the position as last
+     read (or null: the open comes from its PositionOpened log). The card says the result against what went in, in this
+     page's own figures: what went in is the stake, the margin added and what opening took (posIn; from the log: the
+     stake and History's open figure), the boost is the one the trade ran at (levShown). A plain object when the
+     position is at hand, else a Promise of it (one log read at most). */
   function shareTrade(pid, a, closeBlock, pos, net) {
     pid = String(pid);
-    /* v5: the card says the result against what went in (net, from the close's own report or History's row) */
-    var hrow = net == null && isV5() ? hist.rows.filter(function (x) { return x.name === 'PositionClosed' && String(x.args.positionId) === pid; })[0] : null;
+    var hrow = isV5() ? hist.rows.filter(function (x) { return x.name === 'PositionClosed' && String(x.args.positionId) === pid; })[0] : null;
     if (net == null && hrow) net = histNet(hrow);
-    var open = pos
-      ? Promise.resolve({ instrumentId: pos.instrumentId, isLong: pos.isLong, margin: pos.margin, leverage: pos.leverage, entry: pos.entry, ts: pos.openedAt })
-      : openedLog(pid, closeBlock).then(function (o) {
-        return blockTime(o.block).then(function (ts) {
-          return { instrumentId: Number(o.args.instrumentId), isLong: !!o.args.isLong, margin: usd6ToNum(o.args.marginUsdc), leverage: Number(o.args.leverage), entry: px18ToNum(o.args.entryPx18), ts: ts };
-        });
-      });
-    return Promise.all([open, blockTime(closeBlock)]).then(function (r) {
-      var o = r[0];
-      var inst = state.byInstId[o.instrumentId];
-      var m = inst && inst.market;
+    var card = function (o) {
+      var inst = state.byInstId[o.instrumentId], m = inst && inst.market;
       return {
-        id: pid, sym: m ? m.symbol : '#' + o.instrumentId, coin: m ? m.coin : null, szDecimals: m ? m.szDecimals : null,
-        side: o.isLong ? 'long' : 'short', lev: o.leverage, margin: o.margin, entry: o.entry,
-        exit: px18ToNum(a.exitPx18), pnl: net != null ? net : usd6ToNum(a.pnlUsdc), openTs: o.ts, closeTs: r[1],
-        account: wallet.account, code: ref.myCode || ''
+        id: pid, sym: m ? m.symbol : '#' + o.instrumentId, side: o.isLong ? 'long' : 'short', lev: o.lev, margin: o.margin,
+        pnl: net != null ? net : usd6ToNum(a.pnlUsdc), account: wallet.account, code: ref.myCode || '', level: shareLevel()
       };
+    };
+    if (pos) return card({ instrumentId: pos.instrumentId, isLong: pos.isLong, margin: posIn(pos), lev: Number(levShown(pos)) });
+    return Promise.all([openedLog(pid, closeBlock), shareLevelRead()]).then(function (r) {
+      var o = r[0];
+      return card({ instrumentId: Number(o.args.instrumentId), isLong: !!o.args.isLong, margin: usd6ToNum(o.args.marginUsdc) + (hrow ? histFees(hrow).open : 0), lev: Number(o.args.leverage) });
     });
   }
 
@@ -10917,7 +10920,7 @@
     if (r.name === 'PositionClosed' && d.amount > 0 && window.ConfettiShare) {
       var share = el('button', 'ph-hist-share', 'Share');
       share.type = 'button'; share.title = 'Share your win';
-      share.addEventListener('click', function (ev) { ev.preventDefault(); window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null)); });
+      share.addEventListener('click', function (ev) { ev.preventDefault(); window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null), { account: wallet.account }); });
       line.appendChild(share);
     }
     return line;
@@ -10948,7 +10951,7 @@
       share.href = '#'; share.setAttribute('role', 'button'); share.title = 'Share your win';
       share.addEventListener('click', function (ev) {
         ev.preventDefault();
-        window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null));
+        window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null), { account: wallet.account });
       });
       line.appendChild(share);
     }
@@ -10993,7 +10996,7 @@
       share.href = '#'; share.setAttribute('role', 'button'); share.title = 'Share your win';
       share.addEventListener('click', function (ev) {
         ev.preventDefault();
-        window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null));
+        window.ConfettiShare.open(shareTrade(r.args.positionId, r.args, r.block, null), { account: wallet.account });
       });
       sc.appendChild(share);
     }
@@ -13313,7 +13316,6 @@
     onPhoneChange(renderHistory);
     initRefer();
     initChart();
-    if (window.ConfettiShare) window.ConfettiShare.use({ postInfo: postInfo });
     listenForProviders();
 
     if (!window.ethers) {
@@ -16102,6 +16104,12 @@
       return swSend({ route: route, amountIn: amountIn, out: r.out, minOut: minOut, impact: r.impact, at: Date.now(), slip: 1 }, T.HYPE, T.USDC, 'Swap ' + swFmt(amountIn, 18) + ' HYPE for USDC');
     }).then(function () { return swAfterLanded(prev); });
   }
+  /* (cf_FILLFEEL) An order as the position it becomes, in plain numbers for Simple's card of it: openingFigures (the Pro
+     card's own figures: filled at the print now, by settle.js), with what went in. Read only: nothing here sends or keeps. */
+  function smFig(r) {
+    var f = openingFigures(r);
+    return { fresh: !!f.fresh, sz: f.sz, px: f.px, entry: f.entry, endPx: f.liq, away: f.away, pnl: f.pnl, payout: f.payout, margin: reqIn(r) };
+  }
   var smApi = {
     demo: DEMO, chainId: CHAIN_ID, usdc: USDC, exchange: CONTRACTS.exchange, swapKeepWei: DEP_SWAP_RESERVE_WEI,
     on: function (ev, fn) { (sm.subs[ev] = sm.subs[ev] || []).push(fn); },
@@ -16250,12 +16258,17 @@
           missed: tpsl.missed[it.pid] ? { tp: tpsl.missed[it.pid].tp, sl: tpsl.missed[it.pid].sl } : null };
       });
     },
+    /* (cf_FILLFEEL) fig: the order drawn as the position it becomes (openingFigures, the Pro card's own: filled at the print
+       now), for Simple's card of it; null for one that did not open */
     openings: function () {
       return phOpenings().map(function (o) {
         var r = o.r, st = o.kind === 'end' ? { say: o.say, tone: 'bad' } : openingStatus(r, o.kind);
-        return { key: o.key, kind: o.kind, sym: reqSym(r), isLong: !!r.isLong, lev: r.leverage, margin: reqIn(r), say: st.say || '', tone: st.tone || '', btn: st.btn || '', note: st.note || '', share: st.share || 0 };
+        return { key: o.key, kind: o.kind, sym: reqSym(r), isLong: !!r.isLong, lev: r.leverage, margin: reqIn(r), say: st.say || '', tone: st.tone || '', btn: st.btn || '', note: st.note || '', share: st.share || 0,
+          fig: o.kind === 'end' ? null : smFig(r) };
       });
     },
+    /* (cf_FILLFEEL) the same figures for an order the wallet is still asked about (not in the list yet): { sym, isLong, margin, lev } */
+    figure: function (o) { return smWith(o, function (m) { return smFig({ instrumentId: m.instrumentId, isLong: form.side === 'long', margin: form.margin, leverage: form.lev }); }); },
     openingAct: function (key) { var r = pend.opens[String(key).slice(1)]; if (r) openReqAction(r); },
     result: function (pid) {
       pid = String(pid);
@@ -16313,7 +16326,32 @@
     },
     closeAct: function (pid) { var p = posById(pid); if (p) closeReqAction(p); },
     share: function (pid) { var r = ui.recent.filter(function (x) { return x.key === 'c' + pid; })[0], b = r && (r.buttons || []).filter(function (x) { return x.label === 'Share'; })[0]; if (b) b.fn(); return !!b; },
-    session: function () { return { live: sessionLive(), feeWei: sess.feeWei, router: !!read.router }; },
+    /* One-tap for everyone (the owner, 2026-11-21: "make one tap the default for all users make them all use it"). Simple's
+       One-tap sheet and its first press read the state here and send through oneTap below; no contract code is new.
+       session: live / feeWei / router as before, and for the sheet, read only: why the key cannot carry a trade now (oneTapWhy:
+       '' | 'first' | 'expired' | 'gas'), whether the chain holds this browser's key (mine) or another browser's (elsewhere),
+       when it ends and the chain's clock (expiry, now: seconds), the HYPE this browser's key holds and the least it needs for
+       one more send (gasWei, needWei), what a wallet step sends it at most and what stays in the wallet for that step (packWei,
+       keepWei), how many days a step gives it (days), and whether a step is with the wallet now (turning). */
+    session: function () {
+      var s = sess.onchain, mine = !!(s && sess.key && s.key.toLowerCase() === sess.key.address.toLowerCase()), E = window.ethers;
+      return { live: sessionLive(), feeWei: sess.feeWei, router: !!read.router,
+        why: DEMO || read.router ? oneTapWhy(null) : '', loaded: DEMO || !!sess.loaded, mine: mine, elsewhere: !!(s && !mine),
+        expiry: mine ? s.expiry : null, now: chainNow(), gasWei: sess.key ? sess.gasWei : null, needWei: sessionGasNeed(),
+        packWei: E ? E.parseEther(SESSION_GAS_HYPE) : null, keepWei: E ? E.parseEther(SESSION_WALLET_KEEP_HYPE) : null, days: ONE_TAP_DAYS, turning: !!state.turningOn };
+    },
+    /* Pro's own one-tap step, asked for by itself (ensureOneTap: set up, renew or top up in one wallet confirmation, the
+       router's authorize with the key's HYPE): Simple's Turn on / Top up / Renew keys, and its first press before the trade
+       goes out. o: the trade the step is for when it is an open ({ sym, isLong, margin, lev }), so the step covers it exactly
+       as the open's own forced step would. Rejects with the wallet's or the page's own error. */
+    oneTap: function (o) {
+      if (state.turningOn || state.busy) return Promise.reject(new Error(state.turningOn ? 'One moment: your wallet is already being asked.' : 'One moment: the last thing you sent is still going through.'));
+      if (DEMO) return ensureOneTap(null);
+      try { requireSigner(); } catch (e) { return Promise.reject(e); }
+      if (!read.router) return Promise.reject(new Error('One-tap is not ready on this page yet.'));
+      var m = o && state.bySym[o.sym];
+      return ensureOneTap(m && o.margin > 0 ? numToUsd6(smStake(o, m)) : null);
+    },
     /* "Powered by Blockfront" on Simple's trade cards (the owner, 2026-11-19: "powered by block front", "on the position cards
        actually"). True only while this page really reads the chain through Blockfront: it is switched on (blockfrontOn: never in
        the demo, never with config.json "blockfront": false) AND the read provider's last good answer came from it (rpcState.read,

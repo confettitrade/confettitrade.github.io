@@ -1,69 +1,30 @@
-/* Share your win: after a winning close, a 1600x900 PNG card (the flex poster: the trade's Hyperliquid
-   chart and numbers dimmed under confetti, the name and the PnL on top) and a 5 s 1080x1920 clip (the PnL
-   counts up, turns gold on a plate and bursts into confetti), drawn on canvas and recorded in the browser.
-   Same look as the card, poster and clip renders. No contract calls.
+/* Share your trade: the trade card and the one sheet every Share on every page opens (the owner, 2026-11-21: "make it so
+   when you click share on portfolio page it shows the new pnl cards", then "get rid of those janky old ones all together").
 
-   window.ConfettiShare.open(trade or a Promise of one) opens the dialog. trade:
-     { id?, sym, coin?, szDecimals?, side: 'long' | 'short', lev, margin, entry, exit, pnl,
-       openTs, closeTs (unix seconds), account?, code? (referral code), name? (overrides the default) }
-   window.ConfettiShare.use({ postInfo: fn }) hands over the page's Hyperliquid info call for the candles. */
+   The card: one closed trade as a 16:9 picture in the owner's design, drawn on canvas ("the trade card" below).
+   The sheet: the card on top, drawn again at every choice, and under it the trader's choices (the address, the amount put
+   in, how the result shows, four looks, a line of their own), then one black key that hands the PNG to the phone's share
+   sheet, or saves it where there is none ("the sheet" below). Its markup and its CSS are in this file, so every page that
+   loads share.js shows the same sheet: Simple's end screen, the portfolio page's rows, the trade page's rows and its close
+   line. qr.js (beside this file) and the card's fonts load on first use. No contract calls, nothing is sent.
+
+   window.ConfettiShare.open(trade or a Promise of one, host?) opens the sheet. trade:
+     { id?, sym, side: 'long' | 'short' (or isLong), lev, margin (what went in), pnl (the result against it),
+       account?, code? (the trader's own referral code), level? (the FETTI level) }
+   A field a page does not know is left out: the card goes without it (no address, the plain confetti.trade QR code, no
+   level). host, all optional: { account (whose choices show while a Promise is still being read), key (which trade this is,
+   for its caption; else the id), opened(ctl) and closed(fromBack, choices) for a page with sheets of its own (Simple): the
+   sheet then joins that page's own back and double-tap handling instead of keeping its own; ctl = { dialog, close } }. */
 (function () {
   'use strict';
 
-  var CARD_W = 1600, CARD_H = 900;
-  var CLIP_W = 1080, CLIP_H = 1920, CLIP_FPS = 30, CLIP_S = 5;
-  /* clip timeline (s): count-up, pop (gold, plate, burst), footer */
-  var COUNT_AT = 0.25, COUNT_S = 1.4, POP_AT = 1.75, FOOT_AT = CLIP_S - 1;
-  var LS_NAME = 'confetti.share.name.', LS_CODE = 'confetti.share.code.';
+  var LS_CODE = 'confetti.share.code.';
   var SITE = 'https://confetti.trade';
-  var NAME_MAX = 24;
-  /* mp4 first (plays everywhere X accepts), webm where the browser cannot record mp4 */
-  var MIMES_AV = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm'];
-  var MIMES_V = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
-  /* candle intervals the info API serves, in minutes; the smallest that keeps the chart readable wins */
-  var INTERVALS = [['1m', 1], ['3m', 3], ['5m', 5], ['15m', 15], ['30m', 30], ['1h', 60], ['2h', 120], ['4h', 240], ['8h', 480], ['12h', 720], ['1d', 1440]];
-  var MAX_CANDLES = 180;
-
-  /* candles and the trade line in these, the PnL in gold */
-  var POS = '#4ade80', NEG = '#f47287', GOLD = '#facc15';
-  var CONF_CARD = ['#b44855', '#2ea060', '#8b2020', '#f4ecd8', '#facc15', '#788cff'];
-  var CONF = ['#b44855', '#2ea060', '#e0786e', '#f4ecd8', '#facc15', '#788cff', '#4ade80', '#ff8cc8'];
-
-  var hooks = { postInfo: null };
-  var cur = null;
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
 
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-  function easeOut(x) { x = clamp(x, 0, 1); return 1 - Math.pow(1 - x, 3); }
-
-  function shortAddr(a) { return a ? a.slice(0, 6) + '…' + a.slice(-4) : ''; }
-
-  function money(n, signed) {
-    var abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return (n < 0 ? '-' : signed ? '+' : '') + '$' + abs;
-  }
-
-  function betText(m) {
-    var whole = Math.abs(m - Math.round(m)) < 0.005;
-    return '$' + m.toLocaleString('en-US', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 });
-  }
-
-  function pctText(t) {
-    var r = t.pnl / t.margin * 100;
-    return '+' + (r >= 1000 ? Math.round(r).toLocaleString('en-US') : r.toFixed(1)) + '%';
-  }
-
-  function priceText(p, sz) {
-    if (!(p > 0) || !isFinite(p)) return '—';
-    var cap = sz == null ? 7 : Math.max(2, 7 - sz);
-    return p.toFixed(clamp(4 - Math.floor(Math.log10(p)), 2, cap));
-  }
-
-  function sideText(t) { return t.side === 'short' ? 'SHORT' : 'LONG'; }
-
-  /* seeded, so a redraw (new name) keeps the same confetti */
+  /* seeded, so a redraw keeps the same confetti */
   function rng(seed) {
     var a = seed >>> 0;
     return function () {
@@ -75,74 +36,6 @@
     };
   }
 
-  function seedOf(t) { return ((Number(t.closeTs) || 0) ^ (Number(t.id) || 0) * 2654435761) >>> 0; }
-
-  /* ---- palette and fonts: paper.css [data-theme="night"], whatever theme the page is in ---------- */
-
-  function rgbOf(c, fb) {
-    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c).trim());
-    if (!m) return fb ? rgbOf(fb) : [0, 0, 0];
-    var h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-  }
-
-  function rgba(c, a) { var v = rgbOf(c); return 'rgba(' + v[0] + ',' + v[1] + ',' + v[2] + ',' + a + ')'; }
-
-  function mix(c1, c2, k) {
-    var a = rgbOf(c1), b = rgbOf(c2);
-    return 'rgb(' + a.map(function (v, i) { return Math.round(v + (b[i] - v) * k); }).join(',') + ')';
-  }
-
-  var palCache = null;
-
-  function palette() {
-    if (palCache) return palCache;
-    var probe = document.createElement('div');
-    probe.setAttribute('data-theme', 'night');
-    probe.hidden = true;
-    (document.body || document.documentElement).appendChild(probe);
-    var cs = getComputedStyle(probe);
-    function v(name, fb) { var x = cs.getPropertyValue(name); x = x ? x.trim() : ''; return x || fb; }
-    var hex = function (name, fb) { var x = v(name, fb); return /^#[0-9a-f]{3,6}$/i.test(x) ? x : fb; };
-    palCache = {
-      page: hex('--page', '#0d1229'), panel: hex('--panel', '#171d3d'), raised: hex('--raised', '#1e2548'),
-      rule: hex('--rule', '#2a3261'), ruleStrong: hex('--rule-strong', '#3f4883'),
-      ink: hex('--ink', '#f4eaf2'), muted: hex('--ink-muted', '#b9b2c6'), faint: hex('--ink-faint', '#8a839c'),
-      accent: hex('--accent', '#e86a6a'),
-      ui: v('--font-ui', '"Soehne", system-ui, sans-serif'),
-      mono: v('--font-mono', '"Soehne Mono", ui-monospace, monospace'),
-      brand: v('--font-brand', '"Soehne Breit", "Soehne", sans-serif')
-    };
-    probe.parentNode.removeChild(probe);
-    return palCache;
-  }
-
-  var fontsPromise = null;
-
-  /* font-display: swap faces load only when used; ask for every face the canvas draws, then wait */
-  function fontsReady() {
-    if (fontsPromise) return fontsPromise;
-    var P = palette();
-    if (!document.fonts || !document.fonts.load) { fontsPromise = Promise.resolve(); return fontsPromise; }
-    var faces = ['400 24px ' + P.ui, '600 24px ' + P.ui, '400 24px ' + P.mono, '600 24px ' + P.mono, '700 24px ' + P.brand];
-    var all = Promise.all(faces.map(function (f) { return document.fonts.load(f).catch(function () {}); }))
-      .then(function () { return document.fonts.ready; });
-    fontsPromise = Promise.race([all, new Promise(function (ok) { setTimeout(ok, 4000); })]);
-    return fontsPromise;
-  }
-
-  /* ---- drawing helpers ---------------------------------------------------------------------------- */
-
-  function setFont(ctx, weight, size, fam) { ctx.font = weight + ' ' + Math.round(size) + 'px ' + fam; }
-
-  /* sets the font at size, smaller when the text would be wider than maxW */
-  function fitFont(ctx, text, weight, size, fam, maxW) {
-    setFont(ctx, weight, size, fam);
-    var w = ctx.measureText(text).width;
-    if (w > maxW) { size = Math.floor(size * maxW / w); setFont(ctx, weight, size, fam); }
-    return size;
-  }
-
   function roundRect(ctx, x0, y0, x1, y1, r) {
     ctx.beginPath();
     ctx.moveTo(x0 + r, y0);
@@ -151,589 +44,6 @@
     ctx.arcTo(x0, y1, x0, y0, r);
     ctx.arcTo(x0, y0, x1, y0, r);
     ctx.closePath();
-  }
-
-  /* PIL's stroke_width w is an outline w wide around the glyph: a canvas line twice that */
-  function outlined(ctx, text, x, y, fill, stroke, w) {
-    ctx.lineJoin = 'round';
-    ctx.miterLimit = 2;
-    ctx.lineWidth = w * 2;
-    ctx.strokeStyle = stroke;
-    ctx.strokeText(text, x, y);
-    ctx.fillStyle = fill;
-    ctx.fillText(text, x, y);
-  }
-
-  function piece(ctx, cx, cy, w, h, deg, color, alpha) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(cx, cy);
-    ctx.rotate(deg * Math.PI / 180);
-    ctx.fillStyle = color;
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    ctx.restore();
-  }
-
-  /* the wordmark: "confetti" in the brand face and the red block after it; returns its width */
-  function wordmark(ctx, x, top, size, P, alpha, outline) {
-    setFont(ctx, 700, size, P.brand);
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'left';
-    var w = ctx.measureText('confetti').width;
-    ctx.globalAlpha = alpha;
-    if (outline) outlined(ctx, 'confetti', x, top, P.ink, P.page, outline);
-    else { ctx.fillStyle = P.ink; ctx.fillText('confetti', x, top); }
-    ctx.fillStyle = P.accent;
-    ctx.fillRect(x + w + size * 0.18, top + size * 0.27, size * 0.41, size * 0.86);
-    ctx.globalAlpha = 1;
-    return w + size * 0.59;
-  }
-
-  /* ---- candles (Hyperliquid info API, through the page's own postInfo) ----------------------------- */
-
-  function intervalFor(t) {
-    var spanMin = Math.max(1, (t.closeTs - t.openTs) / 60);
-    for (var i = 0; i < INTERVALS.length; i++) {
-      var iv = INTERVALS[i][1];
-      if ((spanMin + Math.max(30, 15 * iv)) / iv <= MAX_CANDLES) return INTERVALS[i];
-    }
-    return INTERVALS[INTERVALS.length - 1];
-  }
-
-  function fetchCandles(t) {
-    if (typeof hooks.postInfo !== 'function') return Promise.reject(new Error('no info api'));
-    if (!(t.openTs > 0) || !(t.closeTs >= t.openTs)) return Promise.reject(new Error('no times'));
-    var iv = intervalFor(t);
-    var ivMs = iv[1] * 60000;
-    var start = t.openTs * 1000 - Math.max(30, 15 * iv[1]) * 60000;
-    var end = t.closeTs * 1000 + ivMs;
-    return hooks.postInfo({ type: 'candleSnapshot', req: { coin: t.coin || t.sym, interval: iv[0], startTime: start, endTime: end } }, 8000)
-      .then(function (rows) {
-        if (!Array.isArray(rows)) throw new Error('bad candles');
-        var out = rows.map(function (r) {
-          return { t: Number(r.t), o: Number(r.o), h: Number(r.h), l: Number(r.l), c: Number(r.c) };
-        }).filter(function (c) {
-          return isFinite(c.t) && c.t <= t.closeTs * 1000 && c.h > 0 && c.l > 0 && isFinite(c.o) && isFinite(c.c);
-        }).sort(function (a, b) { return a.t - b.t; });
-        if (out.length < 2) throw new Error('no candles');
-        return { iv: iv[0], ivMs: ivMs, rows: out };
-      });
-  }
-
-  function clockText(ms, long) {
-    var d = new Date(ms);
-    var hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    return long ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : hm;
-  }
-
-  /* ---- the card ----------------------------------------------------------------------------------- */
-
-  function drawChart(ctx, t, ch, P) {
-    var cx0 = 48, cy0 = 120, cx1 = 1000, cy1 = 800;
-    roundRect(ctx, cx0, cy0, cx1, cy1, 18);
-    ctx.fillStyle = P.panel; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = P.rule; ctx.stroke();
-    ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-    setFont(ctx, 600, 26, P.ui); ctx.fillStyle = P.ink;
-    var title = t.sym + '-USD';
-    ctx.fillText(title, cx0 + 28, cy0 + 22);
-    var tw = ctx.measureText(title).width;
-    setFont(ctx, 400, 20, P.ui); ctx.fillStyle = P.faint;
-    ctx.fillText(ch.iv + ' · Hyperliquid', cx0 + 28 + tw + 12, cy0 + 27);
-
-    var px0 = cx0 + 28, py0 = cy0 + 80, px1 = cx1 - 120, py1 = cy1 - 56;
-    var rows = ch.rows;
-    var lo = Infinity, hi = -Infinity;
-    rows.forEach(function (c) { lo = Math.min(lo, c.l); hi = Math.max(hi, c.h); });
-    lo = Math.min(lo, t.entry, t.exit); hi = Math.max(hi, t.entry, t.exit);
-    var pad = (hi - lo) * 0.08 || hi * 0.001;
-    lo -= pad; hi += pad;
-    var t0 = rows[0].t, t1 = Math.max(t.closeTs * 1000, rows[rows.length - 1].t + ch.ivMs) + 2 * ch.ivMs;
-    function xAt(ms) { return px0 + (ms - t0) / (t1 - t0) * (px1 - px0); }
-    function yAt(p) { return py1 - (p - lo) / (hi - lo) * (py1 - py0); }
-    var step = ch.ivMs / (t1 - t0) * (px1 - px0);
-
-    /* grid and prices */
-    setFont(ctx, 400, 17, P.mono);
-    ctx.lineWidth = 1;
-    for (var k = 0; k < 5; k++) {
-      var p = lo + (hi - lo) * k / 4, y = Math.round(yAt(p)) + 0.5;
-      ctx.strokeStyle = P.rule;
-      ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke();
-      ctx.fillStyle = P.faint; ctx.textBaseline = 'middle';
-      ctx.fillText(priceText(p, t.szDecimals), px1 + 14, y);
-    }
-    /* times, on round local minutes */
-    var spanMin = (t1 - t0) / 60000;
-    var steps = [1, 2, 5, 10, 15, 30, 60, 120, 240, 360, 720, 1440, 2880, 10080];
-    var every = steps.filter(function (s) { return spanMin / s <= 6; })[0] || 10080;
-    var off = -new Date(t0).getTimezoneOffset() * 60000;
-    var em = every * 60000;
-    ctx.textBaseline = 'top'; ctx.textAlign = 'center'; ctx.fillStyle = P.faint;
-    for (var m = Math.ceil((t0 + off) / em) * em - off; m < t1; m += em) {
-      ctx.fillText(clockText(m, every >= 1440), xAt(m), py1 + 16);
-    }
-    ctx.textAlign = 'left';
-
-    /* entry, dashed */
-    var ye = yAt(t.entry);
-    ctx.save();
-    ctx.setLineDash([10, 8]); ctx.lineWidth = 2; ctx.strokeStyle = P.muted;
-    ctx.beginPath(); ctx.moveTo(px0, ye); ctx.lineTo(px1, ye); ctx.stroke();
-    ctx.restore();
-
-    /* candles */
-    rows.forEach(function (c) {
-      var x = xAt(c.t + ch.ivMs / 2);
-      var col = c.c >= c.o ? POS : NEG;
-      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = Math.max(1, Math.min(1.6, step * 0.2));
-      ctx.beginPath(); ctx.moveTo(x, yAt(c.h)); ctx.lineTo(x, yAt(c.l)); ctx.stroke();
-      var top = yAt(Math.max(c.o, c.c)), bot = yAt(Math.min(c.o, c.c));
-      if (bot - top < 1.2) bot = top + 1.2;
-      var bw = Math.max(1, step * 0.32);
-      ctx.fillRect(x - bw, top, bw * 2, bot - top);
-    });
-
-    /* entry label and the open marker */
-    setFont(ctx, 400, 17, P.mono);
-    var lbl = 'entry ' + priceText(t.entry, t.szDecimals);
-    var lw = ctx.measureText(lbl).width;
-    var ly = ye + 8 + 30 > py1 ? ye - 36 : ye + 8;
-    roundRect(ctx, px0 + 2, ly, px0 + 18 + lw, ly + 28, 6);
-    ctx.fillStyle = P.panel; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = P.rule; ctx.stroke();
-    ctx.fillStyle = P.muted; ctx.textBaseline = 'middle';
-    ctx.fillText(lbl, px0 + 10, ly + 14);
-    var xo = xAt(t.openTs * 1000);
-    ctx.fillStyle = t.side === 'short' ? NEG : POS;
-    ctx.beginPath();
-    if (t.side === 'short') { ctx.moveTo(xo, ye - 14); ctx.lineTo(xo - 11, ye - 32); ctx.lineTo(xo + 11, ye - 32); }
-    else { ctx.moveTo(xo, ye + 14); ctx.lineTo(xo - 11, ye + 32); ctx.lineTo(xo + 11, ye + 32); }
-    ctx.closePath(); ctx.fill();
-
-    /* the exit: a gold line from the open, the dot and its ring */
-    var xp = xAt(t.closeTs * 1000), yp = yAt(t.exit);
-    ctx.strokeStyle = GOLD; ctx.fillStyle = GOLD; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(xo, yp); ctx.lineTo(xp, yp); ctx.stroke();
-    ctx.beginPath(); ctx.arc(xp, yp, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(xp, yp, 18, 0, Math.PI * 2); ctx.stroke();
-    setFont(ctx, 600, 18, P.ui);
-    var xl = 'exit · ' + priceText(t.exit, t.szDecimals);
-    var xw = ctx.measureText(xl).width;
-    ctx.textBaseline = 'top';
-    ctx.fillText(xl, clamp(xp - xw + 20, px0, cx1 - 16 - xw), yp - 50 < py0 - 30 ? yp + 28 : yp - 50);
-  }
-
-  /* make_card: the chart on the left, the numbers on the right */
-  function drawBase(ctx, t, ch, P) {
-    var W = CARD_W, H = CARD_H;
-    ctx.fillStyle = P.page; ctx.fillRect(0, 0, W, H);
-    var r = rng(seedOf(t) + 11);
-    var keep = [[30, 100, 1020, 820], [1030, 20, 1590, 850], [30, 815, 520, 875]];
-    for (var placed = 0, guard = 0; placed < 30 && guard < 3000; guard++) {
-      var x = r() * (W - 20), y = r() * (H - 30);
-      if (keep.some(function (k) { return x > k[0] - 30 && x < k[2] && y > k[1] - 40 && y < k[3]; })) continue;
-      piece(ctx, x + 6, y + 11, 12, 22, r() * 360, CONF_CARD[placed % CONF_CARD.length], 110 / 255);
-      placed++;
-    }
-    if (ch) drawChart(ctx, t, ch, P);
-
-    var rx = 1050, right = W - 48;
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    wordmark(ctx, rx, 44, 46, P, 1, 0);
-    setFont(ctx, 600, 34, P.ui); ctx.fillStyle = P.ink;
-    var title = t.sym + '-USD';
-    fitFont(ctx, title, 600, 34, P.ui, 300);
-    ctx.fillText(title, rx, 150);
-    var px = rx + ctx.measureText(title).width + 20;
-    var pill = sideText(t) + ' ' + t.lev + 'x';
-    setFont(ctx, 600, 24, P.mono);
-    var pw = ctx.measureText(pill).width + 28;
-    var sc = t.side === 'short' ? NEG : POS;
-    roundRect(ctx, px, 154, px + pw, 194, 8);
-    ctx.fillStyle = mix(P.page, sc, 0.22); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = sc; ctx.stroke();
-    ctx.fillStyle = sc; ctx.textBaseline = 'middle';
-    ctx.fillText(pill, px + 14, 175);
-    ctx.textBaseline = 'top';
-    setFont(ctx, 400, 22, P.ui); ctx.fillStyle = P.muted;
-    ctx.fillText('closed pnl', rx, 236);
-    var pnl = money(t.pnl, true);
-    fitFont(ctx, pnl, 600, 86, P.mono, right - rx + 4);
-    ctx.fillStyle = GOLD; ctx.fillText(pnl, rx - 4, 266);
-    setFont(ctx, 600, 34, P.mono); ctx.fillStyle = POS;
-    ctx.fillText(pctText(t) + ' on the bet', rx, 372);
-    var rows = [
-      ['Bet', money(t.margin)], ['Leverage', t.lev + 'x'], ['Position', '$' + Math.round(t.margin * t.lev).toLocaleString('en-US')],
-      ['Entry', priceText(t.entry, t.szDecimals)], ['Exit', priceText(t.exit, t.szDecimals)]
-    ];
-    var y = 452;
-    ctx.lineWidth = 1; ctx.strokeStyle = P.rule;
-    rows.forEach(function (row) {
-      ctx.beginPath(); ctx.moveTo(rx, y - 10.5); ctx.lineTo(right, y - 10.5); ctx.stroke();
-      setFont(ctx, 400, 26, P.ui); ctx.fillStyle = P.muted; ctx.textAlign = 'left';
-      ctx.fillText(row[0], rx, y);
-      setFont(ctx, 600, 28, P.mono); ctx.fillStyle = P.ink; ctx.textAlign = 'right';
-      ctx.fillText(row[1], right, y - 2);
-      y += 58;
-    });
-    ctx.textAlign = 'left';
-    ctx.beginPath(); ctx.moveTo(rx, y - 10.5); ctx.lineTo(right, y - 10.5); ctx.stroke();
-    if (t.name) { fitFont(ctx, t.name, 600, 26, P.ui, right - rx); ctx.fillStyle = P.ink; ctx.fillText(t.name, rx, 760); }
-    setFont(ctx, 400, 22, P.ui); ctx.fillStyle = P.muted;
-    ctx.fillText('confetti.trade · @confetti_trade', rx, 798);
-    ctx.fillStyle = P.faint;
-    ctx.fillText('1000x on meme coins. against the house.', 48, 830);
-  }
-
-  /* make_poster: the card blurred and dimmed, confetti everywhere, the trade in big letters */
-  function drawCard(t, ch) {
-    var P = palette();
-    var W = CARD_W, H = CARD_H;
-    var base = document.createElement('canvas');
-    base.width = W; base.height = H;
-    drawBase(base.getContext('2d'), t, ch, P);
-
-    var cv = document.createElement('canvas');
-    cv.width = W; cv.height = H;
-    var ctx = cv.getContext('2d');
-    ctx.fillStyle = P.page; ctx.fillRect(0, 0, W, H);
-    ctx.filter = 'blur(1.6px)';
-    ctx.drawImage(base, 0, 0);
-    ctx.filter = 'none';
-    ctx.fillStyle = rgba(P.page, 150 / 255);
-    ctx.fillRect(0, 0, W, H);
-
-    /* the explosion (make_poster): a gold flash, rays, a radial blast with motion trails, and a drift;
-       faint right behind each line of text so the letters stay clean */
-    var r = rng(seedOf(t) + 2026);
-    var ex = W / 2, ey = H * 0.43;
-    var fl = ctx.createRadialGradient(ex, ey, 10, ex, ey, 620);
-    fl.addColorStop(0, rgba(GOLD, 0.30)); fl.addColorStop(0.45, rgba(GOLD, 0.10)); fl.addColorStop(1, rgba(GOLD, 0));
-    ctx.save(); ctx.translate(ex, ey); ctx.scale(1.5, 0.8); ctx.translate(-ex, -ey);
-    ctx.fillStyle = fl; ctx.fillRect(0, 0, W, H); ctx.restore();
-    var boxes = [[470, 150, 1130, 262], [330, 268, 1270, 440], [450, 505, 1150, 590], [470, 610, 1130, 690], [560, 740, 1040, 815]];
-    function quiet(px, py) {
-      for (var b = 0; b < boxes.length; b++) {
-        var q = boxes[b];
-        if (px > q[0] - 20 && px < q[2] + 20 && py > q[1] - 20 && py < q[3] + 20) return 0.12;
-      }
-      return 1;
-    }
-    for (var ri = 0; ri < 46; ri++) {
-      var ra = ri / 46 * Math.PI * 2 + (r() - 0.5) * 0.08;
-      var r0 = 190 + r() * 70, r1 = 560 + r() * 420;
-      ctx.strokeStyle = rgba(CONF[ri % CONF.length], 70 / 255); ctx.lineWidth = 2 + r() * 3;
-      ctx.beginPath(); ctx.moveTo(ex + Math.cos(ra) * r0 * 1.25, ey + Math.sin(ra) * r0 * 0.7);
-      ctx.lineTo(ex + Math.cos(ra) * r1 * 1.25, ey + Math.sin(ra) * r1 * 0.7); ctx.stroke();
-    }
-    for (var i = 0; i < 780; i++) {
-      var burst = i < 560, a, x, y, sz;
-      if (burst) {
-        a = r() * Math.PI * 2;
-        var d = 180 + Math.pow(r(), 0.7) * 820;
-        x = ex + Math.cos(a) * d * 1.25; y = ey + Math.sin(a) * d * 0.72; sz = 1 + d / 1000 * 0.9;
-      } else { a = r() * Math.PI * 2; x = -30 + r() * (W + 40); y = -30 + r() * (H + 40); sz = 0.9; }
-      var w = (14 + r() * 14) * sz, h = (26 + r() * 30) * sz;
-      if (r() < 0.2) w = h = (12 + r() * 10) * sz;
-      var rot = burst ? (-a * 180 / Math.PI + 90 + (r() - 0.5) * 100) : r() * 360;
-      var alpha = (190 + r() * 65) / 255 * quiet(x, y);
-      var col = CONF[i % CONF.length];
-      if (burst && r() < 0.55) {
-        for (var tr = 1; tr <= 3; tr++) piece(ctx, x - Math.cos(a) * tr * 16 * sz, y - Math.sin(a) * tr * 10 * sz, w, h, rot, col, alpha * 0.32 / tr);
-      }
-      piece(ctx, x, y, w, h, rot, col, alpha);
-    }
-
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    var maxW = W - 120;
-    if (t.name) { fitFont(ctx, t.name, 700, 92, P.brand, maxW); outlined(ctx, t.name, W / 2, 150, P.ink, P.page, 9); }
-    var pnl = money(t.pnl, true);
-    var size = fitFont(ctx, pnl, 600, 200, P.mono, maxW);
-    outlined(ctx, pnl, W / 2, 268 + (200 - size) * 0.5, GOLD, P.page, 12);
-    var line = t.sym + '  ' + sideText(t) + '  ' + t.lev + 'x';
-    fitFont(ctx, line, 600, 70, P.mono, maxW);
-    outlined(ctx, line, W / 2, 512, POS, P.page, 9);
-    var bet = betText(t.margin) + ' bet  →  ' + pctText(t);
-    fitFont(ctx, bet, 600, 58, P.ui, maxW);
-    outlined(ctx, bet, W / 2, 612, P.ink, P.page, 8);
-
-    /* footer: wordmark + link */
-    ctx.textAlign = 'left';
-    setFont(ctx, 700, 44, P.brand);
-    var mw = ctx.measureText('confetti').width + 44 * 0.59;
-    setFont(ctx, 400, 32, P.ui);
-    var lw = ctx.measureText('confetti.trade').width;
-    var x0 = (W - mw - 18 - lw) / 2;
-    wordmark(ctx, x0, 752, 44, P, 1, 5);
-    setFont(ctx, 400, 32, P.ui);
-    outlined(ctx, 'confetti.trade', x0 + mw + 18, 762, P.muted, P.page, 4);
-    return cv;
-  }
-
-  /* ---- the clip ----------------------------------------------------------------------------------- */
-
-  function makeParticles(t) {
-    var r = rng(seedOf(t) + 42);
-    var out = [];
-    for (var i = 0; i < 560; i++) {
-      var second = i >= 400;                       /* a second, smaller wave a beat later */
-      var a = r() * Math.PI * 2;
-      var v = second ? 400 + r() * 1300 : 600 + r() * 2300;
-      out.push({
-        vx: Math.cos(a) * v * 0.9, vy: Math.sin(a) * v - 650, delay: (second ? 0.22 : 0) + r() * 0.06,
-        rot: r() * 360, vr: (r() - 0.5) * 1440, flip: r() * Math.PI * 2, vf: 4 + r() * 10,
-        w: (second ? 14 : 22) + r() * (second ? 12 : 22), h: (second ? 26 : 40) + r() * (second ? 20 : 40), c: CONF[i % CONF.length]
-      });
-    }
-    return out;
-  }
-
-  /* one frame at s seconds */
-  function drawFrame(ctx, t, parts, s, P) {
-    var W = CLIP_W, H = CLIP_H, cx = W / 2, cy = 900;
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = P.page; ctx.fillRect(0, 0, W, H);
-    var intro = easeOut(s / 0.4);
-
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    var head = t.sym + ' ' + sideText(t) + ' ' + t.lev + 'x' + (t.name ? ' · ' + t.name : '');
-    fitFont(ctx, head, 600, 44, P.ui, W - 160);
-    ctx.globalAlpha = intro; ctx.fillStyle = P.muted;
-    ctx.fillText(head, cx, 200);
-    ctx.globalAlpha = 1;
-
-    var pop = s - POP_AT;
-    var k = pop < 0 ? 0 : easeOut(pop / 0.3);
-    var v = pop >= 0 ? t.pnl : t.pnl * easeOut((s - COUNT_AT) / COUNT_S);
-    var text = money(v, true);
-
-    if (pop >= 0 && pop < 0.9) {
-      var fr = 120 + pop * 1700, fa = Math.max(0, 0.55 * (1 - pop / 0.9));
-      var g0 = ctx.createRadialGradient(cx, cy, fr * 0.2, cx, cy, fr);
-      g0.addColorStop(0, rgba(GOLD, fa)); g0.addColorStop(1, rgba(GOLD, 0));
-      ctx.fillStyle = g0; ctx.fillRect(0, 0, W, H);
-    }
-    if (pop >= 0) {
-      var pk = easeOut(pop / 0.25);
-      ctx.globalAlpha = pk;
-      roundRect(ctx, 70, cy - 170, W - 70, cy + 170, 28);
-      ctx.fillStyle = rgba(P.raised, 0.92); ctx.fill();
-      ctx.lineWidth = 3; ctx.strokeStyle = P.ruleStrong; ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    /* the burst, out of the number */
-    if (pop > 0) {
-      /* linear air drag: up fast, then a slow fall at g / kd, swaying */
-      var g = 2000, kd = 1.6;
-      parts.forEach(function (p) {
-        var dt = pop - p.delay;
-        if (dt <= 0) return;
-        var e = (1 - Math.exp(-kd * dt)) / kd;
-        var x = cx + p.vx * e + Math.sin(p.flip + dt * 3) * 24 * Math.min(1, dt);
-        var y = cy + g / kd * dt + (p.vy - g / kd) * e;
-        if (y > H + 80 || x < -80 || x > W + 80) return;
-        var fw = p.w * Math.max(0.15, Math.abs(Math.cos(p.flip + p.vf * dt)));
-        piece(ctx, x, y, fw, p.h, p.rot + p.vr * dt, p.c, 1);
-      });
-    }
-
-    /* the number: green while it counts, gold with a spring pop */
-    var scale = pop < 0 ? 1 : 1.08 - 0.08 * Math.exp(-6 * pop) * Math.cos(14 * pop);
-    var size = fitFont(ctx, money(t.pnl, true), 600, 170, P.mono, (W - 180) / 1.16);
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(scale, scale);
-    ctx.globalAlpha = intro;
-    setFont(ctx, 600, size, P.mono);
-    ctx.textBaseline = 'middle';
-    outlined(ctx, text, 0, 0, mix(POS, GOLD, k), P.page, 6);
-    ctx.restore();
-
-    if (pop > 0.3) {
-      var bet = betText(t.margin) + ' bet  →  ' + pctText(t);
-      fitFont(ctx, bet, 600, 64, P.ui, W - 160);
-      ctx.globalAlpha = easeOut((pop - 0.3) / 0.4);
-      ctx.fillStyle = P.ink; ctx.textBaseline = 'top';
-      ctx.fillText(bet, cx, cy + 230);
-      ctx.globalAlpha = 1;
-    }
-
-    if (s > FOOT_AT) {
-      var fa = easeOut((s - FOOT_AT) / 0.45);
-      ctx.textAlign = 'left';
-      setFont(ctx, 700, 110, P.brand);
-      var mw = ctx.measureText('confetti').width + 110 * 0.59;
-      wordmark(ctx, (W - mw) / 2, 1480, 110, P, fa, 0);
-      setFont(ctx, 400, 48, P.ui);
-      ctx.textAlign = 'center'; ctx.globalAlpha = fa; ctx.fillStyle = P.muted;
-      ctx.fillText('confetti.trade', cx, 1640);
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  /* a soft pop at the burst and a short party-blower toot, into the recording only */
-  function scheduleSound(ac, dest, at) {
-    var pop = ac.createBufferSource();
-    var n = Math.floor(ac.sampleRate * 0.12);
-    var buf = ac.createBuffer(1, n, ac.sampleRate);
-    var d = buf.getChannelData(0);
-    var r = rng(7);
-    for (var i = 0; i < n; i++) d[i] = (r() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.02));
-    pop.buffer = buf;
-    var bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.8;
-    var pg = ac.createGain(); pg.gain.value = 0.9;
-    pop.connect(bp); bp.connect(pg); pg.connect(dest);
-    pop.start(at);
-    var thump = ac.createOscillator();
-    thump.frequency.setValueAtTime(160, at); thump.frequency.exponentialRampToValueAtTime(55, at + 0.14);
-    var tg = ac.createGain();
-    tg.gain.setValueAtTime(0.0001, at); tg.gain.exponentialRampToValueAtTime(0.5, at + 0.005); tg.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
-    thump.connect(tg); tg.connect(dest);
-    thump.start(at); thump.stop(at + 0.2);
-
-    var b0 = at + 0.14, len = 0.7;
-    var lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
-    var bg = ac.createGain();
-    bg.gain.setValueAtTime(0.0001, b0); bg.gain.exponentialRampToValueAtTime(0.11, b0 + 0.03);
-    bg.gain.setValueAtTime(0.11, b0 + len - 0.18); bg.gain.exponentialRampToValueAtTime(0.0001, b0 + len);
-    lp.connect(bg); bg.connect(dest);
-    [['sawtooth', 1], ['square', 1.005]].forEach(function (o) {
-      var osc = ac.createOscillator();
-      osc.type = o[0];
-      osc.frequency.setValueAtTime(380 * o[1], b0); osc.frequency.linearRampToValueAtTime(500 * o[1], b0 + 0.25);
-      osc.connect(lp);
-      osc.start(b0); osc.stop(b0 + len + 0.02);
-    });
-  }
-
-  /* the recorder types to try, best first; '' = the browser's default */
-  function mimeCandidates(withAudio) {
-    if (typeof MediaRecorder === 'undefined') return [];
-    var list = (withAudio ? MIMES_AV : MIMES_V).filter(function (m) { return !MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(m); });
-    list.push('');
-    return list;
-  }
-
-  /* The first recording in a browser session loses frames: in Chrome (headless on Windows, mp4 and webm
-     alike) nothing is kept from ~0.3 s to ~2 s of the first take while the encoder starts; later takes are
-     whole. So one throwaway 2.2 s take at the clip's size, once per page, run while the card is drawn. */
-  var warmed = null;
-
-  function warmEncoder() {
-    if (warmed) return warmed;
-    warmed = new Promise(function (ok) {
-      var mime = mimeCandidates(false)[0];
-      var cv = document.createElement('canvas');
-      if (mime == null || !cv.captureStream) { ok(); return; }
-      cv.width = CLIP_W; cv.height = CLIP_H;
-      var ctx = cv.getContext('2d');
-      var stream = cv.captureStream(CLIP_FPS), rec, timer = null, n = 0, t0 = performance.now();
-      function end() { clearTimeout(timer); stream.getTracks().forEach(function (tr) { tr.stop(); }); ok(); }
-      try {
-        rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-        rec.onstop = end;
-        rec.start();
-      } catch (e) { end(); return; }
-      (function paint() {
-        ctx.fillStyle = n++ % 2 ? '#0d1229' : '#0e132a';
-        ctx.fillRect(0, 0, CLIP_W, CLIP_H);
-        if (performance.now() - t0 < 2200) { timer = setTimeout(paint, 1000 / CLIP_FPS); return; }
-        try { rec.stop(); } catch (e) { end(); }
-      })();
-    });
-    return warmed;
-  }
-
-  /* one take of the 5 s clip, drawn in real time on a canvas and recorded as mime */
-  function recordOnce(t, mime, done, fail) {
-    var P = palette();
-    var cv = document.createElement('canvas');
-    cv.width = CLIP_W; cv.height = CLIP_H;
-    var ctx = cv.getContext('2d');
-    var parts = makeParticles(t);
-    drawFrame(ctx, t, parts, 0, P);
-
-    var stream = cv.captureStream(CLIP_FPS);
-    var ac = null;
-    try {
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) ac = new AC();
-    } catch (e) { ac = null; }
-
-    var chunks = [], cancelled = false, timer = null, raf = null, rec = null;
-    function stopAll() {
-      clearTimeout(timer);
-      if (window.cancelAnimationFrame) cancelAnimationFrame(raf);
-      stream.getTracks().forEach(function (tr) { tr.stop(); });
-      if (ac && ac.state !== 'closed') ac.close().catch(function () {});
-    }
-
-    var startAt = 0;
-    function tick() {
-      if (cancelled) return;
-      var s = (performance.now() - startAt) / 1000;
-      drawFrame(ctx, t, parts, Math.min(s, CLIP_S), P);
-      if (s >= CLIP_S) { timer = setTimeout(function () { if (rec.state !== 'inactive') rec.stop(); }, 120); return; }
-      if (!document.hidden && window.requestAnimationFrame) raf = requestAnimationFrame(tick);
-      else timer = setTimeout(tick, 1000 / CLIP_FPS);
-    }
-    function go() {
-      if (cancelled) return;
-      /* sound only from a running context; a suspended one would add a track that carries nothing */
-      var dest = null;
-      if (ac && ac.state === 'running') {
-        try {
-          dest = ac.createMediaStreamDestination();
-          var track = dest.stream.getAudioTracks()[0];
-          if (track) stream.addTrack(track); else dest = null;
-        } catch (e) { dest = null; }
-      }
-      try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : { videoBitsPerSecond: 8000000 }); }
-      catch (e) { cancelled = true; stopAll(); fail(e); return; }
-      rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
-      rec.onerror = function (ev) { if (!cancelled) { cancelled = true; stopAll(); fail(ev.error || new Error('recording failed')); } };
-      rec.onstop = function () {
-        stopAll();
-        if (cancelled) return;
-        var type = rec.mimeType || mime || 'video/webm';
-        done(new Blob(chunks, { type: type.split(';')[0] }), type);
-      };
-      if (dest) scheduleSound(ac, dest, ac.currentTime + POP_AT);
-      try { rec.start(500); } catch (e) { cancelled = true; stopAll(); fail(e); return; }
-      startAt = performance.now();
-      tick();
-    }
-    /* the context starts suspended without a gesture; give resume a moment, record silent if it stays so */
-    if (ac && ac.state !== 'running') {
-      Promise.race([ac.resume().catch(function () {}), new Promise(function (ok) { setTimeout(ok, 300); })]).then(go);
-    } else go();
-
-    return {
-      cancel: function () {
-        if (cancelled) return;
-        cancelled = true;
-        try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (e) { /* already stopped */ }
-        stopAll();
-      }
-    };
-  }
-
-  /* the clip, trying the next recorder type when the encoder refuses one (isTypeSupported can say yes to
-     a type whose encoder then fails: headless Chrome on Windows, 'video/mp4;codecs=avc1,mp4a.40.2' at
-     1080x1920); done(blob, mime) or fail(err) */
-  function recordClip(t, done, fail) {
-    var list = document.createElement('canvas').captureStream ? mimeCandidates(!!(window.AudioContext || window.webkitAudioContext)) : [];
-    var take = null, dead = false;
-    function next(i) { setTimeout(function () { attempt(i); }, 0); }
-    function attempt(i) {
-      if (dead) return;
-      if (i >= list.length) { fail(new Error('This browser could not record the clip.')); return; }
-      take = recordOnce(t, list[i], function (blob, type) {
-        if (blob.size) done(blob, type); else next(i + 1);
-      }, function () { next(i + 1); });
-    }
-    warmEncoder().then(function () { attempt(0); });
-    return { cancel: function () { dead = true; if (take) take.cancel(); } };
   }
 
   /* ---- the trade card: the owner's design (2026-11-19, two Phonto mock-ups and "can you use those at the end") ----------
@@ -1194,16 +504,32 @@
     });
   }
 
-  /* the card drawn straight onto a canvas on the page, crisp at its own size (CSS width x device pixels) */
-  function drawCardInto(canvas, raw, cssW, opts) {
-    var t = cardTrade(raw), o = cardOpts(opts);
+  /* the card drawn straight onto a canvas on the page, crisp at its own size (CSS width x device pixels). live: asked just
+     before the canvas is touched; false leaves it as it is (the sheet moved on to another trade) */
+  function cardInto(canvas, t, cssW, o, live) {
     return cardReady().then(function () {
+      if (live && !live()) return t;
       var dpr = Math.min(3, window.devicePixelRatio || 1), S = Math.max(0.2, cssW * dpr / TC_W);
       var src = drawTradeCard(t, S, o);
       canvas.width = src.width; canvas.height = src.height;
       canvas.getContext('2d').drawImage(src, 0, 0);
       return t;
     });
+  }
+  function drawCardInto(canvas, raw, cssW, opts) { return cardInto(canvas, cardTrade(raw), cssW, cardOpts(opts)); }
+  /* the card's place while its trade is being read: the card's own shapes, flat on sunk paper (the wordmark, the figure and
+     its two lines, the icon, the coin and the boost, the QR code and the address, the three small lines), so what comes is
+     no surprise. Nothing moves */
+  var TC_HOLD = [[55, 46, 330, 62, 10], [66, 318, 470, 124, 14], [113, 484, 330, 36, 8], [113, 546, 290, 36, 8], [687, 318, 300, 300, 66],
+    [1130, 556, 500, 104, 14], [1370, 684, 260, 98, 14], [30, 748, 160, 160, 10], [209, 880, 290, 28, 8], [1330, 858, 310, 56, 8]];
+  function cardHold(canvas, cssW) {
+    var dpr = Math.min(3, window.devicePixelRatio || 1), S = Math.max(0.2, cssW * dpr / TC_W);
+    canvas.width = Math.round(TC_W * S); canvas.height = Math.round(TC_H * S);
+    var ctx = canvas.getContext('2d');
+    ctx.scale(S, S);
+    ctx.fillStyle = '#e8dec8'; ctx.fillRect(0, 0, TC_W, TC_H);
+    ctx.fillStyle = 'rgba(42, 37, 32, 0.09)';
+    TC_HOLD.forEach(function (b) { roundRect(ctx, b[0], b[1], b[0] + b[2], b[1] + b[3], b[4]); ctx.fill(); });
   }
 
   /* does this browser hand a picture to a share sheet? (the key says Share where it does, Save where it cannot) */
@@ -1236,59 +562,6 @@
     return Promise.resolve('saved');
   }
 
-  /* ---- the dialog ---------------------------------------------------------------------------------- */
-
-  var CSS = [
-    '.cs-modal { width: min(760px, calc(100vw - 2 * var(--gutter, 16px))); max-width: none; max-height: calc(100vh - 24px); overflow: auto; box-sizing: border-box; padding: 0; border: 1px solid var(--ink); background: var(--raised); color: var(--ink); box-shadow: 8px 8px 0 var(--sunken); }',
-    '.cs-modal::backdrop { background: rgba(0, 0, 0, 0.55); }',
-    '.cs-modal .panel-head { font-size: var(--text-xl); }',
-    '.cs-previews { display: grid; grid-template-columns: minmax(0, 1fr) 152px; gap: 12px; align-items: start; }',
-    '.cs-shot { position: relative; min-width: 0; border: 1px solid var(--rule); background: var(--page); }',
-    '.cs-card { aspect-ratio: 16 / 9; }',
-    '.cs-clip { aspect-ratio: 9 / 16; }',
-    '.cs-shot canvas, .cs-shot video { display: block; width: 100%; height: 100%; }',
-    '.cs-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; font-size: var(--text-xs); color: var(--ink-faint); }',
-    '.cs-wait[hidden], .cs-shot [hidden] { display: none; }',
-    '.cs-field { display: flex; flex-direction: column; gap: 4px; }',
-    '.cs-field .input { width: 100%; box-sizing: border-box; min-width: 0; }',
-    '.cs-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }',
-    '.cs-actions .btn { min-width: 0; padding: 0 6px; }',
-    '.cs-fine { font-size: var(--text-xs); line-height: 1.5; color: var(--ink-faint); text-align: center; }',
-    '.cs-note { min-height: 1.4em; font-size: var(--text-xs); color: var(--ink-faint); text-align: center; }',
-    '.cs-note.is-err { color: var(--neg); }',
-    '@media (max-width: 600px) {',
-    '  .cs-previews { grid-template-columns: minmax(0, 1fr); }',
-    '  .cs-clip { width: 46%; justify-self: center; }',
-    '  .cs-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }',
-    '}'
-  ].join('\n');
-
-  function injectCss() {
-    if (document.getElementById('csStyle')) return;
-    var st = document.createElement('style');
-    st.id = 'csStyle';
-    st.textContent = CSS;
-    document.head.appendChild(st);
-  }
-
-  function node(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text != null) n.textContent = text;
-    return n;
-  }
-
-  function button(label, primary) {
-    var b = node('button', 'btn' + (primary ? ' btn-primary' : ''), label);
-    b.type = 'button';
-    b.disabled = true;
-    return b;
-  }
-
-  function reducedMotion() {
-    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  }
-
   function saveBlob(blob, filename) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -1299,209 +572,552 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
 
-  function fileBase(t) {
-    return 'confetti-' + String(t.sym).toLowerCase().replace(/[^a-z0-9]+/g, '') + '-' + (t.id != null ? t.id : t.closeTs);
+  /* the card in words, for a screen reader: only what the card shows (never the address) */
+  function altOf(t, o) {
+    var sign = t.pnl > 0.004 ? '+' : t.pnl < -0.004 ? '−' : '', r = t.pnl / t.margin;
+    var says = [t.sym + (t.long ? ' up ' : ' down ') + cardLev(t.lev) + '×'];
+    if (o.result !== 'usd') says.push((r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r * 100).toFixed(1) + '%');
+    if (o.result !== 'pct') says.push(sign + cardMoney(t.pnl));
+    if (o.amount) says.push(cardMoney(t.margin) + ' in');
+    return 'Your trade card: ' + says.join(', ') + '.';
+  }
+  function cardAlt(raw, opts) { try { return altOf(cardTrade(raw), cardOpts(opts)); } catch (e) { return 'Your trade card.'; } }
+
+  /* ---- the sheet: Share your trade. One sheet for every Share on every page, in the Simple look whatever the page wears:
+     the colours, the keys and the type are all set here on the dialog itself, so nothing of the page's own theme reaches in.
+     Four ways out (swipe down, the cross, a tap outside, Esc / the phone's back). On a phone it rises from the bottom; on a
+     wide screen it is a panel on the right, under the top bar. The trader's choices are kept on this device for each wallet
+     (cardPrefs); the caption belongs to one trade and is not kept. What is switched off is not on the card, not in the PNG
+     and not in what a screen reader hears. The PNG is made as the choices settle: a share sheet has to open in the tap's own
+     moment. A trade that is still being read (a Promise): the sheet is up at once with the card's place held, the choices
+     waiting and the key saying so; a trade that could not be read says so and the key closes. ---- */
+
+  var PCS_CSS = [
+    '@media screen {',
+    '  dialog.pcs-sheet {',
+    '    --pcs-page: #f4ecd8; --pcs-raised: #faf6ed; --pcs-sunken: #e8dec8; --pcs-ink: #2a2520; --pcs-muted: #5f564b; --pcs-faint: #7a7060;',
+    '    --pcs-rule: #d4cbba; --pcs-rule-strong: #b8ad92; --pcs-accent: #8b2020; --pcs-rim: #8a7f66; --pcs-rim-ink: #0f0d0b;',
+    '    --pcs-shade: rgba(42, 37, 32, 0.42); --pcs-hi: rgba(255, 255, 255, 0.9); --pcs-focus: 0 0 0 2px #f4ecd8, 0 0 0 4px #8b2020; --pcs-pad: 16px;',
+    '    position: fixed; inset: auto 0 0 0; box-sizing: border-box; margin: 0; width: 100%; max-width: none; max-height: 90vh; max-height: 90dvh;',
+    '    padding: 0; border: 0; border-top: 1px solid var(--pcs-rule-strong); background: var(--pcs-raised); color: var(--pcs-ink);',
+    '    overflow: hidden; transform: translateY(var(--pcs-drag, 0px));',
+    '    font-family: var(--font-ui, "Soehne", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);',
+    '    font-size: 17px; font-weight: 400; font-style: normal; line-height: 1.4; letter-spacing: normal; text-transform: none; text-align: start;',
+    '    font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1, "ss01" 1; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;',
+    '    text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent; color-scheme: light;',
+    '  }',
+    '  dialog.pcs-sheet *, dialog.pcs-sheet *::before, dialog.pcs-sheet *::after { box-sizing: border-box; }',
+    '  dialog.pcs-sheet [hidden] { display: none !important; }',
+    '  dialog.pcs-sheet[open] { display: flex; flex-direction: column; animation: pcs-in 220ms ease-out; }',
+    '  dialog.pcs-sheet.is-out { animation: pcs-out 180ms ease-in forwards; }',
+    /* closed: the slide away is no longer modal and takes no taps; its shade goes with it */
+    '  dialog.pcs-sheet.is-out.is-gone { z-index: 45; pointer-events: none; animation: pcs-out 180ms ease-in forwards, pcs-shade 180ms ease-in forwards; }',
+    '  dialog.pcs-sheet.is-gone * { pointer-events: none; }',
+    '  @keyframes pcs-shade { from { box-shadow: 0 0 0 100vmax rgba(42, 37, 32, 0.45); } to { box-shadow: 0 0 0 100vmax rgba(42, 37, 32, 0); } }',
+    '  dialog.pcs-sheet::backdrop { background: rgba(42, 37, 32, 0.45); }',
+    '  dialog.pcs-sheet[open]::backdrop { animation: pcs-fade 220ms ease-out; }',
+    '  dialog.pcs-sheet.is-out::backdrop { animation: pcs-fade 180ms ease-in reverse forwards; }',
+    '  @keyframes pcs-in { from { transform: translateY(100%); } } @keyframes pcs-out { to { transform: translateY(100%); } }',
+    '  @keyframes pcs-fade { from { opacity: 0; } }',
+    '  @keyframes pcs-slide-in { from { transform: translateX(100%); } }',
+
+    /* the head: the grab handle, the title, the cross */
+    '  dialog.pcs-sheet .pcs-head { flex: none; position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 60px; padding: 16px 4px 0 var(--pcs-pad); touch-action: none; }',
+    '  dialog.pcs-sheet .pcs-head::before { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--pcs-rule-strong); }',
+    '  dialog.pcs-sheet .pcs-head h2 {',
+    '    display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-family: var(--font-display, var(--font-ui, "Soehne", system-ui, sans-serif));',
+    '    font-size: 22px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; color: var(--pcs-ink); outline: none; box-shadow: none;',
+    '  }',
+
+    /* every key: a rounded edge, a darker rim, a solid lip under it, a soft shadow on the paper; a press sinks it onto the lip */
+    '  dialog.pcs-sheet button {',
+    '    -webkit-appearance: none; appearance: none; margin: 0; padding: 0; font: inherit; cursor: pointer; touch-action: manipulation;',
+    '    background: var(--pk-face, var(--pcs-raised)); color: var(--pk-ink, var(--pcs-ink));',
+    '    border: 1px solid var(--pk-rim, var(--pcs-rim)); border-radius: var(--pk-r, 10px);',
+    '    box-shadow: 0 var(--pk-now, var(--pk-lip, 3px)) 0 var(--pk-rim, var(--pcs-rim)), 0 calc(var(--pk-now, var(--pk-lip, 3px)) + 5px) var(--pk-blur, 10px) -5px var(--pk-shade, var(--pcs-shade)),',
+    '                inset 0 1px 0 var(--pk-hi, var(--pcs-hi)), inset 0 -1px 0 var(--pk-lo, transparent);',
+    '    text-decoration: none; transition: transform 80ms ease-out, box-shadow 80ms ease-out, background-color 80ms ease-out;',
+    '    -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none;',
+    '  }',
+    '  dialog.pcs-sheet button:active { --pk-now: 1px; transform: translateY(calc(var(--pk-lip, 3px) - 1px)); filter: none; }',
+    '  dialog.pcs-sheet button:focus-visible { outline: none; box-shadow: var(--pcs-focus), 0 var(--pk-now, var(--pk-lip, 3px)) 0 var(--pk-rim, var(--pcs-rim)), inset 0 1px 0 var(--pk-hi, var(--pcs-hi)); }',
+    /* selected: pressed in and staying in */
+    '  dialog.pcs-sheet button[aria-pressed="true"] {',
+    '    background: var(--pcs-sunken); color: var(--pcs-ink); border-color: var(--pcs-ink);',
+    '    box-shadow: inset 0 0 0 1px var(--pcs-ink), inset 0 3px 4px rgba(42, 37, 32, 0.22), 0 1px 0 var(--pcs-hi); transform: translateY(var(--pk-lip, 3px));',
+    '  }',
+    '  dialog.pcs-sheet button[aria-pressed="true"]:focus-visible { box-shadow: var(--pcs-focus), inset 0 0 0 1px var(--pcs-ink), inset 0 3px 4px rgba(42, 37, 32, 0.22); }',
+    /* disabled and busy: no lip, no shadow: nothing looks pressable that is not; a busy key stays down until it is done */
+    '  dialog.pcs-sheet button[disabled], dialog.pcs-sheet button.is-busy { box-shadow: none; transform: none; cursor: default; }',
+    '  dialog.pcs-sheet button.is-busy { transform: translateY(var(--pk-lip, 3px)); }',
+    /* close: a small square key, its target 46 px */
+    '  dialog.pcs-sheet .pcs-x { --pk-lip: 2px; flex: none; position: relative; display: grid; place-items: center; width: 40px; height: 40px; margin-right: 12px; font-size: 17px; font-weight: 600; }',
+    '  dialog.pcs-sheet .pcs-x::after { content: ""; position: absolute; inset: -3px; }',
+
+    /* the card stays in view over the choices while they scroll (a short phone) */
+    '  dialog.pcs-sheet .pcs-pv { flex: none; display: flex; justify-content: center; align-items: flex-start; padding: 2px var(--pcs-pad) 14px; border-bottom: 1px solid var(--pcs-rule); }',
+    '  dialog.pcs-sheet .pcs-pv canvas {',
+    '    display: block; flex: none; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: 8px; background: #f9edcf;',
+    '    box-shadow: 0 0 0 1px var(--pcs-rim), 0 10px 18px -10px rgba(42, 37, 32, 0.55); opacity: 0; transition: opacity 160ms ease-out;',
+    '  }',
+    '  dialog.pcs-sheet .pcs-pv.is-in canvas { opacity: 1; }',
+    /* a trade still being read: the card's place is held, flat */
+    '  dialog.pcs-sheet .pcs-pv.is-wait canvas { opacity: 1; background: var(--pcs-sunken); transition: none; }',
+
+    '  dialog.pcs-sheet .pcs-body { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 var(--pcs-pad) 12px; }',
+    '  dialog.pcs-sheet .pcs-g { margin-top: 12px; }',
+    /* a group's name: one height, with or without the words at its right: nothing shifts when they come */
+    '  dialog.pcs-sheet .pcs-label { display: flex; align-items: center; height: 20px; margin: 0 0 7px; font-size: 13px; font-weight: 500; line-height: 1.3; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pcs-muted); }',
+    '  dialog.pcs-sheet .pcs-label.is-row { justify-content: space-between; gap: 12px; }',
+    '  dialog.pcs-sheet .pcs-hint { font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: normal; text-transform: none; color: var(--pcs-muted); }',
+    /* beside Result: said in ink, it is about what the card gives away */
+    '  dialog.pcs-sheet .pcs-hint.is-ink { color: var(--pcs-ink); white-space: nowrap; }',
+
+    /* the two switches: a switch that is on is not a key pressed in: it stays up, and its track says on */
+    '  dialog.pcs-sheet .pcs-sws { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 3px; }',
+    '  dialog.pcs-sheet .pcs-sw { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 48px; padding: 0 10px 0 14px; font-size: 16px; font-weight: 600; text-align: left; }',
+    '  dialog.pcs-sheet .pcs-sw > span { min-width: 0; white-space: nowrap; }',
+    '  dialog.pcs-sheet .pcs-tog { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: var(--pcs-sunken); box-shadow: inset 0 0 0 1px var(--pcs-rim), inset 0 2px 3px rgba(42, 37, 32, 0.18); transition: background-color 160ms ease-out; }',
+    '  dialog.pcs-sheet .pcs-tog::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--pcs-raised); box-shadow: 0 0 0 1px var(--pcs-rim), 0 1px 2px rgba(42, 37, 32, 0.35); transition: transform 160ms ease-out; }',
+    '  dialog.pcs-sheet .pcs-sw[aria-checked="true"] .pcs-tog { background: var(--pcs-ink); box-shadow: inset 0 0 0 1px var(--pcs-rim-ink); }',
+    '  dialog.pcs-sheet .pcs-sw[aria-checked="true"] .pcs-tog::after { transform: translateX(18px); box-shadow: 0 0 0 1px var(--pcs-rim-ink), 0 1px 2px rgba(0, 0, 0, 0.4); }',
+    '  dialog.pcs-sheet .pcs-sw[disabled] { opacity: 0.45; }',
+
+    /* the result: three keys, the chosen one pressed in */
+    '  dialog.pcs-sheet .pcs-seg { display: flex; gap: 11px 8px; margin: 8px 0 3px; }',
+    '  dialog.pcs-sheet .pcs-seg button { flex: 1; height: 44px; font-size: 16px; font-weight: 600; }',
+    '  dialog.pcs-sheet .pcs-seg button[aria-pressed="true"] { font-weight: 700; }',
+    '  dialog.pcs-sheet .pcs-seg button[disabled] { opacity: 0.45; }',
+
+    /* the looks: four small cards */
+    '  dialog.pcs-sheet .pcs-looks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-bottom: 3px; }',
+    '  dialog.pcs-sheet .pcs-look { display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; min-height: 64px; padding: 5px 5px 6px; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; }',
+    '  dialog.pcs-sheet .pcs-look canvas { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: 5px; background: var(--pcs-sunken); box-shadow: 0 0 0 1px rgba(42, 37, 32, 0.28); }',
+    '  dialog.pcs-sheet .pcs-look > span { white-space: nowrap; }',
+    '  dialog.pcs-sheet .pcs-look[disabled] { opacity: 0.45; }',
+
+    /* the caption: a field sunk into the paper (keys stand up, fields sink in); 16 px on a phone so iPhones do not zoom */
+    '  dialog.pcs-sheet .pcs-cap {',
+    '    display: block; width: 100%; height: 48px; margin: 0; padding: 0 14px; border: 0; border-radius: 10px; background: var(--pcs-raised); color: var(--pcs-ink);',
+    '    font: inherit; font-size: 17px; outline: none; caret-color: var(--pcs-accent);',
+    '    box-shadow: inset 0 0 0 1px var(--pcs-rim), inset 0 3px 5px rgba(42, 37, 32, 0.16);',
+    '  }',
+    '  dialog.pcs-sheet .pcs-cap::placeholder { color: var(--pcs-faint); }',
+    '  dialog.pcs-sheet .pcs-cap:focus, dialog.pcs-sheet .pcs-cap:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pcs-ink), inset 0 3px 5px rgba(42, 37, 32, 0.16); }',
+    '  dialog.pcs-sheet .pcs-cap[disabled] { opacity: 0.45; }',
+    '  @media (max-width: 640px) { dialog.pcs-sheet .pcs-cap { font-size: 16px; } }',
+
+    /* the foot: the one black key (the main step: the strongest key on the sheet), its brackets, room under it for its lip */
+    '  dialog.pcs-sheet .pcs-foot { flex: none; position: relative; display: grid; gap: 12px; padding: 8px var(--pcs-pad) calc(12px + env(safe-area-inset-bottom) + var(--pcs-kb, 0px)); background: var(--pcs-raised); }',
+    '  dialog.pcs-sheet .pcs-go {',
+    '    --pk-r: 12px; --pk-lip: 4px; --pk-face: var(--pcs-ink); --pk-rim: var(--pcs-rim-ink); --pk-ink: var(--pcs-page);',
+    '    --pk-hi: rgba(255, 255, 255, 0.16); --pk-lo: rgba(255, 255, 255, 0.16); --pk-shade: rgba(20, 17, 14, 0.62); --pk-blur: 14px;',
+    '    display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; padding: 0 12px; font-size: 18px; font-weight: 600; line-height: 1.15; text-align: center;',
+    '  }',
+    '  dialog.pcs-sheet .pcs-go::before { content: "[\\00a0"; opacity: 0.55; } dialog.pcs-sheet .pcs-go::after { content: "\\00a0]"; opacity: 0.55; }',
+    '  dialog.pcs-sheet .pcs-go[disabled] { opacity: 0.5; }',
+    '  dialog.pcs-sheet .pcs-go.is-busy { --pk-face: var(--pcs-muted); --pk-rim: var(--pcs-muted); opacity: 1; }',
+    /* what the key did (saved, and under which name), said over the choices' foot for a few seconds: nothing moves for it */
+    '  dialog.pcs-sheet .pcs-note {',
+    '    position: absolute; left: var(--pcs-pad); right: var(--pcs-pad); bottom: 100%; z-index: 2; margin: 0 0 4px; padding: 11px 14px; border-radius: 10px;',
+    '    background: var(--pcs-ink); color: var(--pcs-page); font-size: 15px; line-height: 1.35; overflow-wrap: anywhere;',
+    '    box-shadow: 0 8px 16px -8px rgba(20, 17, 14, 0.6); animation: pcs-fade 180ms ease-out;',
+    '  }',
+    '  dialog.pcs-sheet .pcs-note:empty { display: none; }',
+    /* a short phone: more choices wait under the fold, and the foot's edge says so */
+    '  dialog.pcs-sheet .pcs-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 20px; pointer-events: none; background: linear-gradient(rgba(250, 246, 237, 0), var(--pcs-raised)); opacity: 0; transition: opacity 160ms ease-out; }',
+    '  dialog.pcs-sheet.has-more .pcs-foot::before { opacity: 1; }',
+
+    /* typing the caption on a phone: the keyboard takes half the screen, so the sheet may use all that is left, the other
+       choices wait, and the card takes what room there is over the line being typed and the key */
+    '  dialog.pcs-sheet.is-kb { height: 90vh; height: 90dvh; max-height: 100vh; max-height: 100dvh; }',
+    '  dialog.pcs-sheet.is-kb .pcs-g:not(.is-cap) { display: none; }',
+    '  dialog.pcs-sheet.is-kb .pcs-body { flex: none; overflow: visible; }',
+    '  dialog.pcs-sheet.is-kb .pcs-pv { flex: 1 1 0; min-height: 0; overflow: hidden; container-type: size; }',
+    '  dialog.pcs-sheet.is-kb .pcs-pv canvas { width: min(100cqw, 100cqh * 1672 / 941); }',
+    '  @media (max-height: 700px) { dialog.pcs-sheet.is-kb { height: 100vh; height: 100dvh; } }',
+
+    '  @media (max-width: 374px) {',
+    '    dialog.pcs-sheet .pcs-sw { padding: 0 8px 0 10px; font-size: 15px; }',
+    '    dialog.pcs-sheet .pcs-seg button { font-size: 15px; }',
+    '    dialog.pcs-sheet .pcs-look { padding: 4px 4px 5px; font-size: 12px; }',
+    '  }',
+    /* a phone under 820 px tall: the same sheet a little closer together, so everything is in view without a scroll from
+       360 x 780 up (shorter phones scroll the choices under the card) */
+    '  @media (max-height: 820px) {',
+    '    dialog.pcs-sheet .pcs-pv { padding-bottom: 12px; }',
+    '    dialog.pcs-sheet .pcs-body { padding-bottom: 10px; }',
+    '    dialog.pcs-sheet .pcs-g { margin-top: 10px; }',
+    '    dialog.pcs-sheet .pcs-label { margin-bottom: 6px; }',
+    '    dialog.pcs-sheet .pcs-sw { min-height: 44px; }',
+    '    dialog.pcs-sheet .pcs-look { gap: 4px; padding-bottom: 5px; }',
+    '  }',
+    /* a wide screen: a panel on the right, from under the bars the page keeps pinned to the top of the window to the bottom
+       (--pcs-top; on the trade page that is the end panel's own place and width, so there is one panel there and not a
+       sheet over the lower half of another; a page that pins no bar gets the whole height). No grab handle: nothing to pull */
+    '  @media (min-width: 641px) {',
+    '    dialog.pcs-sheet { left: auto; right: 0; top: var(--pcs-top, 64px); width: 380px; height: auto; max-height: none; border-top: 0; border-left: 1px solid var(--pcs-rule-strong); border-radius: 0; }',
+    '    dialog.pcs-sheet[open] { animation: pcs-slide-in 200ms ease-out; }',
+    '    dialog.pcs-sheet .pcs-head { min-height: 64px; padding-top: 8px; }',
+    '    dialog.pcs-sheet .pcs-head::before { content: none; }',
+    '    dialog.pcs-sheet .pcs-foot { padding-bottom: 16px; }',
+    '  }',
+    '  @media (min-width: 641px) and (max-width: 1023px) { dialog.pcs-sheet { width: 340px; } }',
+    '  @media (min-width: 1280px) { dialog.pcs-sheet { width: 400px; } }',
+    /* a mouse over a key lifts it a hair (a wide screen only: on a touch screen hover sticks) */
+    '  @media (hover: hover) and (min-width: 641px) {',
+    '    dialog.pcs-sheet button:not([disabled], .is-busy, [aria-pressed="true"], [aria-checked="true"]):hover:not(:active) { --pk-now: calc(var(--pk-lip, 3px) + 1px); transform: translateY(-1px); }',
+    '  }',
+    '  @media (prefers-reduced-motion: reduce) {',
+    '    dialog.pcs-sheet[open], dialog.pcs-sheet.is-out, dialog.pcs-sheet.is-out.is-gone, dialog.pcs-sheet[open]::backdrop, dialog.pcs-sheet.is-out::backdrop, dialog.pcs-sheet .pcs-note { animation: none; }',
+    '    dialog.pcs-sheet .pcs-pv canvas, dialog.pcs-sheet .pcs-tog, dialog.pcs-sheet .pcs-tog::after, dialog.pcs-sheet .pcs-foot::before { transition: none; }',
+    '  }',
+    '}'
+  ].join('\n');
+
+  function injectCss() {
+    if (document.getElementById('pcsStyle')) return;
+    var st = document.createElement('style');
+    st.id = 'pcsStyle';
+    st.textContent = PCS_CSS;
+    document.head.appendChild(st);
   }
 
-  function nameKey(t) { return LS_NAME + (t.account ? String(t.account).toLowerCase() : 'anon'); }
-
-  /* the trade with numbers, and the name and code filled in */
-  function normalise(raw) {
-    var t = {};
-    Object.keys(raw || {}).forEach(function (k) { t[k] = raw[k]; });
-    ['lev', 'margin', 'entry', 'exit', 'pnl', 'openTs', 'closeTs'].forEach(function (k) { t[k] = Number(t[k]); });
-    if (t.szDecimals != null) t.szDecimals = Number(t.szDecimals);
-    t.side = t.side === 'short' ? 'short' : 'long';
-    t.sym = String(t.sym || '?');
-    if (!(t.pnl > 0) || !(t.margin > 0) || !(t.lev > 0)) { var no = new Error('Not a winning close.'); no.plain = true; throw no; }
-    var acct = t.account ? String(t.account).toLowerCase() : null;
-    if (acct && t.code) lsSet(LS_CODE + acct, String(t.code));
-    if (acct && !t.code) t.code = lsGet(LS_CODE + acct) || '';
-    var name = t.name || lsGet(nameKey(t)) || t.code || shortAddr(acct);
-    t.name = String(name || '').slice(0, NAME_MAX);
-    return t;
+  function node(tag, cls, kids) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    (kids == null ? [] : Array.isArray(kids) ? kids : [kids]).forEach(function (k) { n.appendChild(typeof k === 'object' ? k : document.createTextNode(String(k))); });
+    return n;
   }
+  function keyNode(cls, kids, fn) { var b = node('button', cls, kids); b.type = 'button'; if (fn) b.addEventListener('click', fn); return b; }
+  function setText(n, s) { if (n.textContent !== s) n.textContent = s; }
+  function eachKid(n, fn) { Array.prototype.forEach.call(n.children, fn); }
+  function reducedMotion() { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
+  function nothing() {}
 
-  function close() {
-    if (cur && cur.dlg.open) cur.dlg.close();
-    else if (cur) teardown(cur);
-  }
+  /* state: 'wait' (the trade is being read), 'ready', 'err'. key: which trade this is (its caption goes by it). o / okey:
+     the choices of the wallet whose card is up. auto: the result went to the percent by itself when the amount went off.
+     sig / card / p: the PNG as last made, and the one being made */
+  var SH = { d: null, R: null, isOpen: false, outT: 0, ctl: null, host: null, gen: 0, state: 'wait', raw: null, t: null, key: '', acct: '',
+    o: null, okey: null, auto: false, caps: {}, sig: '', card: null, p: null, makeT: 0, raf: 0, said: '', sayT: 0, can: null };
+  var READ_FAIL = 'This trade could not be read just now. Try again in a moment.';
 
-  function teardown(s) {
-    if (s.clip) s.clip.cancel();
-    s.timers.forEach(clearTimeout);
-    s.urls.forEach(function (u) { URL.revokeObjectURL(u); });
-    if (s.dlg.parentNode) s.dlg.parentNode.removeChild(s.dlg);
-    if (cur === s) cur = null;
-  }
-
-  function open(src) {
-    close();
-    warmEncoder();
+  function sheetBuild() {
+    if (SH.d) return SH.R;
     injectCss();
-    var s = { dlg: null, trade: null, candles: undefined, cardBlob: null, clipBlob: null, clipMime: '', clip: null, urls: [], timers: [], gen: 0 };
-    cur = s;
+    var R = SH.R = {}, d = SH.d = node('dialog', 'pcs-sheet');
+    R.title = node('h2', null, 'Share your trade'); R.title.id = 'pcsTitle'; R.title.tabIndex = -1;
+    d.setAttribute('aria-labelledby', 'pcsTitle');
+    var x = keyNode('pcs-x', '✕', function () { sheetClose(); }); x.setAttribute('aria-label', 'Close');
+    R.head = node('div', 'pcs-head', [R.title, x]);
+    R.cv = node('canvas'); R.cv.setAttribute('role', 'img');
+    R.pv = node('div', 'pcs-pv', R.cv);
+    R.body = node('div', 'pcs-body');
+    R.foot = node('div', 'pcs-foot');
 
-    var dlg = node('dialog', 'cs-modal');
-    dlg.setAttribute('aria-labelledby', 'csTitle');
-    s.dlg = dlg;
-    var head = node('div', 'panel-head');
-    var title = node('span', null, 'Share your win'); title.id = 'csTitle';
-    var x = node('button', 'btn btn-sm btn-ghost btn-plain', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close');
-    head.appendChild(title); head.appendChild(x);
-    var body = node('div', 'panel-body stack');
-
-    var previews = node('div', 'cs-previews');
-    var cardBox = node('div', 'cs-shot cs-card');
-    var cardWait = node('div', 'cs-wait', 'Reading the trade…');
-    cardBox.appendChild(cardWait);
-    var clipBox = node('div', 'cs-shot cs-clip');
-    var clipWait = node('div', 'cs-wait', 'Making the clip…');
-    var video = document.createElement('video');
-    video.controls = true; video.playsInline = true; video.setAttribute('playsinline', ''); video.preload = 'metadata';
-    video.hidden = true;
-    clipBox.appendChild(video); clipBox.appendChild(clipWait);
-    previews.appendChild(cardBox); previews.appendChild(clipBox);
-
-    var field = node('label', 'cs-field');
-    field.appendChild(node('span', 'label', 'Name on the card'));
-    var input = node('input', 'input');
-    input.type = 'text'; input.maxLength = NAME_MAX; input.autocomplete = 'off'; input.spellcheck = false;
-    field.appendChild(input);
-
-    var actions = node('div', 'cs-actions');
-    var bSave = button('Save card'), bClip = button('Save clip'), bCopy = button('Copy card'), bPost = button('Post on X', true);
-    [bSave, bClip, bCopy, bPost].forEach(function (b) { actions.appendChild(b); });
-    var fine = node('div', 'cs-fine', 'Attach the card or the clip to the post.');
-    var note = node('div', 'cs-note'); note.setAttribute('aria-live', 'polite');
-
-    body.appendChild(previews); body.appendChild(field); body.appendChild(actions); body.appendChild(fine); body.appendChild(note);
-    dlg.appendChild(head); dlg.appendChild(body);
-    document.body.appendChild(dlg);
-    dlg.addEventListener('close', function () { teardown(s); });
-    dlg.addEventListener('click', function (ev) { if (ev.target === dlg) dlg.close(); });
-    x.addEventListener('click', function () { dlg.close(); });
-    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
-
-    function say(text, err) { note.textContent = text || ''; note.classList.toggle('is-err', !!err); }
-
-    function renderCard() {
-      var t = s.trade;
-      var cv = drawCard(t, s.candles);
-      var old = cardBox.querySelector('canvas');
-      if (old) cardBox.replaceChild(cv, old); else cardBox.insertBefore(cv, cardWait);
-      cv.setAttribute('role', 'img');
-      cv.setAttribute('aria-label', (t.name ? t.name + ': ' : '') + money(t.pnl, true) + ' on ' + t.sym + ' ' + t.side + ' ' + t.lev + 'x');
-      cardWait.hidden = true;
-      s.cardBlob = null;
-      bSave.disabled = true; bCopy.disabled = true;
-      s.cardPromise = new Promise(function (ok, no) {
-        cv.toBlob(function (b) { if (b) ok(b); else no(new Error('no image')); }, 'image/png');
-      });
-      s.cardPromise.then(function (b) {
-        if (cur !== s || cardBox.querySelector('canvas') !== cv) return;
-        s.cardBlob = b; bSave.disabled = false; bCopy.disabled = false;
-      }, function () { say('Could not make the card image.', true); });
+    var sw = function (label, k, says) {
+      var b = keyNode('pcs-sw', [node('span', null, label), node('i', 'pcs-tog')], function () { sheetSet(k, b.getAttribute('aria-checked') !== 'true'); });
+      b.setAttribute('role', 'switch'); b.setAttribute('aria-label', says);
+      return b;
+    };
+    R.addr = sw('Address', 'addr', 'Address: your wallet address on the card');
+    R.amount = sw('Amount in', 'amount', 'Amount in: what you put in, on the card');
+    R.res = node('div', 'pcs-seg'); R.res.setAttribute('role', 'group'); R.res.setAttribute('aria-label', 'Show the result as');
+    [['both', 'Both'], ['pct', 'Percent'], ['usd', 'Dollars']].forEach(function (x) {
+      var b = keyNode(null, x[1], function () { SH.auto = false; sheetSet('result', x[0]); });
+      b._v = x[0]; R.res.appendChild(b);
+    });
+    R.looks = node('div', 'pcs-looks'); R.looks.setAttribute('role', 'group'); R.looks.setAttribute('aria-label', 'Look');
+    TC_LOOKS.forEach(function (l) {
+      var cv = node('canvas'); cv.setAttribute('aria-hidden', 'true');
+      var b = keyNode('pcs-look', [cv, node('span', null, l.name)], function () { sheetSet('look', l.id); });
+      b._v = l.id; b._cv = cv; R.looks.appendChild(b);
+    });
+    R.cap = node('input', 'pcs-cap'); R.cap.type = 'text'; R.cap.id = 'pcsCap'; R.cap.maxLength = TC_CAP_MAX; R.cap.placeholder = 'Add a line of your own';
+    R.cap.setAttribute('enterkeyhint', 'done'); R.cap.setAttribute('autocomplete', 'off'); R.cap.setAttribute('autocapitalize', 'sentences');
+    R.cap.addEventListener('input', function () { if (SH.state !== 'ready') return; SH.caps[SH.key] = R.cap.value; sheetChanged(true); });
+    R.cap.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); R.cap.blur(); } });
+    R.cap.addEventListener('focus', function () { setTimeout(function () { sheetKbFit(); sheetKb(); }, 0); });
+    R.cap.addEventListener('blur', sheetKb);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', function () { if (SH.isOpen) { sheetKbFit(); sheetKb(); } });
+      window.visualViewport.addEventListener('scroll', function () { if (SH.isOpen) sheetKbFit(); });
     }
+    var capLab = node('label', 'pcs-label is-row', ['Caption', node('span', 'pcs-hint', 'Optional')]); capLab.htmlFor = 'pcsCap';
+    R.hint = node('span', 'pcs-hint is-ink', '');
+    [node('div', 'pcs-g', [node('div', 'pcs-label', 'Show on the card'), node('div', 'pcs-sws', [R.addr, R.amount])]),
+      node('div', 'pcs-g', [node('div', 'pcs-label is-row', ['Result', R.hint]), R.res]),
+      node('div', 'pcs-g', [node('div', 'pcs-label', 'Look'), R.looks]),
+      node('div', 'pcs-g is-cap', [capLab, R.cap])].forEach(function (g) { R.body.appendChild(g); });
+    R.say = node('p', 'pcs-note', ''); R.say.setAttribute('aria-live', 'polite');
+    R.go = keyNode('pcs-go', '', sheetGo);
+    R.foot.appendChild(R.say); R.foot.appendChild(R.go);
+    [R.head, R.pv, R.body, R.foot].forEach(function (n) { d.appendChild(n); });
+    document.body.appendChild(d);
 
-    function renderClip() {
-      if (s.clip) s.clip.cancel();
-      var gen = ++s.gen;
-      s.clipBlob = null; bClip.disabled = true;
-      video.hidden = true; video.removeAttribute('src'); video.load();
-      clipWait.textContent = 'Making the clip…'; clipWait.hidden = false;
-      s.clip = recordClip(s.trade, function (blob, mime) {
-        if (cur !== s || gen !== s.gen) return;
-        s.clip = null;
-        s.clipBlob = blob; s.clipMime = mime;
-        var url = URL.createObjectURL(blob);
-        s.urls.push(url);
-        video.muted = true;
-        var still = reducedMotion();
-        video.autoplay = !still; video.loop = !still;
-        video.src = url;
-        video.hidden = false; clipWait.hidden = true;
-        bClip.disabled = false;
-        if (!still) { var p = video.play(); if (p && p.catch) p.catch(function () {}); }
-      }, function (e) {
-        if (cur !== s || gen !== s.gen) return;
-        s.clip = null;
-        clipWait.textContent = (e && e.message) || 'Could not record the clip.';
-      });
+    R.body.addEventListener('scroll', sheetMore, { passive: true });
+    d.addEventListener('cancel', function (ev) { ev.preventDefault(); sheetClose(); });
+    d.addEventListener('click', function (ev) { if (ev.target === d) sheetClose(); });
+    /* swipe down on the head: past 90 px, or a quick flick, closes */
+    var y0 = null, dy = 0, t0 = 0, head = R.head;
+    head.addEventListener('pointerdown', function (ev) { if (ev.target.closest('button')) return; y0 = ev.clientY; dy = 0; t0 = Date.now(); try { head.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ } });
+    head.addEventListener('pointermove', function (ev) { if (y0 == null) return; dy = Math.max(0, ev.clientY - y0); d.style.setProperty('--pcs-drag', dy + 'px'); });
+    var up = function () { if (y0 == null) return; var fast = dy > 24 && dy / Math.max(1, Date.now() - t0) > 0.5; y0 = null; if (dy > 90 || fast) sheetClose(); else d.style.removeProperty('--pcs-drag'); };
+    head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
+    SH.ctl = { dialog: d, close: sheetClose };
+    return R;
+  }
+
+  /* -- on a page without sheets of its own: the phone's back closes the sheet (one history entry while it is up), and a second
+     tap on the spot that closed it (a double tap on ✕ or outside it) is the same tap, not a press on the page under it -- */
+  var OWN = { bound: false, entry: false, skip: 0, ptr: null, shut: null };
+  function ownBind() {
+    if (OWN.bound) return;
+    OWN.bound = true;
+    window.addEventListener('popstate', function () {
+      if (OWN.skip > 0) { OWN.skip--; return; }
+      if (OWN.entry) { OWN.entry = false; sheetClose(true); }
+    });
+    document.addEventListener('pointerdown', function (ev) { OWN.ptr = { x: ev.clientX, y: ev.clientY, t: Date.now() }; }, true);
+    document.addEventListener('click', function (ev) {
+      var s = OWN.shut; if (!s) return;
+      OWN.shut = null;
+      if (Date.now() - s.t < 450 && Math.abs(ev.clientX - s.x) < 32 && Math.abs(ev.clientY - s.y) < 32) { ev.preventDefault(); ev.stopPropagation(); }
+    }, true);
+  }
+  function ownOpened() {
+    ownBind();
+    try { history.pushState({ pcs: 1 }, ''); OWN.entry = true; } catch (e) { OWN.entry = false; }
+  }
+  function ownClosed(fromBack) {
+    if (fromBack) return;
+    if (OWN.entry) { OWN.entry = false; OWN.skip++; try { history.back(); } catch (e) { OWN.skip--; } }
+    var p = OWN.ptr; if (p && Date.now() - p.t < 700) OWN.shut = { x: p.x, y: p.y, t: Date.now() };
+  }
+
+  function sheetShut() {
+    var d = SH.d;
+    clearTimeout(SH.outT); SH.outT = 0; d.classList.remove('is-out', 'is-gone'); d.inert = false;
+    try { d.close(); } catch (e) { d.removeAttribute('open'); }
+  }
+  /* where the page's own pinned bars end (a wide screen's panel starts there): the full-width bars stacked at the top of the
+     window that stay there when the page scrolls (Simple's top bar: 64 px); 0 where the page pins none */
+  function pinnedTop() {
+    var y = 0, w = window.innerWidth;
+    for (var i = 0; i < 3; i++) {
+      var n = document.elementFromPoint(w / 2, y + 1), bar = null, stays = false;
+      for (; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+        var r = n.getBoundingClientRect(), p = getComputedStyle(n).position;
+        if (Math.abs(r.top - y) <= 1 && r.width >= w * 0.9 && r.bottom - y >= 24 && r.bottom <= 160) bar = r;
+        if (p === 'fixed' || p === 'sticky') stays = true;
+      }
+      if (!bar || !stays) break;
+      y = Math.round(bar.bottom);
     }
-
-    function later(fn, ms) { var id = setTimeout(fn, ms); s.timers.push(id); return id; }
-    var cardTimer = null, clipTimer = null;
-    input.addEventListener('input', function () {
-      if (!s.trade) return;
-      s.trade.name = input.value.trim().slice(0, NAME_MAX);
-      lsSet(nameKey(s.trade), s.trade.name);
-      clearTimeout(cardTimer); clearTimeout(clipTimer);
-      if (s.clip) { s.clip.cancel(); s.clip = null; s.gen++; clipWait.textContent = 'Making the clip…'; clipWait.hidden = false; video.hidden = true; bClip.disabled = true; }
-      cardTimer = later(renderCard, 250);
-      clipTimer = later(renderClip, 900);
-    });
-
-    bSave.addEventListener('click', function () {
-      if (s.cardBlob) saveBlob(s.cardBlob, fileBase(s.trade) + '.png');
-    });
-    bClip.addEventListener('click', function () {
-      if (s.clipBlob) saveBlob(s.clipBlob, fileBase(s.trade) + (/mp4/.test(s.clipMime) ? '.mp4' : '.webm'));
-    });
-    bCopy.addEventListener('click', function () {
-      var fallback = function () { if (s.cardBlob) { saveBlob(s.cardBlob, fileBase(s.trade) + '.png'); say('Copy is blocked here; saved the card instead.'); } };
+    return y;
+  }
+  function sheetShow() {
+    var d = SH.d, R = SH.R;
+    if (SH.outT || d.open) sheetShut();      /* opened again while it was still sliding away */
+    SH.isOpen = true; d.style.removeProperty('--pcs-drag'); d.style.setProperty('--pcs-top', pinnedTop() + 'px');
+    try { d.showModal(); } catch (e) { d.setAttribute('open', ''); }
+    try { R.title.focus({ preventScroll: true }); } catch (e) { /* fine */ }
+    if (SH.host && SH.host.opened) SH.host.opened(SH.ctl); else ownOpened();
+    R.body.scrollTop = 0; sheetKbFit();
+  }
+  /* Closed is closed at once: the page takes the next tap, and what closing does runs now. The slide away is only a picture:
+     no longer modal, and no taps. fromBack: the phone's back (or the page's own) brought it down; now: without the slide */
+  function sheetClose(fromBack, now) {
+    var d = SH.d, host = SH.host;
+    if (!SH.isOpen) return;
+    var o = SH.state === 'ready' ? sheetO() : null;
+    SH.isOpen = false; SH.gen++;
+    if (!(host && host.opened)) ownClosed(fromBack === true);
+    sheetShut();
+    if (now !== true && !reducedMotion()) {
+      /* is-gone: no taps (a class, not :modal, which older Safari does not know); inert: nothing in it takes focus, and focus
+         stays on what it went back to when the sheet closed (the opener) */
+      var keep = document.activeElement;
       try {
-        if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') { fallback(); return; }
-        navigator.clipboard.write([new ClipboardItem({ 'image/png': s.cardBlob || s.cardPromise })])
-          .then(function () { say('Card copied.'); }, fallback);
-      } catch (e) { fallback(); }
-    });
-    bPost.addEventListener('click', function () {
-      var t = s.trade;
-      var text = money(t.pnl, true) + ' on ' + t.sym + ' ' + t.lev + 'x. confetti.trade';
-      var link = t.code ? SITE + '/?ref=' + encodeURIComponent(t.code) : SITE;
-      var url = 'https://x.com/intent/post?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(link);
-      window.open(url, '_blank', 'noopener');
-    });
+        d.classList.add('is-out', 'is-gone'); d.inert = true; d.show();
+        if (keep && keep !== document.body && document.activeElement !== keep && document.contains(keep)) keep.focus({ preventScroll: true });
+        SH.outT = setTimeout(sheetShut, 180);
+      } catch (e) { sheetShut(); }
+    }
+    clearTimeout(SH.makeT); clearTimeout(SH.sayT); d.classList.remove('is-kb');
+    SH.host = null; SH.raw = null; SH.t = null; SH.state = 'wait'; SH.said = ''; SH.sig = ''; SH.card = null; SH.p = null;
+    if (host && host.closed) host.closed(fromBack === true, o);
+  }
 
-    Promise.resolve(src).then(function (raw) {
-      if (cur !== s) return;
-      s.trade = normalise(raw);
-      input.value = s.trade.name;
-      bPost.disabled = false;
-      cardWait.textContent = 'Drawing the card…';
-      return fontsReady().then(function () {
-        return fetchCandles(s.trade).catch(function () { return null; });
-      }).then(function (ch) {
-        if (cur !== s) return;
-        s.candles = ch;
-        renderCard();
-        renderClip();
+  /* the choices: the ones kept on this device for this wallet, and this trade's own caption */
+  function sheetO() {
+    var a = SH.acct;
+    if (!SH.o || SH.okey !== a) { SH.o = cardPrefsGet(a); SH.okey = a; SH.auto = false; }
+    var o = SH.o;
+    return { addr: o.addr, amount: o.amount, result: o.result, look: o.look, caption: SH.caps[SH.key] || '' };
+  }
+  function sheetSig() {
+    var o = sheetO(), t = SH.t;
+    return [SH.key, t.sym, t.long, t.lev, t.margin, t.pnl, t.addr, t.link, t.level || 0, o.addr, o.amount, o.result, o.look, o.caption].join('|');
+  }
+  function sheetMake() {
+    if (SH.state !== 'ready') return Promise.reject(new Error('no trade'));
+    var sig = sheetSig();
+    if (SH.sig === sig && SH.card) return Promise.resolve(SH.card);
+    if (SH.sig === sig && SH.p) return SH.p;
+    SH.sig = sig; SH.card = null;
+    var p = SH.p = tradeCard(SH.raw, sheetO()).then(function (c) { if (SH.p === p) { SH.card = c; SH.p = null; } return c; },
+      function (e) { if (SH.p === p) SH.p = null; throw e; });
+    return p;
+  }
+
+  /* more choices under the fold (a short phone): the foot's edge fades over them until the last is in view */
+  function sheetMore() { var b = SH.R.body; SH.d.classList.toggle('has-more', b.scrollHeight - b.clientHeight - b.scrollTop > 6); }
+  /* a choice: kept for this wallet on this device, and the card drawn again */
+  function sheetSet(k, v) {
+    var o = SH.o;
+    if (SH.state !== 'ready' || !o) return;
+    /* the dollars beside the percent give the amount away, so with the amount off the result shows as the percent, and
+       comes back with the amount, unless the trader chose how it shows */
+    if (k === 'amount' && !v && o.result === 'both') { o.result = 'pct'; SH.auto = true; }
+    else if (k === 'amount' && v && SH.auto && o.result === 'pct') { o.result = 'both'; SH.auto = false; }
+    o[k] = v;
+    cardPrefsSet(SH.okey, o);
+    sheetChanged(false);
+  }
+  function sheetChanged(typing) {
+    SH.said = '';
+    sheetPaint(); sheetDraw();
+    clearTimeout(SH.makeT);
+    SH.makeT = setTimeout(function () { if (SH.isOpen) sheetMake().catch(nothing); }, typing ? 350 : 120);
+  }
+  function sheetPaint() {
+    var R = SH.R, ready = SH.state === 'ready', o = sheetO(), on = function (b) { return b ? 'true' : 'false'; };
+    R.addr.setAttribute('aria-checked', on(o.addr)); R.amount.setAttribute('aria-checked', on(o.amount));
+    R.addr.disabled = !ready || !SH.t.addr; R.amount.disabled = !ready;
+    eachKid(R.res, function (b) { b.setAttribute('aria-pressed', on(b._v === o.result)); b.disabled = !ready; });
+    eachKid(R.looks, function (b) { b.setAttribute('aria-pressed', on(b._v === o.look)); b.disabled = !ready; });
+    R.cap.disabled = !ready;
+    R.cv.setAttribute('aria-label', ready ? altOf(SH.t, o) + (o.caption.trim() ? ' ' + o.caption.trim() : '') : 'Your trade card');
+    if (SH.can == null) SH.can = cardCanShare();
+    setText(R.go, SH.state === 'wait' ? 'Reading your trade…' : SH.state === 'err' ? 'Close' : SH.can ? 'Share' : 'Save the picture');
+    R.go.disabled = SH.state === 'wait'; R.go.classList.toggle('is-busy', SH.state === 'wait');
+    /* beside the three keys, when the choice undoes the switch above it */
+    setText(R.hint, ready && !o.amount && o.result === 'both' ? 'Both gives the amount away' : '');
+    setText(R.say, SH.said);
+  }
+  /* the card and the four looks, drawn once a frame at most (while the trade is read, or could not be: the card's shapes) */
+  function sheetDraw() {
+    if (SH.raf) return;
+    SH.raf = requestAnimationFrame(function () {
+      SH.raf = 0;
+      if (!SH.isOpen) return;
+      var R = SH.R, t = SH.t, gen = SH.gen, w = R.pv.clientWidth ? R.cv.clientWidth : 0;
+      var live = function () { return SH.gen === gen && SH.t === t; };
+      if (!w) { sheetDraw(); return; }      /* the sheet is not laid out yet */
+      if (SH.state !== 'ready') {
+        cardHold(R.cv, w);
+        eachKid(R.looks, function (b) { if (b._cv.clientWidth) cardHold(b._cv, b._cv.clientWidth); });
+        return;
+      }
+      var o = cardOpts(sheetO());
+      cardInto(R.cv, t, w, o, live).then(function () { if (live()) { R.pv.classList.add('is-in'); R.pv.classList.remove('is-wait'); } }, nothing);
+      sheetMore();
+      eachKid(R.looks, function (b) {
+        var bw = b._cv.clientWidth;
+        if (bw) cardInto(b._cv, t, bw, { addr: o.addr, amount: o.amount, result: o.result, look: b._v, caption: o.caption }, live).catch(nothing);
       });
-    }).catch(function (e) {
-      if (cur !== s) return;
-      cardWait.textContent = 'Could not read this trade.';
-      clipWait.textContent = '';
-      say(e && e.plain ? e.message : 'The chain did not answer; try again in a moment.', true);
     });
-    return s;
+  }
+  function kbHeight() { var vv = window.visualViewport; return vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0; }
+  /* the keyboard: the sheet's key rides above it and the line being typed scrolls into view */
+  function sheetKbFit() {
+    var kb = kbHeight(), cap = SH.R.cap;
+    SH.d.style.setProperty('--pcs-kb', kb + 'px');
+    if (document.activeElement === cap && cap.scrollIntoView) cap.scrollIntoView({ block: kb > 0 ? 'center' : 'nearest' });
+  }
+  /* typing the caption with the phone's keyboard up: the card, the line being typed and the key share what is left */
+  function sheetKb() {
+    if (!SH.isOpen) return;
+    var on = kbHeight() > 80 && document.activeElement === SH.R.cap;
+    if (SH.d.classList.contains('is-kb') !== on) { SH.d.classList.toggle('is-kb', on); sheetDraw(); }
+    sheetMore();
+  }
+  /* the sheet's one key: the PNG to the phone's share sheet, or saved; said for a few seconds where it was saved */
+  function sheetGo() {
+    if (SH.state === 'err') { sheetClose(); return; }
+    if (SH.state !== 'ready') return;
+    clearTimeout(SH.makeT);
+    var gen = SH.gen;
+    var told = function (s) {
+      if (SH.gen !== gen) return;
+      SH.said = s; sheetPaint(); clearTimeout(SH.sayT);
+      if (s) SH.sayT = setTimeout(function () { if (SH.gen === gen) { SH.said = ''; sheetPaint(); } }, 6000);
+    };
+    var go = function (card) { return shareCardFile(card).then(function (r) { told(r === 'saved' ? 'Your card is saved: ' + card.name : ''); }); };
+    var c = SH.sig === sheetSig() ? SH.card : null;
+    if (c) { go(c); return; }
+    sheetMake().then(go, function () { told('The card could not be made just now. Try again in a moment.'); });
+  }
+
+  /* the trade is here: its card, its choices, its PNG */
+  function sheetTrade(raw) {
+    var R = SH.R, t;
+    try { t = cardTrade(raw); } catch (e) { sheetFail(); return; }
+    SH.raw = raw; SH.t = t; SH.state = 'ready'; SH.said = '';
+    SH.acct = t.account ? String(t.account).toLowerCase() : '';
+    SH.key = SH.host && SH.host.key != null ? 'k:' + SH.host.key : t.id != null ? 'i:' + t.id : 'f:' + [t.sym, t.long ? 'l' : 's', t.lev, t.margin, t.pnl].join('|');
+    R.cap.value = SH.caps[SH.key] || '';
+    sheetPaint(); sheetDraw();
+    sheetMake().catch(nothing);
+  }
+  /* the card's place held: last time's card and looks give way to the card's shapes */
+  function sheetHold() {
+    var R = SH.R;
+    SH.raw = null; SH.t = null;
+    R.pv.classList.remove('is-in'); R.pv.classList.add('is-wait');
+    sheetDraw();
+  }
+  function sheetFail() {
+    SH.state = 'err'; SH.said = READ_FAIL;
+    sheetHold(); sheetPaint();
+  }
+  /* while the trade is read: the choices wait and the key says so */
+  function sheetWait(host) {
+    SH.state = 'wait'; SH.key = ''; SH.said = '';
+    if (host && host.account) SH.acct = String(host.account).toLowerCase();
+    SH.R.cap.value = '';
+    sheetHold(); sheetPaint();
+  }
+
+  function open(src, host) {
+    sheetBuild();
+    if (SH.isOpen) sheetClose(false, true);
+    host = host && typeof host === 'object' ? host : null;
+    SH.host = host;
+    var gen = ++SH.gen;
+    if (src && typeof src.then === 'function') {
+      sheetWait(host);
+      src.then(function (raw) { if (SH.gen === gen && SH.isOpen) sheetTrade(raw); }, function () { if (SH.gen === gen && SH.isOpen) sheetFail(); });
+    } else sheetTrade(src);
+    sheetShow();
+    sheetDraw();
+    cardReady().catch(nothing);
   }
 
   window.ConfettiShare = {
-    open: function (trade) { open(trade); },
-    use: function (h) { if (h && typeof h.postInfo === 'function') hooks.postInfo = h.postInfo; },
+    /* every Share on every page: the sheet with the trade's card and the trader's choices */
+    open: open,
     /* the trade card (the owner's design): cardReady() loads its fonts and qr.js; tradeCard(trade, choices) the 2x PNG;
-       drawCardInto(canvas, trade, cssWidth, choices) a preview on the page; shareCard(card) the share sheet or a download.
-       The trader's choices: cardOpts(any) makes them whole, cardLooks names the looks, cardPrefs keeps them per wallet
-       on this device, cardCanShare() says whether a share sheet takes the picture here */
+       drawCardInto(canvas, trade, cssWidth, choices) the card on a page at its own size; cardAlt(trade, choices) the card in
+       words. The trader's choices: cardOpts(any) makes them whole, cardLooks names the looks, cardPrefs keeps them per wallet
+       on this device */
     cardReady: cardReady,
     tradeCard: tradeCard,
     drawCardInto: drawCardInto,
-    shareCard: shareCardFile,
+    cardAlt: cardAlt,
     cardOpts: cardOpts,
     cardLooks: TC_LOOKS.map(function (l) { return { id: l.id, name: l.name }; }),
-    cardCapMax: TC_CAP_MAX,
-    cardPrefs: { get: cardPrefsGet, set: cardPrefsSet },
-    cardCanShare: cardCanShare
+    cardPrefs: { get: cardPrefsGet, set: cardPrefsSet }
   };
 })();

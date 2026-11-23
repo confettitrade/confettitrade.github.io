@@ -15,7 +15,7 @@
   <meta name="application-name" content="Confetti">
   <meta property="og:site_name" content="Confetti">
   <link rel="stylesheet" href="paper.css?v=mono1">
-  <link rel="stylesheet" href="simple.css?v=one1">
+  <link rel="stylesheet" href="simple.css?v=pnlshare1">
   <link rel="stylesheet" href="points.css?v=phone2">
   <script>
     /* Cream look for this page */
@@ -410,7 +410,7 @@
 
       <section id="fix">
         <h2>What Confetti reads instead</h2>
-        <p>Every fill here is a price from outside the order book; the book settles nothing. Most markets fill on a signed Pyth price, <span class="js-fill-range">a few seconds</span> after your order reaches the chain, each coin after its own short wait, at a moment the contract fixes: <a href="#prices">How prices work</a> has the rule and each coin's wait. If that fill does not come in time, an open is refunded and a close finishes on Hyperliquid's oracle price; the page offers your own wallet that way out the moment it opens. A close left waiting more than 3 seconds past that point can only be finished by your own wallet, at the worse for you of two oracle prices. Leverage is set per coin: up to 1000x on BTC, ETH, DOGE, FARTCOIN, VIRTUAL, WIF, MELANIA, FLOKI, PENGU and PEOPLE, up to 250x on TRUMP and PEPE.</p>
+        <p>Every fill here is a price from outside the order book; the book settles nothing. Most markets fill on a signed Pyth price, <span class="js-fill-range">a few seconds</span> after your order reaches the chain, each coin after its own short wait, at a moment the contract fixes: <a href="#prices">How prices work</a> has the rule and each coin's wait. If that fill does not come in time, an open is refunded and a close finishes on Hyperliquid's oracle price; the page offers your own wallet that way out the moment it opens. A close left waiting more than 3 seconds past that point can only be finished by your own wallet, at the worse for you of two oracle prices. Leverage is set per coin: up to 1000x on BTC, ETH, XRP, SOL, ZEC, DOGE, LINK, PUMP, PENGU, VIRTUAL, FLOKI, WIF, FARTCOIN, MELANIA and PEOPLE, up to 250x on TRUMP and PEPE.</p>
         <p>Every limit is sized to the house's free cash and checked in the block you open: one position, one side of a coin, the whole book. The ticket shows the biggest position you can open right now. What a position can win is fixed when it opens: a multiple of its margin, or a share of the house's free cash if that is smaller. Anyone can liquidate it past its bust price for 0.5% of the margin. A breaker can pause new trades for the rest of an hour that drains house cash. The contracts cannot be upgraded.</p>
         <p>Every trade pays a charge on its size: 0.045% of the position when it opens and 0.045% of what closes when it closes, never more than 10% of the stake each time. <a href="#fees">What a trade pays</a> has the numbers by leverage. On a win the impact haircut applies. An open fills a small spread past its fill price; the bust price is measured from the fill price. Held past the free hours, a position pays a borrow charge for each whole hour, taken from its payout at close.</p>
         <p>The fill keeper is run by the house. In a Pyth market it never picks the price: the contract accepts one price for your order's moment, whoever sends the fill. It can be late by a few seconds, or not fill at all; then an open is refunded and a close finishes on Hyperliquid's oracle price. <a href="#prices">How prices work</a> says who may fill and when. In a market on Hyperliquid's oracle (PEOPLE) the keeper fills 5 to 8 seconds after you ask, at the oracle print it sees then; which print inside those 3 seconds is its call, worth about one oracle step. After that anyone may fill at the worse of the two oracle prints until the request expires at 60 seconds, and the page offers your own wallet first. Every fill logs whether it was priced on Pyth and the time of the price it used.</p>
@@ -524,7 +524,7 @@
         <p>The house runs market-activity bots of its own, from its own wallets with house money.</p>
         <p>They count in volume, open interest and the leaderboard. Not in points.</p>
         <p>The team also runs market-maker bots on FETTI's HyperSwap pool. Their wallets are listed on the <a href="confetti.html#mmWallets">$FETTI page</a>.</p>
-        <p>Paper did $3.3 billion on two coins. There are twelve here, and memes move.</p>
+        <p>Paper did $3.3 billion on two coins. There are seventeen here, and memes move.</p>
         <p><a class="btn btn-lg" href="trade.html">Trade</a></p>
       </section>
 
