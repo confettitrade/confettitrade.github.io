@@ -549,11 +549,13 @@
     var open = r.status === ST.OPEN, won = r.status === ST.WON, landed = won ? r.called : !r.called, pay = payOf(r.stake, r.x100);
     var mini = h('i', 'fl-mini ' + (open ? (r.called ? 'is-h' : 'is-t') : landed ? 'is-h' : 'is-t'), open ? (r.called ? 'H' : 'T') : landed ? 'H' : 'T');
     mini.setAttribute('aria-hidden', 'true');
-    var left = h('span', 'fl-row-t', [h('b', null, short(r.who)), h('i', null, [usd(r.stake) + ' on ' + sideWord(r.called), open ? null : h('span', 'fl-row-land', ' · ' + sideWord(landed) + ' landed')])]);
+    /* no wallet addresses in the feed (the owner, 2026-11-23): a flip is the player's own, or just a player's */
+    var mine = r.you || (!S.demo && S.account && String(r.who).toLowerCase() === S.account.toLowerCase()), who = mine ? 'You' : 'A player';
+    var left = h('span', 'fl-row-t', [h('b', null, who), h('i', null, [usd(r.stake) + ' on ' + sideWord(r.called), open ? null : h('span', 'fl-row-land', ' · ' + sideWord(landed) + ' landed')])]);
     var right = h('span', 'fl-row-r', [h('b', open ? 'sm-mute' : won ? 'sm-up' : 'sm-dn', open ? 'In the air' : won ? 'Won ' + usd(pay) : 'Lost ' + usd(r.stake)), h('i', null, ago(r.at))]);
     var href = S.demo ? '' : r.tx ? S.cfg.explorerUrl + '/tx/' + r.tx : S.cfg.explorerUrl + '/address/' + S.game;
     var n = href ? h('a', 'fl-row', [mini, left, right, h('span', 'fl-row-go', '›')]) : h('div', 'fl-row', [mini, left, right]);
-    if (href) { n.href = href; n.target = '_blank'; n.rel = 'noopener'; n.setAttribute('aria-label', short(r.who) + ' ' + (open ? 'flip in the air' : won ? 'won ' + usd(pay) : 'lost ' + usd(r.stake)) + '. ' + (r.tx ? 'Open the transaction' : 'Open the game on the explorer')); }
+    if (href) { n.href = href; n.target = '_blank'; n.rel = 'noopener'; n.setAttribute('aria-label', who + ' ' + (open ? 'flip in the air' : won ? 'won ' + usd(pay) : 'lost ' + usd(r.stake)) + '. ' + (r.tx ? 'Open the transaction' : 'Open the game on the explorer')); }
     if (r.you || (!S.demo && S.account && String(r.who).toLowerCase() === S.account.toLowerCase())) n.classList.add('is-you');
     if (r.isNew) { n.classList.add('is-new'); r.isNew = false; }
     return n;
