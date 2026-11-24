@@ -10,11 +10,14 @@
 
    window.ConfettiShare.open(trade or a Promise of one, host?) opens the sheet. trade:
      { id?, sym, side: 'long' | 'short' (or isLong), lev, margin (what went in), pnl (the result against it),
-       account?, code? (the trader's own referral code), level? (the FETTI level) }
+       account?, code? (the trader's own referral code), level? (the FETTI level),
+       sideWord? (the word drawn after the slash in place of LONG / SHORT: the coin flip's HEADS / TAILS),
+       lines? (three short lines for the card's bottom right, in place of the trading ones) }
    A field a page does not know is left out: the card goes without it (no address, the plain confetti.trade QR code, no
    level). host, all optional: { account (whose choices show while a Promise is still being read), key (which trade this is,
-   for its caption; else the id), opened(ctl) and closed(fromBack, choices) for a page with sheets of its own (Simple): the
-   sheet then joins that page's own back and double-tap handling instead of keeping its own; ctl = { dialog, close } }. */
+     for its caption; else the id), title (the sheet's heading; "Share your trade" without it), opened(ctl) and
+     closed(fromBack, choices) for a page with sheets of its own (Simple): the sheet then joins that page's own back and
+     double-tap handling instead of keeping its own; ctl = { dialog, close } }. */
 (function () {
   'use strict';
 
@@ -150,6 +153,8 @@
     if (!(t.margin > 0) || !isFinite(t.pnl) || !(t.lev > 0)) throw new Error('Not a closed trade.');
     t.long = t.isLong != null ? !!t.isLong : t.side !== 'short';
     t.sym = String(t.sym || '?');
+    t.sideWord = t.sideWord ? String(t.sideWord).toUpperCase().slice(0, 8) : '';
+    t.lines = Array.isArray(t.lines) && t.lines.length === 3 ? t.lines.map(function (s) { return String(s).slice(0, 34); }) : null;
     t.win = !(t.pnl < -0.004);                      /* the end screen's own line: a loss is under -$0.004 */
     var acct = t.account ? String(t.account).toLowerCase() : '';
     if (acct && t.code) lsSet(LS_CODE + acct, String(t.code));
@@ -466,7 +471,7 @@
     lines.forEach(function (s, i) { tcText(ctx, s, { font: TC_SMALL, size: 44.5, x: 113, y: 517.5 + dy + i * 62, maxW: 540 }, ink); });
 
     /* right: COIN/SIDE over the leverage, right-aligned */
-    tcCoin(ctx, t.sym, t.long ? 'LONG' : 'SHORT', pal);
+    tcCoin(ctx, t.sym, t.sideWord || (t.long ? 'LONG' : 'SHORT'), pal);
     /* the boost the trade ran at, as its card and its end screen said it: a whole number as it is, one that money added
        to the trade left in between to two places ("6.67X", never rounded up to a boost the trade did not have) */
     tcText(ctx, cardLev(t.lev) + 'X', { font: TC_BIG, size: 138, x: 1630, y: 781.5, align: 'right', ls: 7.5, sx: TC_SX, maxW: 700 }, pal.ink);
@@ -476,15 +481,15 @@
     var qr = tcQr(ctx, t.link, S), addr = o.addr ? t.addr : '';
     if (addr) tcText(ctx, addr, { font: TC_SMALL, size: 35, x: 209, y: 906.5, ls: 4.7 }, ink);
     if (o.caption) tcPlain(ctx, o.caption, { font: TC_SMALL, size: 40, x: 210, y: addr ? 850.5 : 906.5, maxW: 760 }, ink);
-    tcText(ctx, 'Perp Trading', { font: TC_SMALL, size: 24.4, x: 1645, y: 855.5, align: 'right', ls: 0.9 }, ink);
-    tcText(ctx, 'Up to 1000x leverage', { font: TC_SMALL, size: 24.4, x: 1645, y: 883.5, align: 'right', ls: 0.9 }, ink);
-    tcText(ctx, 'Fully onchain on hyperliquid', { font: TC_SMALL, size: 24.4, x: 1645, y: 912.5, align: 'right', ls: 0.9 }, ink);
+    (t.lines || ['Perp Trading', 'Up to 1000x leverage', 'Fully onchain on hyperliquid']).forEach(function (s, i) {
+      tcText(ctx, s, { font: TC_SMALL, size: 24.4, x: 1645, y: [855.5, 883.5, 912.5][i], align: 'right', ls: 0.9 }, ink);
+    });
     cv.qr = qr;
     return cv;
   }
 
   function cardLev(lev) { var n = Number(lev); return isFinite(n) && n > 0 ? String(Math.round(n * 100) / 100) : '—'; }
-  function cardName(t) { return 'confetti-' + t.sym.toLowerCase().replace(/[^a-z0-9]+/g, '') + '-' + (t.long ? 'long' : 'short') + '-' + cardLev(t.lev).replace('.', '_') + 'x.png'; }
+  function cardName(t) { return 'confetti-' + t.sym.toLowerCase().replace(/[^a-z0-9]+/g, '') + '-' + (t.sideWord ? t.sideWord.toLowerCase().replace(/[^a-z0-9]+/g, '') : t.long ? 'long' : 'short') + '-' + cardLev(t.lev).replace('.', '_') + 'x.png'; }
 
   /* the card as a PNG file (2x), with what it was drawn from; a preview canvas of any width comes from drawCardInto.
      text: the only words that go with the picture, the trader's own caption (or none) */
@@ -575,7 +580,7 @@
   /* the card in words, for a screen reader: only what the card shows (never the address) */
   function altOf(t, o) {
     var sign = t.pnl > 0.004 ? '+' : t.pnl < -0.004 ? '−' : '', r = t.pnl / t.margin;
-    var says = [t.sym + (t.long ? ' up ' : ' down ') + cardLev(t.lev) + '×'];
+    var says = [t.sym + (t.sideWord ? ' ' + t.sideWord.toLowerCase() + ' ' : t.long ? ' up ' : ' down ') + cardLev(t.lev) + '×'];
     if (o.result !== 'usd') says.push((r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r * 100).toFixed(1) + '%');
     if (o.result !== 'pct') says.push(sign + cardMoney(t.pnl));
     if (o.amount) says.push(cardMoney(t.margin) + ' in');
@@ -958,7 +963,7 @@
   }
   function sheetSig() {
     var o = sheetO(), t = SH.t;
-    return [SH.key, t.sym, t.long, t.lev, t.margin, t.pnl, t.addr, t.link, t.level || 0, o.addr, o.amount, o.result, o.look, o.caption].join('|');
+    return [SH.key, t.sym, t.long, t.sideWord, t.lev, t.margin, t.pnl, t.addr, t.link, t.level || 0, o.addr, o.amount, o.result, o.look, o.caption].join('|');
   }
   function sheetMake() {
     if (SH.state !== 'ready') return Promise.reject(new Error('no trade'));
@@ -1095,6 +1100,7 @@
     if (SH.isOpen) sheetClose(false, true);
     host = host && typeof host === 'object' ? host : null;
     SH.host = host;
+    setText(SH.R.title, host && host.title ? String(host.title) : 'Share your trade');
     var gen = ++SH.gen;
     if (src && typeof src.then === 'function') {
       sheetWait(host);

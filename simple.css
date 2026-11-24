@@ -1522,3 +1522,6 @@ body.cream-page .pts-bar { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { .sm-sheet.is-ot .sm-sh-foot { transition: none; } }
 }
+
+  .sm-flip-note .sm-flip-coin { flex: none; display: inline-flex; width: 44px; height: 44px; }
+  .sm-flip-note b { letter-spacing: 0.04em; }

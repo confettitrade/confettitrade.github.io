@@ -1,0 +1,267 @@
+/* ==========================================================================
+   confetti_  —  flip.css
+   The coin flip page (flip.html, flip.js). It lives inside Simple's own shell
+   (.sm-root: the paper, the tokens, the keys of simple.css), so every button
+   here is one of Simple's keys and every word is set in Simple's type. This
+   file only adds what the game needs: the coin, the two sides, the result's
+   room, the outcome boxes, the feed, and the layout on a wide screen. Every
+   rule hangs on an .fl- class. One spacing scale, Simple's: 4 8 12 16 24 32.
+   ========================================================================== */
+
+@media screen {
+
+  /* ---- the shell ------------------------------------------------------------ */
+  body.fl-page { margin: 0; overflow: hidden; background-color: var(--page); }
+  .sm-root.fl-root { display: flex; }
+  .fl-root [hidden] { display: none !important; }
+  .fl-main {
+    flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; padding: 12px var(--sm-pad) 28px;
+  }
+  .fl-wrap { max-width: 480px; margin: 0 auto; }
+  .fl-cta {
+    flex: none; position: relative; z-index: 1; display: grid; gap: 8px;
+    padding: 10px var(--sm-pad) calc(16px + env(safe-area-inset-bottom)); background-color: var(--page);
+    transition: box-shadow 150ms ease-out;
+  }
+  .fl-root.is-more .fl-cta { box-shadow: 0 -1px 0 var(--rule), 0 -12px 16px -12px rgba(42, 37, 32, 0.28); }
+  .fl-keys { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 480px; width: 100%; margin: 0 auto; }
+  .fl-keys.is-two { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+  .fl-keys .sm-btn { height: 56px; }
+  .fl-keys .sm-btn.is-ghost { height: 56px; font-size: 17px; }
+  .fl-go { white-space: nowrap; }
+  .fl-go.is-long { font-size: 16px; }
+  .fl-say { max-width: 480px; width: 100%; margin: 0 auto; text-align: center; min-height: 0; text-wrap: balance; }
+  .fl-say:empty { display: none; }
+  .fl-say.is-ok { color: var(--ink); }
+  .fl-root .sm-top .sm-who-key #flWhoAddr { font-variant-numeric: tabular-nums; }
+
+  /* ---- the table: title, coin, result, the form -------------------------------- */
+  .fl-mode { margin: 0 0 8px !important; text-wrap: balance; }
+  .fl-mode b { color: var(--ink); font-weight: 600; }
+  .fl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 20px; }
+  .fl-head h1 { margin: 0; }
+  .fl-pays { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+
+  /* the coin. --d is its width: it takes the height the rest of the screen leaves (everything else here has a set
+     height, summed in the calc), never wider than the phone allows, so the outcome boxes stay above the key */
+  .fl-stage {
+    --d: clamp(104px, min(44vw, 22vh), 184px); --d: clamp(104px, min(44vw, calc((100dvh - 642px) / 1.16)), 184px); --rise: calc(var(--d) * 0.16);
+    position: relative; height: calc(var(--d) + var(--rise) + 20px); margin-top: 2px;
+    perspective: 1000px; perspective-origin: 50% 40%;
+    -webkit-user-select: none; user-select: none; pointer-events: none;
+  }
+  .fl-lift { --t: calc(var(--d) * 0.066); position: absolute; left: 50%; bottom: 20px; width: var(--d); height: var(--d); margin-left: calc(var(--d) / -2); transform-style: preserve-3d; transform: rotateX(18deg); will-change: transform; }
+  .fl-coin { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform; }
+  .fl-face { position: absolute; inset: 0; border-radius: 50%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+  .fl-face svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .fl-face.is-h { transform: translateZ(calc(var(--t) * 0.5)); }
+  .fl-face.is-t { transform: rotateX(180deg) translateZ(calc(var(--t) * 0.5)); }
+  /* the edge: seven discs between the faces, so the coin has a rim: a lip under it when it lies there (the page's keys
+     have one too), a band when it turns */
+  .fl-rim { position: absolute; inset: 0.5px; border-radius: 50%; background: #6f6552; }
+  .fl-rim:nth-child(1) { transform: translateZ(calc(var(--t) * -0.43)); } .fl-rim:nth-child(2) { transform: translateZ(calc(var(--t) * -0.29)); background: #8a7f66; }
+  .fl-rim:nth-child(3) { transform: translateZ(calc(var(--t) * -0.145)); } .fl-rim:nth-child(4) { transform: translateZ(0); background: #8a7f66; }
+  .fl-rim:nth-child(5) { transform: translateZ(calc(var(--t) * 0.145)); } .fl-rim:nth-child(6) { transform: translateZ(calc(var(--t) * 0.29)); background: #8a7f66; }
+  .fl-rim:nth-child(7) { transform: translateZ(calc(var(--t) * 0.43)); }
+  .fl-shadow {
+    position: absolute; left: 50%; bottom: 3px; width: calc(var(--d) * 0.78); height: calc(var(--d) * 0.13); margin-left: calc(var(--d) * -0.39);
+    border-radius: 50%; background: radial-gradient(closest-side, rgba(42, 37, 32, 0.36), rgba(42, 37, 32, 0.14) 60%, rgba(42, 37, 32, 0)); will-change: transform, opacity;
+  }
+  /* without motion the coin does not turn: it waits dimmed, then shows the side that landed */
+  .fl-coin { transition: opacity 200ms ease-out; }
+  .fl-stage.is-wait .fl-coin { opacity: 0.45; }
+  /* heads: paper with ink. tails: ink with paper. */
+  .fl-c-edge { stroke-width: 3; }
+  .fl-c-reed { fill: none; stroke-width: 6; stroke-dasharray: 1.5 3.26; }
+  .fl-c-ring { stroke-width: 2; }
+  .fl-c-arc { font-family: var(--font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+  .fl-c-big { font-family: var(--font-brand); font-weight: 700; font-size: 88px; letter-spacing: -0.02em; }
+  .fl-face.is-h .fl-c-edge { fill: #faf6ed; stroke: #2a2520; }
+  .fl-face.is-h .fl-c-reed { stroke: #b8ad92; }
+  .fl-face.is-h .fl-c-ring { fill: #f4ecd8; stroke: #2a2520; }
+  .fl-face.is-h .fl-c-arc { fill: #5f564b; }
+  .fl-face.is-h .fl-c-big { fill: #2a2520; }
+  .fl-face.is-t .fl-c-edge { fill: #2a2520; stroke: #0f0d0b; }
+  .fl-face.is-t .fl-c-reed { stroke: #5f564b; }
+  .fl-face.is-t .fl-c-ring { fill: #1f1b17; stroke: #f4ecd8; }
+  .fl-face.is-t .fl-c-arc { fill: #d4cbba; }
+  .fl-face.is-t .fl-c-big { fill: #faf6ed; }
+
+  /* the result: two lines whose room is always there */
+  .fl-result { min-height: 60px; margin-top: 2px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
+  .fl-res-big { margin: 0; font-family: var(--font-brand); font-weight: 700; font-size: 27px; line-height: 1.15; letter-spacing: -0.015em; min-height: 31px; white-space: nowrap; }
+  .fl-res-sub { margin: 4px 0 0; font-size: 15px; line-height: 1.35; color: var(--ink-muted); min-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }      /* one line, always: nothing under it moves */
+  .fl-result.is-won .fl-res-big { color: var(--sm-pos-t); }
+  .fl-result.is-lost .fl-res-big { color: var(--ink); }
+  .fl-result.is-air .fl-res-big { color: var(--ink-muted); }
+  .fl-result.is-in .fl-res-big { animation: fl-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+  @keyframes fl-pop { from { transform: scale(0.86); opacity: 0; } }
+
+  /* the two sides: two keys, the chosen one pressed in */
+  .fl-form { margin-top: 10px; }
+  .fl-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 14px; }
+  .fl-side { display: flex; align-items: center; justify-content: center; gap: 10px; height: 54px; font-size: 18px; font-weight: 600; }
+  .fl-side[aria-pressed="true"] { font-weight: 700; }
+  .fl-side[disabled]:not([aria-pressed="true"]), .fl-most[disabled] { opacity: 0.45; }      /* a flip in the air: its own side stays, the rest waits */
+  .fl-mini { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-style: normal; font-family: var(--font-brand); font-weight: 700; font-size: 14px; line-height: 1; }
+  .fl-mini.is-h { background: #faf6ed; color: #2a2520; box-shadow: inset 0 0 0 1.5px #2a2520, inset 0 0 0 4px #faf6ed, inset 0 0 0 5px #b8ad92; }
+  .fl-mini.is-t { background: #2a2520; color: #faf6ed; box-shadow: inset 0 0 0 1.5px #0f0d0b, inset 0 0 0 4px #2a2520, inset 0 0 0 5px #7a7060; }
+
+  /* the amount: Simple's own box and chips; the most a flip may be is a small key that fills it in */
+  .fl-form .sm-label.is-amt { align-items: center; min-height: 28px; }
+  :is(.sm-root, .sm-sheet) .fl-most { --k-lip: 2px; --k-r: 8px; position: relative; height: 26px; padding: 0 9px; font-size: 13px; font-weight: 600; letter-spacing: normal; text-transform: none; white-space: nowrap; }
+  .fl-most::after { content: ""; position: absolute; inset: -9px -6px; }                 /* the 44 px target around the small key */
+  .fl-form .sm-amt { margin: 6px 0 0; }
+  #flAmount { font-family: inherit !important; font-size: inherit !important; font-weight: inherit; letter-spacing: inherit; color: inherit; background: transparent; border: 0; }
+  .fl-form .sm-amt.is-bad { box-shadow: inset 0 0 0 2px var(--neg), inset 0 3px 5px rgba(42, 37, 32, 0.16); }
+  .fl-chips { margin: 8px 0 0; }
+  .fl-chips button { height: 46px; }
+
+  /* what each side of the coin does to the money: the trade card's two boxes */
+  .fl-out { margin-top: 12px; }
+  .fl-out div { background: var(--raised); border-color: var(--rule-strong); }
+  .fl-out b { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fl-out div { transition: opacity 160ms ease-out, box-shadow 160ms ease-out; }
+  .fl-out div.is-hit { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .fl-out div.is-miss { opacity: 0.55; }
+  .fl-wallet { margin: 12px 0 0 !important; text-wrap: balance; }
+  .fl-wallet b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+  /* ---- recent flips ------------------------------------------------------------- */
+  .fl-side-col { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--rule); }
+  .fl-feed-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; }
+  .fl-feed-head h2, .fl-how h2 { margin: 0; }
+  .fl-live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--sm-pos-t); }
+  .fl-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--pos); }
+  .fl-live.is-demo { color: var(--ink-muted); }
+  .fl-live.is-demo i { background: var(--ink-faint); }
+  .fl-feed { margin-top: 8px; min-height: 232px; }
+  .fl-row { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 6px 0; border-bottom: 1px solid var(--rule); color: var(--ink); text-decoration: none; }
+  /* live, a row opens its transaction: so it is a key, like every clickable thing here (the demo's rows open nothing and stay flat) */
+  :is(.sm-root, .sm-sheet) a.fl-row { --k-lip: 2px; --k-r: 10px; min-height: 56px; padding: 5px 8px 5px 10px; margin-bottom: 8px; }
+  a.fl-row .fl-row-go { width: 10px; }
+  .fl-row .fl-mini { width: 30px; height: 30px; }
+  .fl-row-t { flex: 1 1 auto; min-width: 0; }
+  .fl-row-t b { display: block; font-size: 15px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fl-row-t i { display: block; font-style: normal; font-size: 13px; line-height: 1.3; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 419px) { .fl-row-land { display: none; } }      /* a narrow row keeps the call; the small coin shows how it landed */
+  .fl-row-r { flex: none; text-align: right; }
+  .fl-row-r b { display: block; font-size: 16px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fl-row-r i { display: block; font-style: normal; font-size: 13px; line-height: 1.3; color: var(--ink-muted); white-space: nowrap; }
+  .fl-row-go { flex: none; width: 14px; font-size: 20px; line-height: 1; color: var(--ink-faint); text-align: right; }
+  .fl-row.is-new { animation: fl-row-in 320ms ease-out; }
+  @keyframes fl-row-in { from { background: var(--raised); opacity: 0; transform: translateY(-6px); } }
+  .fl-row.is-you .fl-row-t b::after { content: "you"; margin-left: 8px; padding: 1px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: var(--ink); color: var(--page); border-radius: 4px; vertical-align: 1px; }
+  .fl-feed-say { display: grid; place-items: center; min-height: 232px; padding: 0 12px; text-align: center; font-size: 15px; line-height: 1.4; color: var(--ink-muted); border-bottom: 1px solid var(--rule); text-wrap: balance; }
+  .fl-skel i { display: block; height: 58px; border-bottom: 1px solid var(--rule); background: linear-gradient(var(--sunken), var(--sunken)) 0 50% / 30px 30px no-repeat, linear-gradient(var(--sunken), var(--sunken)) 40px 19px / 44% 10px no-repeat, linear-gradient(var(--sunken), var(--sunken)) 40px 36px / 26% 8px no-repeat, linear-gradient(var(--sunken), var(--sunken)) 100% 50% / 54px 12px no-repeat; opacity: 0.7; }
+  .fl-how { margin-top: 24px; }
+  .fl-how .sm-fine { margin-top: 8px; text-wrap: pretty; }
+  .fl-how-links { display: flex; flex-wrap: wrap; gap: 10px 8px; margin-top: 14px !important; }
+  :is(.sm-root, .sm-sheet) .fl-how-links a { --k-lip: 2px; --k-r: 8px; display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; font-size: 14px; font-weight: 600; position: relative; }
+  .fl-how-links a::after { content: ""; position: absolute; inset: -5px -2px; }
+
+  /* ---- the menu sheet and the wallet chooser (Simple's sheet, Simple's rows) ------- */
+  .fl-menu-now { pointer-events: none; }
+  .fl-wallets { padding-top: 6px; }
+  .fl-wallets img { width: 28px; height: 28px; border-radius: 6px; flex: none; }
+  :is(.sm-root, .sm-sheet) .fl-wallets button { justify-content: flex-start; gap: 12px; }
+  .fl-wallets button i { margin-left: auto; }
+  dialog.sm-sheet.fl-sheet { max-width: 520px; margin: 0 auto; }
+
+  /* ---- short and narrow phones: everything a flip needs stays on one screen. The coin gives way first, then the
+     gaps, then the name over the two sides (the keys say it themselves; a screen reader still hears it). ------------ */
+  @media (max-height: 700px) and (max-width: 640px) {
+    .fl-main { padding-top: 8px; }
+    .fl-stage { --d: clamp(84px, min(40vw, 16vh), 176px); --d: clamp(84px, min(40vw, calc((100dvh - 538px) / 1.16)), 176px); }
+    .fl-result { min-height: 50px; }
+    .fl-res-big { font-size: 24px; min-height: 28px; }
+    .fl-res-sub { font-size: 14px; margin-top: 2px; }
+    .fl-form { margin-top: 4px; }
+    #flSideLabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .fl-sides { margin: 0 0 10px; }
+    .fl-side { height: 50px; }
+    .fl-form .sm-amt.is-mid { font-size: 38px; min-height: 40px; }
+    .fl-out { margin-top: 10px; }
+    .fl-out div { padding: 6px 12px 7px; font-size: 13px; line-height: 1.3; }
+    .fl-out b { font-size: 19px; margin-top: 0; }
+    .fl-wallet { margin-top: 10px !important; }
+    /* a short phone has no room over the coin: while it is in the air the line it flies over steps back */
+    .fl-mode, .fl-head { transition: opacity 140ms ease-out; }
+    .fl-root.is-air .fl-mode, .fl-root.is-air .fl-head { opacity: 0.12; }
+    .fl-keys .sm-btn, .fl-keys .sm-btn.is-ghost { height: 52px; }
+    .fl-cta { padding-top: 8px; }
+  }
+  @media (max-height: 600px) and (max-width: 640px) {
+    .fl-main { padding-top: 6px; }
+    .fl-mode { margin-bottom: 4px !important; }
+    .fl-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }      /* the outcome box says what a win pays */
+    .fl-stage { --d: clamp(80px, min(36vw, 15vh), 176px); --d: clamp(80px, min(36vw, calc(100dvh - 486px)), 176px); --rise: 0px; height: calc(var(--d) + 16px); }
+    .fl-lift { bottom: 14px; }
+    .fl-result { min-height: 46px; }
+    .fl-res-big { font-size: 22px; min-height: 26px; }
+    .fl-form { margin-top: 2px; }
+    .fl-sides { margin-bottom: 8px; }
+    .fl-form .sm-label.is-amt { min-height: 26px; }
+    .fl-chips button { height: 44px; }
+    .fl-chips { margin-top: 6px; }
+    .fl-out { margin-top: 6px; }
+  }
+  @media (max-width: 374px) {
+    .fl-res-big { font-size: 23px; }
+    .fl-side { font-size: 17px; gap: 8px; }
+    .fl-out div { padding-left: 10px; padding-right: 10px; font-size: 13px; }
+    .fl-out b { font-size: 19px; }
+    .fl-go { font-size: 17px; }
+    .fl-go.is-long { font-size: 15px; }
+    .fl-keys.is-two { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-result.is-in .fl-res-big, .fl-row.is-new { animation: none; }
+    .fl-cta { transition: none; }
+  }
+}
+
+/* ==========================================================================
+   Wide screens (641 px and up): the trade page's own shape. The feed is the
+   left column, ruled off like the coin list; the table sits in the middle
+   with its key under it, so the press is where the eye already is.
+   ========================================================================== */
+@media screen and (min-width: 641px) {
+  .fl-root { flex-direction: column; }
+  .fl-main { padding: 0; display: flex; overflow: hidden; }
+  .fl-wrap { flex: 1 1 auto; min-height: 0; display: flex; max-width: 1600px; width: 100%; margin: 0 auto; }
+  .fl-side-col {
+    order: -1; flex: 0 0 400px; width: 400px; margin: 0; padding: 22px 20px 28px; border-top: 0; border-right: 1px solid var(--rule);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .fl-table { flex: 1 1 auto; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 28px 32px 104px; }
+  .fl-table > * { max-width: 460px; margin-left: auto; margin-right: auto; }
+  .fl-table > .fl-mode { margin: 0 auto 10px !important; }
+  .fl-stage { --rise: calc(var(--d) * 0.3); --d: clamp(120px, min(24vw, 19vh), 208px); --d: clamp(120px, min(24vw, calc((100dvh - 704px) / 1.3)), 208px); }
+  .fl-result { min-height: 76px; }
+  .fl-res-big { font-size: 32px; min-height: 37px; }
+  .fl-res-sub { font-size: 16px; }
+  /* the key rides at the foot of the middle column */
+  .fl-cta { position: absolute; left: max(400px, calc((100vw - 1600px) / 2 + 400px)); right: max(0px, calc((100vw - 1600px) / 2)); bottom: 0; padding: 12px 32px 22px; box-shadow: 0 -1px 0 var(--rule); }
+  .fl-keys, .fl-say { max-width: 460px; }
+  .fl-feed { min-height: 0; }
+  dialog.sm-sheet.fl-sheet { inset: 64px 0 0 auto; width: 420px; max-width: 100%; height: auto; max-height: none; margin: 0; border-top: 0; border-left: 1px solid var(--rule-strong); }
+  dialog.sm-sheet.fl-sheet[open] { animation: fl-side-in 200ms ease-out; }
+  dialog.sm-sheet.fl-sheet.is-out { animation: fl-side-out 160ms ease-in forwards; }
+  dialog.sm-sheet.fl-sheet .sm-sh-head::before { content: none; }
+  @keyframes fl-side-in { from { transform: translateX(100%); } } @keyframes fl-side-out { to { transform: translateX(100%); } }
+}
+@media screen and (min-width: 641px) and (max-width: 899px) {
+  .fl-side-col { flex-basis: 300px; width: 300px; padding: 20px 16px 24px; }
+  .fl-row-land { display: none; }
+  .fl-cta { left: 300px; right: 0; }
+  .fl-table { padding-left: 24px; padding-right: 24px; }
+}
+@media screen and (min-width: 1280px) {
+  .fl-side-col { flex-basis: 460px; width: 460px; padding-left: 24px; padding-right: 24px; }
+  .fl-cta { left: max(460px, calc((100vw - 1600px) / 2 + 460px)); }
+}
+@media screen and (min-width: 641px) and (prefers-reduced-motion: reduce) {
+  dialog.sm-sheet.fl-sheet[open], dialog.sm-sheet.fl-sheet.is-out { animation: none; }
+}

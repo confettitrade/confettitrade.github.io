@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com chrome-extension: moz-extension:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src blob:; connect-src 'self' https://rpc.hyperliquid.xyz https://hyperliquid.drpc.org https://rpc.purroofgroup.com https://api.hyperliquid.xyz; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — coin flip</title>
+  <meta name="description" content="Heads or tails for USDC on HyperEVM. Pick a side, pick an amount, flip.">
+  <meta name="theme-color" content="#f4ecd8">
+  <link rel="icon" href="favicon.ico?v=icon2" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=icon2">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=icon2">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=icon2">
+  <link rel="manifest" href="site.webmanifest?v=icon2">
+  <meta name="application-name" content="Confetti">
+  <meta property="og:site_name" content="Confetti">
+  <meta property="og:title" content="confetti_ — coin flip">
+  <meta property="og:description" content="Heads or tails for USDC on HyperEVM.">
+  <link rel="stylesheet" href="paper.css?v=closex1">
+  <link rel="stylesheet" href="simple.css?v=flip2">
+  <link rel="stylesheet" href="flip.css?v=flip1">
+</head>
+<body class="cream-page fl-page">
+
+  <!-- The Simple shell: the top bar, the page that scrolls, the one key by the thumb. flip.js fills in every number. -->
+  <div class="sm-root fl-root" id="flRoot">
+    <header class="sm-top has-menu">
+      <a class="sm-logo" href="trade.html" aria-label="confetti_: back to trading">confetti<i>_</i></a>
+      <span class="sm-top-r">
+        <button class="sm-chip sm-who-key" id="flWho" type="button" hidden><span><i class="sm-dot"></i><span id="flWhoAddr"></span></span></button>
+        <button class="sm-chip sm-menu-key" id="flMenu" type="button" aria-label="Menu"><span><b class="sm-menu-w">Menu</b><i class="sm-bars"></i></span></button>
+      </span>
+    </header>
+
+    <main class="fl-main" id="flMain">
+      <div class="fl-wrap">
+
+        <section class="fl-table" aria-label="Coin flip">
+          <p class="sm-fine fl-mode" id="flMode" hidden></p>
+          <div class="fl-head">
+            <h1 class="sm-label">Coin flip</h1>
+            <span class="fl-pays" id="flPays" aria-live="off">Win pays —</span>
+          </div>
+
+          <!-- the coin: two faces on one disc, tossed and turned by flip.js -->
+          <div class="fl-stage" id="flStage" aria-hidden="true">
+            <div class="fl-lift" id="flLift">
+              <div class="fl-coin" id="flCoin">
+                <i class="fl-rim"></i><i class="fl-rim"></i><i class="fl-rim"></i><i class="fl-rim"></i><i class="fl-rim"></i><i class="fl-rim"></i><i class="fl-rim"></i>
+                <div class="fl-face is-h">
+                  <svg viewBox="0 0 200 200" focusable="false">
+                    <defs><path id="flArcH" d="M100 100 m-76 0 a76 76 0 1 1 152 0 a76 76 0 1 1 -152 0"/></defs>
+                    <circle class="fl-c-edge" cx="100" cy="100" r="98"/>
+                    <circle class="fl-c-reed" cx="100" cy="100" r="91"/>
+                    <circle class="fl-c-ring" cx="100" cy="100" r="62"/>
+                    <text class="fl-c-arc"><textPath href="#flArcH" startOffset="0">confetti_ · heads · confetti_ · heads · confetti_ · heads ·</textPath></text>
+                    <text class="fl-c-big" x="100" y="131" text-anchor="middle">H</text>
+                  </svg>
+                </div>
+                <div class="fl-face is-t">
+                  <svg viewBox="0 0 200 200" focusable="false">
+                    <defs><path id="flArcT" d="M100 100 m-76 0 a76 76 0 1 1 152 0 a76 76 0 1 1 -152 0"/></defs>
+                    <circle class="fl-c-edge" cx="100" cy="100" r="98"/>
+                    <circle class="fl-c-reed" cx="100" cy="100" r="91"/>
+                    <circle class="fl-c-ring" cx="100" cy="100" r="62"/>
+                    <text class="fl-c-arc"><textPath href="#flArcT" startOffset="0">confetti_ · tails · confetti_ · tails · confetti_ · tails ·</textPath></text>
+                    <text class="fl-c-big" x="100" y="131" text-anchor="middle">T</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <i class="fl-shadow" id="flShadow"></i>
+          </div>
+
+          <!-- the result: its room is always there, so nothing under it moves -->
+          <div class="fl-result" id="flResult" role="status" aria-live="polite">
+            <p class="fl-res-big" id="flResBig">Heads or tails?</p>
+            <p class="fl-res-sub" id="flResSub">Pick a side, pick an amount, flip.</p>
+          </div>
+
+          <div class="fl-form" id="flForm">
+            <div class="sm-label" id="flSideLabel">Your call</div>
+            <div class="fl-sides" role="group" aria-labelledby="flSideLabel">
+              <button type="button" class="fl-side" id="flHeads" aria-pressed="true"><i class="fl-mini is-h" aria-hidden="true">H</i><span>Heads</span></button>
+              <button type="button" class="fl-side" id="flTails" aria-pressed="false"><i class="fl-mini is-t" aria-hidden="true">T</i><span>Tails</span></button>
+            </div>
+
+            <div class="sm-label is-amt"><label for="flAmount">Amount</label><button type="button" class="fl-most" id="flMost" hidden></button></div>
+            <div class="sm-amt is-mid" id="flAmt"><span aria-hidden="true">$</span><input id="flAmount" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" maxlength="9" placeholder="0" value="10" aria-describedby="flSay"></div>
+            <div class="sm-chips fl-chips" id="flChips" role="group" aria-label="Quick amounts">
+              <button type="button" data-usd="1" aria-pressed="false">$1</button>
+              <button type="button" data-usd="5" aria-pressed="false">$5</button>
+              <button type="button" data-usd="10" aria-pressed="true">$10</button>
+              <button type="button" data-usd="25" aria-pressed="false">$25</button>
+            </div>
+
+            <div class="sm-out fl-out">
+              <div><span id="flWinWhen">Heads: win pays</span><b class="sm-up" id="flWin">—</b></div>
+              <div><span id="flLoseWhen">Tails: you lose</span><b class="sm-dn" id="flLose">—</b></div>
+            </div>
+            <p class="sm-fine fl-wallet" id="flWalletLine">Flips play from your wallet's USDC.</p>
+          </div>
+        </section>
+
+        <section class="fl-side-col" aria-label="Recent flips">
+          <div class="fl-feed-head"><h2 class="sm-label">Recent flips</h2><span class="fl-live" id="flLive" hidden><i></i><span id="flLiveWord">Live</span></span></div>
+          <div class="fl-feed" id="flFeed" aria-live="off"></div>
+          <div class="fl-how">
+            <h2 class="sm-label">How a flip is decided</h2>
+            <p class="sm-fine">Each flip asks Pyth Entropy for a random number on HyperEVM, mixed from a number your browser makes and one the provider locked in beforehand. Nobody can know it or pick it. An even number is heads, an odd one is tails, and a win is paid by the contract in the same transaction that brings the number.</p>
+            <p class="sm-fine" id="flHypeNote" hidden></p>
+            <p class="sm-fine fl-how-links"><a href="contracts.html">Contracts</a><a href="docs.html">Docs</a><a id="flGameLink" href="contracts.html" hidden target="_blank" rel="noopener">The game's contract</a></p>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <footer class="fl-cta" id="flCta">
+      <p class="sm-say fl-say" id="flSay" role="status" aria-live="polite"></p>
+      <div class="fl-keys" id="flKeys">
+        <button class="sm-btn is-ghost fl-share" id="flShare" type="button" hidden>Share</button>
+        <button class="sm-btn is-primary fl-go" id="flGo" type="button">Flip</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js" integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="share.js?v=flip1" defer></script>
+  <script src="flip.js?v=flip1" defer></script>
+</body>
+</html>

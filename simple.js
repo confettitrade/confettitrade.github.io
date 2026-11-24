@@ -451,6 +451,7 @@
 
       /* money back for stakers (fetti.js): the same key as on a phone */
       DK.R.fx = fxShow(w, st) ? fxCard() : null; if (DK.R.fx) add(scroll, h('div', 'sm-sec', DK.R.fx.n));
+      add(scroll, h('div', 'sm-sec', flipCard()));
       /* money still on the earlier version (v5 only): one key to the page that closes it out */
       var o4d = old4Card(); if (o4d) add(scroll, h('div', 'sm-sec', o4d));
 
@@ -1080,6 +1081,7 @@
       add(main, h('div', 'sm-links', [btn('sm-link', 'Add money', () => { openAdd(); }), a.available > 0 ? btn('sm-link', 'Withdraw', withdraw) : null]));
     }
     R.fx = fxShow(w, st) ? fxCard() : null; if (R.fx) add(main, R.fx.n);
+    add(main, flipCard());
     var o4 = old4Card(); if (o4) add(main, o4);
     if (p) { R.pend = noteCard(); R.pend.n.addEventListener('click', () => { openAdd(); }); add(main, R.pend.n); }
     if (S.res) {
@@ -1171,6 +1173,13 @@
     var u = txUrl(d); if (!u) return null;
     var a = h('a', 'sm-link sm-res-link', 'See it on the chain'); a.target = '_blank'; a.rel = 'noopener'; a.href = u;
     return a;
+  }
+  /* the coin flip's card (the owner, 2026-11-23: "put FLIP A COIN somwhere on the front page with a picture of the coin linking
+     to the coinflip"): a coin drawn in the page's own ink and paper, the words, and the whole card a key to flip.html */
+  function flipCard() {
+    var coin = h('span', 'sm-flip-coin');
+    coin.innerHTML = '<svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true" focusable="false"><circle cx="24" cy="24" r="22" fill="#f4ecd8" stroke="#1c1a17" stroke-width="2.5"/><circle cx="24" cy="24" r="16.5" fill="none" stroke="#1c1a17" stroke-width="1" stroke-dasharray="1.5 2.2"/><text x="24" y="31" text-anchor="middle" font-size="19" font-weight="700" font-family="Georgia, serif" fill="#1c1a17">H</text></svg>';
+    return btn('sm-note sm-flip-note', [coin, h('span', 'sm-t', [h('b', null, 'FLIP A COIN'), h('i', null, 'Heads or tails. A win pays 1.96x.')]), h('span', 'sm-chev', '›')], () => { location.href = 'flip.html'; });
   }
   function noteCard() {
     var c = { icon: h('span', 'sm-spin'), b: h('b'), i: h('i') };
@@ -1307,6 +1316,7 @@
     add(list, item('Leaderboard', 'top traders', null, 'leaderboard.html'));
     add(list, item('House', 'LP and stats', null, 'house.html'));
     add(list, item('$FETTI', fxMenuHint(w), null, 'confetti.html'));
+    add(list, item('Coin flip', 'heads or tails', null, 'flip.html'));
     var F = fx();
     if (F && w.account && F.drawOn()) add(list, item('Weekly draw', fxDrawHint(w), () => { openDraw(); }));
     if (F && F.tableHref()) add(list, item('FETTI table', 'stake FETTI, win FETTI', null, F.tableHref()));
