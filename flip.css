@@ -115,7 +115,7 @@
   .fl-form .sm-amt { margin: 6px 0 0; }
   #flAmount { font-family: inherit !important; font-size: inherit !important; font-weight: inherit; letter-spacing: inherit; color: inherit; background: transparent; border: 0; }
   .fl-form .sm-amt.is-bad { box-shadow: inset 0 0 0 2px var(--neg), inset 0 3px 5px rgba(42, 37, 32, 0.16); }
-  .fl-chips { margin: 8px 0 0; }
+  .fl-chips { margin: 8px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .fl-chips button { height: 46px; }
 
   /* what each side of the coin does to the money: the trade card's two boxes */

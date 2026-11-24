@@ -21,7 +21,7 @@
   var E = window.ethers;
   var WALLET_KEY = 'confetti.wallet';                 /* the wallet chosen on any page of the site (tabs.js) */
   var OPEN_KEY = 'confetti.flip.open.';               /* + account: a flip still waiting for its number */
-  var QUICK = [50, 100, 150, 200];
+  var QUICK = [1, 5, 10, 25, 50, 100, 150, 200];
   var FEED_ROWS = 10;
 
   var ABI = [
@@ -74,7 +74,7 @@
   var el = {};
   var S = {
     cfg: null, demo: true, soon: false, game: '', ready: false,
-    heads: true, text: '50', usd: 50,
+    heads: true, text: '10', usd: 10,
     x100: 196, minBet: 1, maxBet: null, paused: false, fee: 0n, refundDelay: 21600,
     account: null, eth: null, walletName: '', chainOk: true, bal: null, allowance: 0n, hype: null,
     phase: 'idle',            /* idle | wallet | allowing | sending | air | landed | refunding */
