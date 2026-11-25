@@ -1,0 +1,1524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>confetti_ — crash: the sum, tested</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f4ecd8">
+  <link rel="icon" href="favicon.ico?v=icon2" sizes="16x16 32x32 48x48">
+  <link rel="stylesheet" href="paper.css?v=closex1">
+  <link rel="stylesheet" href="simple.css?v=flip2">
+  <style>
+    body.cv-page { margin: 0; background-color: var(--page); background-image: radial-gradient(var(--dot) 1px, transparent 1.3px); background-size: 14px 14px; color: var(--ink); font-family: var(--font-ui); font-size: 16px; line-height: 1.45; }
+    .cv-wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 48px; }
+    .cv-wrap h1 { margin: 0 0 6px; font-family: var(--font-brand); font-weight: 700; font-size: 28px; letter-spacing: -0.015em; }
+    .cv-wrap p { margin: 0 0 12px; color: var(--ink-muted); max-width: 64ch; }
+    .cv-sum { margin: 16px 0 8px; padding: 12px 14px; border: 2px solid var(--ink); background: var(--raised); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cv-sum.is-bad { border-color: var(--neg); color: #a33d4a; }
+    .cv-wrap h2 { margin: 22px 0 6px; font-size: 13px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+    .cv-rows { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+    .cv-rows li { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+    .cv-rows b { flex: none; width: 38px; font-weight: 700; color: #27693f; }
+    .cv-rows li.is-fail b { color: #a33d4a; }
+    .cv-rows li.is-fail { background: rgba(180, 72, 85, 0.12); }
+    .cv-back { display: inline-block; margin-top: 18px; color: var(--ink); }
+  </style>
+</head>
+<body class="cream-page cv-page">
+  <div class="cv-wrap">
+    <h1>Crash: the sum, tested</h1>
+    <p>The crash page works out a round's crash point in your browser (crashmath.js). This page holds that same script against test vectors: the ones the contract and the round server are tested with, and a second set worked from the spec with a different keccak. Every row is done again each time this page loads.</p>
+    <div class="cv-sum" id="cvSum" role="status">Working…</div>
+    <div id="cvOut"></div>
+    <a class="cv-back" href="crash.html">Back to Crash</a>
+  </div>
+  <script type="application/json" id="cvKit">{
+  "comment": "Test vectors of confetti's crash game, written by ops/crash/tools/make-vectors.js. crash: crashX100 = max(100, floor((10000 - edgeBps) * 2^52 / (2^52 - r) / 100)) with r = the top 52 bits of keccak256(seed ++ salt). bets: capX100 = 100 + ceil(100 * maxWin / stake); maxProfit = what the contract sets aside; payMult = the lowest of manual, auto and cap at or under the crash point (0 = lost); payout = min(floor(stake * payMult / 100), stake + maxWin). chain: links[i] = keccak256(links[i-1]), links[0] = keccak256(first). eip712: the hashes the session key signs.",
+  "counts": {
+    "crash": 56,
+    "bets": 24,
+    "chainLinks": 6
+  },
+  "crash": [
+    {
+      "seed": "0xeb6f2e9e4dacd453bf74d2eb06a27de020bb44c9e1b9e762c12ca7dc2c686c15",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "1317"
+    },
+    {
+      "seed": "0xca69ecd97b3bad6915a93ae907da16eddb4d32f30fac32f5baeb54f534be9ef4",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "626"
+    },
+    {
+      "seed": "0xa1cc850aa1a51bafdddf117b9a0ef587d215f441664d4202ad4d198c0ac7879b",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "110"
+    },
+    {
+      "seed": "0x0e70cb65e8528b216c7bb46f900fc642d32eb425102cc66c998483ba18c5dcfb",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "155"
+    },
+    {
+      "seed": "0xc807c35ea7b385fab221297325078339c71e33b3deb6cf3b430a7fbf39e71e08",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "178"
+    },
+    {
+      "seed": "0xad92c0561f05b596e22c006519608cf1bfb04587317cfac867428f554ca43469",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "149"
+    },
+    {
+      "seed": "0x37bcd65f33deeef1d0059c2a24c2454ee9fb597930cf38bb33d945a7803abe15",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "116"
+    },
+    {
+      "seed": "0x306ad6d10e5e6df29b9a02bf80cde9e83e6505d2ad3da523af6622abd028ffae",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "112"
+    },
+    {
+      "seed": "0x7b5ff34bfd2613cccd8298d36a1a074123fa99606dee7b90260052fcc62316ca",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "1633"
+    },
+    {
+      "seed": "0xd1c4b0e58673003eb0a647ce9c3990055f456282d2bebedcc9f624b32bb9cbce",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "105"
+    },
+    {
+      "seed": "0x6bd9c812062377e9a3ebe5c4875350de4f0e2e7a89f4532038bbdc1e63884186",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "114"
+    },
+    {
+      "seed": "0x0bce810591adbfeb72439627f4d28ae16bec34d87238353c098df0a8ad84922d",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "163"
+    },
+    {
+      "seed": "0x1a25d96d650697e1dbd9ded32f4a824713297affdf84ca7db4124de5ad5ab6d9",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "100"
+    },
+    {
+      "seed": "0x11ebf0c09e95f3f2fa0a18d3ada2ca1ed2c27117182d8160b922327101dc0d56",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "128"
+    },
+    {
+      "seed": "0xfaaf518b2d04b977497f61e157b3dba8d4623570fcba1fa91428e2ea596c7e59",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "189"
+    },
+    {
+      "seed": "0xf10211fd6c6977184768024a13176a55afbe91d5d06390c1ee8be8ae34d637b3",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "170"
+    },
+    {
+      "seed": "0xb129efa7e57303e162d49cec3c30bcfa019a03839adefa3a669d3c91866b7653",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "296"
+    },
+    {
+      "seed": "0x1d2d6fc9329609d1c8e8288a45deaedad660fc643e8c6dba792cdc194683e610",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "29554"
+    },
+    {
+      "seed": "0x4107fee9f34c9dc2e3680aec24903911bcf2a2187875109dae5fc6d9701f5c64",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "107"
+    },
+    {
+      "seed": "0x6b78edb53a460f2b870cc8fb74744fe9a6217b61d4902e6a7873662aeb777176",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "145"
+    },
+    {
+      "seed": "0x3b2937a634d7d910d8f5dc37c93f09b062e1cb888aa55b21cadebcbb373290ad",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "100"
+    },
+    {
+      "seed": "0x6332c0e7a31bfda7c949dfb367e25dcb533e75054f42ee4307a349153e6463ee",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "121"
+    },
+    {
+      "seed": "0xd0764f7a19f1fa2298da031e169a85e7e6bceb23e88a0e285cc02e0cee91ebe5",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "1964"
+    },
+    {
+      "seed": "0x3738f9cb8656c20b37cd6bc4dd646011e66a4a9bf360c68c062a27d27e25e79c",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "154"
+    },
+    {
+      "seed": "0x58f1e3ec3b5dbc45e15d8cb6b6f4245873517e6b0b58050f9070d5062d5cdb90",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "1232"
+    },
+    {
+      "seed": "0x17c9a12bbc1792224de4354acaca6ab24a7cc2169c36274676d64686411b0477",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "107"
+    },
+    {
+      "seed": "0xe06165db67f6327ab5d1e5394a6822e7cc63fb54ac838ef382640bdd7c579744",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "247"
+    },
+    {
+      "seed": "0x0de03329deff73779fdd29ada7ed6405a80fa5619bacf7c148cb80f5d1afe1ae",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "333"
+    },
+    {
+      "seed": "0x6a0ab8da228d2122c2c45a0c0ef996ccf17c452cc160dd29b41b1a4c32014ca1",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "717"
+    },
+    {
+      "seed": "0x74c316b34f22a3d33675f97f03e4daba0fcbeb5cccd9c37e493879594d43c715",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "234"
+    },
+    {
+      "seed": "0x543d13cc744ddf530825c019e06c94054e9e0e5d13ee0e23a1479953e08e548e",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "117"
+    },
+    {
+      "seed": "0xe3b979d9f2a3fa160b14078f71806dec7579986ed8f53399892f4bf484f2f5cc",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "222"
+    },
+    {
+      "seed": "0x3afcfbcbd70683d39cc7c64f517aa69b76781148f44dd3ec2f08c2eb2a05b35f",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "328"
+    },
+    {
+      "seed": "0x53b56b639632e36661731d48768ee3269eea241126188d9ad8dfd6fc5e0caf4f",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "276"
+    },
+    {
+      "seed": "0xd4a1c0ba183d4183fe740b262b2bd4367c27de074cb3db756667ee9ab5858f24",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "148"
+    },
+    {
+      "seed": "0x4b7d84e8181d9344d9bd6f734b5f967a3081f1c625d9c81e32fa14133e9d9133",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "203"
+    },
+    {
+      "seed": "0x56a0cd0df97d3e7161e9f41bc41fe03b076135968937095f8c6a10e7ca98e937",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "660"
+    },
+    {
+      "seed": "0x2af3f4ec9065b92514fe44a22389a0e47c521ad83cc394fb2bd615de300c72c1",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "325"
+    },
+    {
+      "seed": "0x9410c265d4c714e3a6bd889c76778ce2001bf569379f7cec8084e2b4b34c1783",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "123"
+    },
+    {
+      "seed": "0x22e37a321f1c394a3ab11d391800405f22a6f024b6a781af6e3cb5b2026a0792",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "102"
+    },
+    {
+      "seed": "0x96b6ad6c71810211fa8612d2359db0bc6e64ed4b4192c9f169e8bb079a865ede",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "159"
+    },
+    {
+      "seed": "0x50232e6a56e6026a822562b79f1abe14db0566baa0c365c444be7e6ac0074d12",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "578"
+    },
+    {
+      "seed": "0x26a50c22e86200001637ff9a86a5b9e13585145258b2cded1d4b55e7c4dded04",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "171"
+    },
+    {
+      "seed": "0x1365270cf260e7090d2756848bc62c50f4467ca11064417c97f57cb6852ee88f",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "198"
+    },
+    {
+      "seed": "0x4ce9baa70e00c3723a58b829e259b6cec8bfaa0faa27d4e5727e36d00b31c6c7",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "306"
+    },
+    {
+      "seed": "0xa574df519b81008532f3846fece8aa594222c55dca81568adf2a9d3ba1c68d3e",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 50,
+      "crashX100": "120"
+    },
+    {
+      "seed": "0x37a92fdb9c4cb31d903a0646e4552e591f0905118232aa9517c98ce844ddd771",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "198"
+    },
+    {
+      "seed": "0xababa6e212817ba814b62dd0344cdbfb3ba5a700beeae9b485ee78d44d907442",
+      "salt": "0x5362fa241baa93cd1b7b8b0848c656eec4e9e38ee805eb968438a2da376959bb",
+      "edgeBps": 250,
+      "crashX100": "168"
+    },
+    {
+      "seed": "0x0e0d1533f5fb6d06748e6a4e608635b0d256ff3ca9ea45300d6412f2a2e31972",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "100",
+      "note": "an instant crash (1.00x)"
+    },
+    {
+      "seed": "0x2e46a04be08438b6e90053cad1db9cf0c8303ae9cb551e5eaab77346b7e57444",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "101",
+      "note": "exactly 1.01x"
+    },
+    {
+      "seed": "0x2bbf611fa829f28e38f8ab3aa3858d607688d3cbbcc4af9b7c5fce3820357372",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "200",
+      "note": "exactly 2.00x"
+    },
+    {
+      "seed": "0xeaa17939a31717eb5ad4e8fb5c38b888dd6183bf5f4426d251b95d34e30a1817",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "199",
+      "note": "1.99x, a round that misses 2x by a hundredth"
+    },
+    {
+      "seed": "0x58208822125bfd50db6004ae86dd92396b14c38771e70f92ba99c5db0cec1f67",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "10599",
+      "note": "above 100x"
+    },
+    {
+      "seed": "0xa2efe2094984a2d8e0da168c19face4bb61a464d4a231d1b9a93d7990858fbc1",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 100,
+      "crashX100": "130036",
+      "note": "above 1000x"
+    },
+    {
+      "seed": "0xe73d66d3b05972b1c0c27424272309545f41bf16b1347df43f53329aceea8dbb",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 50,
+      "crashX100": "100",
+      "note": "an instant crash at the smallest edge"
+    },
+    {
+      "seed": "0x46570d389d6ff4091eb19f4d8015dea4d10809ec39b413ce2e3ad50dde3dac0d",
+      "salt": "0xd510919ab9342dead49fa17dd14d43f1c44a9b9951916947dcdd9fc35981956a",
+      "edgeBps": 500,
+      "crashX100": "100",
+      "note": "an instant crash at the largest edge"
+    }
+  ],
+  "bets": [
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "1000000000",
+      "payMult": "0",
+      "payout": "0"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 200,
+      "manualX100": 0,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "10000000",
+      "payMult": "200",
+      "payout": "20000000"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 200,
+      "manualX100": 150,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "10000000",
+      "payMult": "150",
+      "payout": "15000000"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 200,
+      "manualX100": 250,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "10000000",
+      "payMult": "200",
+      "payout": "20000000"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 300,
+      "manualX100": 250,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "20000000",
+      "payMult": "0",
+      "payout": "0"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 300,
+      "manualX100": 234,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "20000000",
+      "payMult": "234",
+      "payout": "23400000"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 235,
+      "manualX100": 0,
+      "crashX100": "234",
+      "capX100": "10100",
+      "maxProfit": "13500000",
+      "payMult": "0",
+      "payout": "0"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 0,
+      "manualX100": 100,
+      "crashX100": "100",
+      "capX100": "10100",
+      "maxProfit": "1000000000",
+      "payMult": "100",
+      "payout": "10000000"
+    },
+    {
+      "stake": "10000000",
+      "maxWin": "1000000000",
+      "autoX100": 101,
+      "manualX100": 0,
+      "crashX100": "100",
+      "capX100": "10100",
+      "maxProfit": "100000",
+      "payMult": "0",
+      "payout": "0"
+    },
+    {
+      "stake": "1000000",
+      "maxWin": "1000000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "100100",
+      "capX100": "100100",
+      "maxProfit": "1000000000",
+      "payMult": "100100",
+      "payout": "1001000000"
+    },
+    {
+      "stake": "1000000",
+      "maxWin": "1000000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "100099",
+      "capX100": "100100",
+      "maxProfit": "1000000000",
+      "payMult": "0",
+      "payout": "0"
+    },
+    {
+      "stake": "1000000",
+      "maxWin": "1000000000",
+      "autoX100": 0,
+      "manualX100": 500000,
+      "crashX100": "200000",
+      "capX100": "100100",
+      "maxProfit": "1000000000",
+      "payMult": "100100",
+      "payout": "1001000000"
+    },
+    {
+      "stake": "100000000",
+      "maxWin": "1000000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "1100",
+      "capX100": "1100",
+      "maxProfit": "1000000000",
+      "payMult": "1100",
+      "payout": "1100000000"
+    },
+    {
+      "stake": "100000000",
+      "maxWin": "1000000000",
+      "autoX100": 5000,
+      "manualX100": 0,
+      "crashX100": "6000",
+      "capX100": "1100",
+      "maxProfit": "1000000000",
+      "payMult": "1100",
+      "payout": "1100000000"
+    },
+    {
+      "stake": "100000000",
+      "maxWin": "1000000000",
+      "autoX100": 1099,
+      "manualX100": 0,
+      "crashX100": "6000",
+      "capX100": "1100",
+      "maxProfit": "999000000",
+      "payMult": "1099",
+      "payout": "1099000000"
+    },
+    {
+      "stake": "3333333",
+      "maxWin": "50000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "1601",
+      "capX100": "1601",
+      "maxProfit": "50000000",
+      "payMult": "1601",
+      "payout": "53333333"
+    },
+    {
+      "stake": "3333333",
+      "maxWin": "50000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "1600",
+      "capX100": "1601",
+      "maxProfit": "50000000",
+      "payMult": "0",
+      "payout": "0"
+    },
+    {
+      "stake": "3333333",
+      "maxWin": "50000000",
+      "autoX100": 777,
+      "manualX100": 0,
+      "crashX100": "800",
+      "capX100": "1601",
+      "maxProfit": "22566664",
+      "payMult": "777",
+      "payout": "25899997"
+    },
+    {
+      "stake": "7000001",
+      "maxWin": "13000007",
+      "autoX100": 0,
+      "manualX100": 286,
+      "crashX100": "300",
+      "capX100": "286",
+      "maxProfit": "13000007",
+      "payMult": "286",
+      "payout": "20000008"
+    },
+    {
+      "stake": "7000001",
+      "maxWin": "13000007",
+      "autoX100": 0,
+      "manualX100": 285,
+      "crashX100": "300",
+      "capX100": "286",
+      "maxProfit": "13000007",
+      "payMult": "285",
+      "payout": "19950002"
+    },
+    {
+      "stake": "10000000000",
+      "maxWin": "100000000000",
+      "autoX100": 0,
+      "manualX100": 0,
+      "crashX100": "1100",
+      "capX100": "1100",
+      "maxProfit": "100000000000",
+      "payMult": "1100",
+      "payout": "110000000000"
+    },
+    {
+      "stake": "1000000",
+      "maxWin": "100000000000",
+      "autoX100": 4294967295,
+      "manualX100": 0,
+      "crashX100": "10000100",
+      "capX100": "10000100",
+      "maxProfit": "100000000000",
+      "payMult": "10000100",
+      "payout": "100001000000"
+    },
+    {
+      "stake": "1000000",
+      "maxWin": "1000000",
+      "autoX100": 150,
+      "manualX100": 0,
+      "crashX100": "150",
+      "capX100": "200",
+      "maxProfit": "500000",
+      "payMult": "150",
+      "payout": "1500000"
+    },
+    {
+      "stake": "1000000",
+      "maxWin": "1000000",
+      "autoX100": 0,
+      "manualX100": 199,
+      "crashX100": "199",
+      "capX100": "200",
+      "maxProfit": "1000000",
+      "payMult": "199",
+      "payout": "1990000"
+    }
+  ],
+  "chain": {
+    "first": "0xab6a571449a918a8b92e125c038c22e37fb32b11aacb09724c2a4b80b9b09423",
+    "links": [
+      "0x71ca58b6918c0bb51a344e87ab9a0bd6fa949959a1e99c860044af63147ceac0",
+      "0x6c0835812305ff15f5b3cd6b2863348c511ecdb8c321145db2b0e08d2bcd088a",
+      "0x368eb67ba1729dc65416c3a7127885f143f172f9fdf8ea74b20f67eb746d9cce",
+      "0xd273e8b04b061497ddb86c31981003c5c47ad68a34991a46cb20021647fc3b7d",
+      "0x339931216994fbc377de8e35cdf615a0c23c0db94f007f5fa84214ac9cf42a4b",
+      "0x3d80ec3ac78f531dcfa9e9a14955fccbbc6ed102d6523560e2287abcfeabc379"
+    ]
+  },
+  "eip712": {
+    "chainId": 999,
+    "contract": "0x000000000000000000000000000000000000c0de",
+    "domainSeparator": "0x229046d6e472f9731f798ab7e00208b81bb0615e58351d437345a745e016e3a8",
+    "bet": {
+      "round": 7,
+      "player": "0x1111111111111111111111111111111111111111",
+      "stake": "25000000",
+      "autoX100": 250,
+      "nonce": 3
+    },
+    "betDigest": "0x61719cee85af1de1354741e191bd29a7f50c01219e05488967f84199f8e24b48",
+    "cashOut": {
+      "round": 7,
+      "player": "0x1111111111111111111111111111111111111111",
+      "multX100": 187
+    },
+    "cashOutDigest": "0x736cebf5d0c323bb40aecacc95061cfa6c906847c768a6edb83871eba282b7dd",
+    "cancelBet": {
+      "round": 7,
+      "player": "0x1111111111111111111111111111111111111111",
+      "nonce": 3
+    },
+    "cancelBetDigest": "0x73c728dd79cbb573b56c5af308694b76ee7a39052ed5bef8d2db7e5b41a496bc"
+  }
+}</script>
+  <script type="application/json" id="cvOwn">{
+ "note": "own vectors from CRASH_SPEC.md, independent keccak (python eth_utils)",
+ "rounds": [
+  {
+   "seed": "0x82f958a835f8768708a712cc7202cffa4f0051420f9f3a1780cb5c3d0215f020",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xfd9e9d547f15a2f8aee5362edefa01814a9d616c3c4f3619c911ec48d2f75146",
+   "r": "4461722979529050",
+   "crashX100": 10646
+  },
+  {
+   "seed": "0x9fd08186c8551aeaefe6af34f35d0ddf35d84f550b29eb3131743989fa30ac64",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xd8b216e884f10a94b63cfc00fc007e97ee48a02e11226ec12811a7c489642ca1",
+   "r": "3812150401847056",
+   "crashX100": 644
+  },
+  {
+   "seed": "0xf9d01cbf7b470e6ba2be1314e3993202377d1292c6d3f72906e17b2932eb3483",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x6e80b577988e05a40acf7d358a7450b638fe81a2e459a356d0288749c14a446f",
+   "r": "1943985270130912",
+   "crashX100": 174
+  },
+  {
+   "seed": "0xd72a5111b2eca8914b60de112bc9c337cf9e1bb229657ad296b16a6030c86679",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x5290167f51a015afcfbca86b353ec5552b2367a34d8b7237e4fa31deb33df35f",
+   "r": "1452460899375617",
+   "crashX100": 146
+  },
+  {
+   "seed": "0xaf8d58ae2aabdfe04f2fac4d21842f5294fea4ad5efa79759cae44c1cf12d158",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xb70f974e60443a54725698716b12f089dde4ef39068172939c304ef6faa79faf",
+   "r": "3220441454216259",
+   "crashX100": 347
+  },
+  {
+   "seed": "0xd62fe91c1a6e72336fef289f3537e2b0a87c00ba012db237c8e2d6bd53400b60",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xe02ae1829e0602fce01803a7b69a95e2164b1c3121f6acbd8c7f9a361874f934",
+   "r": "3943596426911840",
+   "crashX100": 796
+  },
+  {
+   "seed": "0x368ca4d0226729ef905daaa63ce9ad65b7db132aad912b68c67e810a0bfe280d",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x9c2076c439eb791da350b0829c0e61f9ea76012c29c478252bd158dfd46e8ed8",
+   "r": "2746611927326391",
+   "crashX100": 253
+  },
+  {
+   "seed": "0xaa9ccb003243ecff892e1d8dc498468119a62a0b946b2523b21367426b10ec1f",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x89ba349fea3a10b7be63332c050e14c897ff9bd595d4c434eb8857f3721b3288",
+   "r": "2422925437084577",
+   "crashX100": 214
+  },
+  {
+   "seed": "0x22984a2aa3715fbe09e719405d01ffe81a5c4b07e348984c28cf1be3816ef34e",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xdbd0dfce7a7bccf60983064e1ccb3246a0f8d87ac3e69503918beb98efca4416",
+   "r": "3867042472503228",
+   "crashX100": 700
+  },
+  {
+   "seed": "0x59cdc7032720fca81f17284d245cd7b2bb168d2ba5bbc8e26ecf99e98338564a",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xd49ec2ceaebc6695eb3b056a0a3410cbb643f75a88c77cd047ba6db225b895e5",
+   "r": "3740453411941318",
+   "crashX100": 584
+  },
+  {
+   "seed": "0x7fadf8093ba210a38a4aba7f1e66f4fd32a3f557992b38413456c0a535626a5a",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x2c9044b629d94aad441f8025ae4719849099aa37852249b688ebbd08e4956073",
+   "r": "783970235227540",
+   "crashX100": 119
+  },
+  {
+   "seed": "0x7e355b2a875e2b11c130a5c7248525b3fda1cdc694dfa8b82e0c1a211fdd722d",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x82b029ce89fd483cad37f1277a6d56616e5dfa1e36a2f1cbf267bc39058f80e6",
+   "r": "2299090036105172",
+   "crashX100": 202
+  },
+  {
+   "seed": "0x3204e88497a747163740cc72ff115b0a6a07470945d717798d18eb7b9751c82a",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x204481db7f293724f8dcfaa6f2c7b35071a58c6f0f55ec3d25311cc9a75f661a",
+   "r": "567657736172179",
+   "crashX100": 113
+  },
+  {
+   "seed": "0xdbd1f69f8e2607927f81b26e2fa353955bb8cb65075260b9a233a71cca1997f3",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x4e32440f8c7141c75745b13d8064f7439b35b197a6efa0bf120353b6f1b7f10e",
+   "r": "1375644755216148",
+   "crashX100": 142
+  },
+  {
+   "seed": "0x5e585f333c686a29f8f4ef7a6316e18fa515d29b36eddf39b1ff2954e76842ca",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xaa2efa01956cb3ebe66ca7e90b86e61f81f3ad96b6609e601004e17d261b0167",
+   "r": "2993899834005195",
+   "crashX100": 295
+  },
+  {
+   "seed": "0xf778b283fdfaa4da841b3f06931d61a5c3dbadc1f0cd01dd744af58a2f42f581",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x7bd15d34228e540d9363634337ed111811f8921ca3b32963465d1ea95a8f4337",
+   "r": "2178226273265893",
+   "crashX100": 191
+  },
+  {
+   "seed": "0x8ac890bf703ec57cd5c80eda9ff6a656c098bc0b36e0474ff0bc49f9a3213cfe",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x2dc1be47a563018b0c4af6c400c3c4a170133f1ec6bb0518902761885d222009",
+   "r": "804962308871728",
+   "crashX100": 120
+  },
+  {
+   "seed": "0x28940c624a88e807af8ef4a5d5c01d5ce875a440cda98ad67215a01ce9289469",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x97ef6041a709a9a917de8c86ab383ab47622413aee5bc1f297a4ca86f9e56520",
+   "r": "2672869886292122",
+   "crashX100": 243
+  },
+  {
+   "seed": "0x597abeb58988737a0dbc27f674c2089394d927ac14eae158c5eca9f6e4678f22",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xe22cf337bcba948754cf692cff954523881fd4507da29542b23f5a16bec8228f",
+   "r": "3978922991274921",
+   "crashX100": 849
+  },
+  {
+   "seed": "0x5f337f4fdaafcd82d0fcbcab2c1a644e51f0f0cac5ac56576ee30cc1140df4b3",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x5af94e69d0f9a32427563f8f85230aa0c7fc760609656427cb40d1c088c2ec30",
+   "r": "1600428942626714",
+   "crashX100": 153
+  },
+  {
+   "seed": "0x25c1010327c37a3a298ea2b811488d2782c15b0cfba433d4076927273b29c340",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xf27eded620b80348f8015dacfaf1840699a047142bcca172014b27fb2221606f",
+   "r": "4266027494017920",
+   "crashX100": 1876
+  },
+  {
+   "seed": "0x6182a0f449c8e86dc400c05434c0337bc0a258ff9791edced0146feab945939c",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xd692e9105b7c3c7f4d7461bf1467b46ca591d2dee5df71e51af71d1c0474ff25",
+   "r": "3774823419721667",
+   "crashX100": 611
+  },
+  {
+   "seed": "0x780fcf942ab8d528d0a939f0831c690a1e73ff15afc3dd14b8be1850bae81819",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xc6fefd26c55f297fcf097dea687332ea95a40b6ef74cf180c0fd7fece609bc8f",
+   "r": "3500775538710002",
+   "crashX100": 444
+  },
+  {
+   "seed": "0xaff3af17c1626f22fb4888c585ada8d5cbf1f4d270bd308a31eb471f8684dd5f",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x523895c45e44b60bd6c426af72dbd54924fa2e836820ca494fe37524c0243fe9",
+   "r": "1446447749129291",
+   "crashX100": 145
+  },
+  {
+   "seed": "0x224786079757a4a20a82d997195cbea50cc930c9ce9670b583ee7eb3000159f6",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xfdebe6a97a934092562eefb0939c997dc43bcf2bfa855e0db31270e61a0a58d7",
+   "r": "4467034064136500",
+   "crashX100": 12193
+  },
+  {
+   "seed": "0xb3f8d7427a0f6f7f7e39f53e223d1a0b237389fba06ce3cabe0dff9e7c4f1ffc",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xf650050c98d9d11725da616c604b4feecc11582962a35495e6c207cd5af766dc",
+   "r": "4333176680451485",
+   "crashX100": 2616
+  },
+  {
+   "seed": "0xad0fd557eafbf90cbd4978411f9c566815fe727a5f50e7c79e771cd4a5b95646",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xfa77fd4edb9a3106eb1557e1c42b5eedd0c246e803c2d40f5630edfbc80ad5e7",
+   "r": "4406292125694371",
+   "crashX100": 4581
+  },
+  {
+   "seed": "0x35b54ce4aa9462f6ff5baa25d5dfb06373bf618591fa7693e23b686258f7aa2a",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xf85a87f312ce3468d129f62178d8b112995a66888e8e48e785d692be1f6b3325",
+   "r": "4369083385588963",
+   "crashX100": 3314
+  },
+  {
+   "seed": "0x5e3343d79ca70d39442c0bda12650d01871926b4c937878733afb3d4d50e50ae",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0xff5c98241fe2a1fe0ce1f488a0937685e72b5214998ca52d7788eb0515335f1b",
+   "r": "4492370473254442",
+   "crashX100": 39705
+  },
+  {
+   "seed": "0x39eaa74b9236779f795b7f93314bf812dbcc7aa34242f57b500199621b65ab2a",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x01e8d221302a8a3d67bc9842f8a34de57cfbc285b2e98519b377de71675ee26b",
+   "r": "33591510893224",
+   "crashX100": 100
+  },
+  {
+   "seed": "0x931adc17d01cae1d5391bc52108020e8c8da8e9d4047df4871c311125f982be9",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x02cdd58ae95e5a0a200fa1ce876ec5d2a530f96c268f038de5bee73a1f4a274f",
+   "r": "49329187231205",
+   "crashX100": 100
+  },
+  {
+   "seed": "0x3b7a4a4b9d5cafb5cd5b403f067f2aff003b9852ebb7ed53ccbca6fad28d8add",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x0160f1c49580ac40dffb4ecdc06cf2e7462f3b0b9ef2f81b5282b5aa4b60b9e4",
+   "r": "24254154889226",
+   "crashX100": 100
+  },
+  {
+   "seed": "0xb14af2e33392bd59e81bd0216d621eaeee9cd1410ebd6ccd710fb079ae8ab4e1",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x0413dd612f3c8a195add417263216c2b2efaf2c0bee3864b4efca41ea11b2541",
+   "r": "71733840376776",
+   "crashX100": 100
+  },
+  {
+   "seed": "0xbf849a65ed0213ef581ac29df9b846442e7ce9f5d4b20b4f383cd653528147ac",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x048397b7968064e3cfcf7cc471cc57a4fff68d73b88e916371e1f5f6abaa2221",
+   "r": "79411721889798",
+   "crashX100": 100
+  },
+  {
+   "seed": "0xf153fe184e7516d1c60ec3e8043716b9ddc80fdc9059884a81db57fffecc2c9e",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 100,
+   "hash": "0x04122aa7f2d4e53e1f17ac2801ec4f8dd5e3e29108ba4cca18415b9998392eb8",
+   "r": "71617145154894",
+   "crashX100": 100
+  },
+  {
+   "seed": "0x82f958a835f8768708a712cc7202cffa4f0051420f9f3a1780cb5c3d0215f020",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0xfd9e9d547f15a2f8aee5362edefa01814a9d616c3c4f3619c911ec48d2f75146",
+   "r": "4461722979529050",
+   "crashX100": 10700
+  },
+  {
+   "seed": "0x82f958a835f8768708a712cc7202cffa4f0051420f9f3a1780cb5c3d0215f020",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0xfd9e9d547f15a2f8aee5362edefa01814a9d616c3c4f3619c911ec48d2f75146",
+   "r": "4461722979529050",
+   "crashX100": 10216
+  },
+  {
+   "seed": "0x9fd08186c8551aeaefe6af34f35d0ddf35d84f550b29eb3131743989fa30ac64",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0xd8b216e884f10a94b63cfc00fc007e97ee48a02e11226ec12811a7c489642ca1",
+   "r": "3812150401847056",
+   "crashX100": 648
+  },
+  {
+   "seed": "0x9fd08186c8551aeaefe6af34f35d0ddf35d84f550b29eb3131743989fa30ac64",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0xd8b216e884f10a94b63cfc00fc007e97ee48a02e11226ec12811a7c489642ca1",
+   "r": "3812150401847056",
+   "crashX100": 618
+  },
+  {
+   "seed": "0xf9d01cbf7b470e6ba2be1314e3993202377d1292c6d3f72906e17b2932eb3483",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0x6e80b577988e05a40acf7d358a7450b638fe81a2e459a356d0288749c14a446f",
+   "r": "1943985270130912",
+   "crashX100": 175
+  },
+  {
+   "seed": "0xf9d01cbf7b470e6ba2be1314e3993202377d1292c6d3f72906e17b2932eb3483",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0x6e80b577988e05a40acf7d358a7450b638fe81a2e459a356d0288749c14a446f",
+   "r": "1943985270130912",
+   "crashX100": 167
+  },
+  {
+   "seed": "0xd72a5111b2eca8914b60de112bc9c337cf9e1bb229657ad296b16a6030c86679",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0x5290167f51a015afcfbca86b353ec5552b2367a34d8b7237e4fa31deb33df35f",
+   "r": "1452460899375617",
+   "crashX100": 146
+  },
+  {
+   "seed": "0xd72a5111b2eca8914b60de112bc9c337cf9e1bb229657ad296b16a6030c86679",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0x5290167f51a015afcfbca86b353ec5552b2367a34d8b7237e4fa31deb33df35f",
+   "r": "1452460899375617",
+   "crashX100": 140
+  },
+  {
+   "seed": "0xaf8d58ae2aabdfe04f2fac4d21842f5294fea4ad5efa79759cae44c1cf12d158",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0xb70f974e60443a54725698716b12f089dde4ef39068172939c304ef6faa79faf",
+   "r": "3220441454216259",
+   "crashX100": 349
+  },
+  {
+   "seed": "0xaf8d58ae2aabdfe04f2fac4d21842f5294fea4ad5efa79759cae44c1cf12d158",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0xb70f974e60443a54725698716b12f089dde4ef39068172939c304ef6faa79faf",
+   "r": "3220441454216259",
+   "crashX100": 333
+  },
+  {
+   "seed": "0xd62fe91c1a6e72336fef289f3537e2b0a87c00ba012db237c8e2d6bd53400b60",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0xe02ae1829e0602fce01803a7b69a95e2164b1c3121f6acbd8c7f9a361874f934",
+   "r": "3943596426911840",
+   "crashX100": 800
+  },
+  {
+   "seed": "0xd62fe91c1a6e72336fef289f3537e2b0a87c00ba012db237c8e2d6bd53400b60",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0xe02ae1829e0602fce01803a7b69a95e2164b1c3121f6acbd8c7f9a361874f934",
+   "r": "3943596426911840",
+   "crashX100": 763
+  },
+  {
+   "seed": "0x368ca4d0226729ef905daaa63ce9ad65b7db132aad912b68c67e810a0bfe280d",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0x9c2076c439eb791da350b0829c0e61f9ea76012c29c478252bd158dfd46e8ed8",
+   "r": "2746611927326391",
+   "crashX100": 255
+  },
+  {
+   "seed": "0x368ca4d0226729ef905daaa63ce9ad65b7db132aad912b68c67e810a0bfe280d",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0x9c2076c439eb791da350b0829c0e61f9ea76012c29c478252bd158dfd46e8ed8",
+   "r": "2746611927326391",
+   "crashX100": 243
+  },
+  {
+   "seed": "0xaa9ccb003243ecff892e1d8dc498468119a62a0b946b2523b21367426b10ec1f",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 50,
+   "hash": "0x89ba349fea3a10b7be63332c050e14c897ff9bd595d4c434eb8857f3721b3288",
+   "r": "2422925437084577",
+   "crashX100": 215
+  },
+  {
+   "seed": "0xaa9ccb003243ecff892e1d8dc498468119a62a0b946b2523b21367426b10ec1f",
+   "salt": "0x878e1220aade43a31e22859019d7bc1422d8849b2d195eb7cb31a47a09fada37",
+   "edgeBps": 500,
+   "hash": "0x89ba349fea3a10b7be63332c050e14c897ff9bd595d4c434eb8857f3721b3288",
+   "r": "2422925437084577",
+   "crashX100": 205
+  }
+ ],
+ "byR": [
+  {
+   "r": "0",
+   "edgeBps": 50,
+   "crashX100": 100
+  },
+  {
+   "r": "1",
+   "edgeBps": 50,
+   "crashX100": 100
+  },
+  {
+   "r": "45035996273704",
+   "edgeBps": 50,
+   "crashX100": 100
+  },
+  {
+   "r": "45490905326974",
+   "edgeBps": 50,
+   "crashX100": 100
+  },
+  {
+   "r": "45490905326975",
+   "edgeBps": 50,
+   "crashX100": 100
+  },
+  {
+   "r": "2251799813685248",
+   "edgeBps": 50,
+   "crashX100": 199
+  },
+  {
+   "r": "4503599627370494",
+   "edgeBps": 50,
+   "crashX100": 224054081461682176
+  },
+  {
+   "r": "4503599627370495",
+   "edgeBps": 50,
+   "crashX100": 448108162923364352
+  },
+  {
+   "r": "0",
+   "edgeBps": 100,
+   "crashX100": 100
+  },
+  {
+   "r": "1",
+   "edgeBps": 100,
+   "crashX100": 100
+  },
+  {
+   "r": "45035996273704",
+   "edgeBps": 100,
+   "crashX100": 100
+  },
+  {
+   "r": "45490905326974",
+   "edgeBps": 100,
+   "crashX100": 100
+  },
+  {
+   "r": "45490905326975",
+   "edgeBps": 100,
+   "crashX100": 100
+  },
+  {
+   "r": "2251799813685248",
+   "edgeBps": 100,
+   "crashX100": 198
+  },
+  {
+   "r": "4503599627370494",
+   "edgeBps": 100,
+   "crashX100": 222928181554839552
+  },
+  {
+   "r": "4503599627370495",
+   "edgeBps": 100,
+   "crashX100": 445856363109679104
+  },
+  {
+   "r": "0",
+   "edgeBps": 500,
+   "crashX100": 100
+  },
+  {
+   "r": "1",
+   "edgeBps": 500,
+   "crashX100": 100
+  },
+  {
+   "r": "45035996273704",
+   "edgeBps": 500,
+   "crashX100": 100
+  },
+  {
+   "r": "45490905326974",
+   "edgeBps": 500,
+   "crashX100": 100
+  },
+  {
+   "r": "45490905326975",
+   "edgeBps": 500,
+   "crashX100": 100
+  },
+  {
+   "r": "2251799813685248",
+   "edgeBps": 500,
+   "crashX100": 190
+  },
+  {
+   "r": "4503599627370494",
+   "edgeBps": 500,
+   "crashX100": 213920982300098560
+  },
+  {
+   "r": "4503599627370495",
+   "edgeBps": 500,
+   "crashX100": 427841964600197120
+  }
+ ],
+ "chain": {
+  "terminal": "0xeff32bcbd12a8febc33cadd7542455b7b755b58f2a09004c026ee02481a29381",
+  "reveals": [
+   "0xad56508b62b7f5428cae615c7ec4558df40d7ad0571148f3da17117fbd7e25bf",
+   "0x68c4d6dfb15ff92553d6466aaa10d406ce7d206b8892f923ce9e5b322ff10a3e",
+   "0xc3390b2ab99df35ed75aa370ac0ceb885757e0d2f5e0d366978da83a4078df46",
+   "0xf10310ccd2f6317ce196c2cd1834d307d8dadd6e5572cb9f62805200965ef1a4",
+   "0x57e6b07cf82fa49f6713ecd35c4716b4bf99d7c87fd0040c36e9c8d7c80ec19b",
+   "0xe4cbb1256ea455bf6ef3e969d81ec6db17a524d2c46eb65eb64f5d61226e06be",
+   "0xdd550130a7e681de1915722fff7e34c4d5ef35474300e084205a122bc5c5389d",
+   "0x31cdfb3d02daaa016ac2c11a92bbd54667f6aa918c349067a24f3a37861de702"
+  ]
+ },
+ "keccak": [
+  {
+   "in": "0x",
+   "out": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+  },
+  {
+   "in": "0x01",
+   "out": "0x5fe7f977e71dba2ea1a68e21057beebb9be2ac30c6410aa38d4f3fbe41dcffd2"
+  },
+  {
+   "in": "0x030a11",
+   "out": "0x7d228cdb40e661b0731cd20c876de675137701233a19b450a36e53a053407a22"
+  },
+  {
+   "in": "0x1f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1",
+   "out": "0xf2edf8e57f5f8acb78dac9a80285ed8d829840361fdc4d99698e7ab6685d82ea"
+  },
+  {
+   "in": "0x20272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f9",
+   "out": "0x75ddc22689ac5cfab91ff4f11af7f47658c89f63dcb005c00824017d8081c7e8"
+  },
+  {
+   "in": "0x373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1",
+   "out": "0x546a7fe6ccfdaf2fb18c8725219ad2041f386774722f4f2dcb3b2793bfa58b7e"
+  },
+  {
+   "in": "0x40474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f9",
+   "out": "0xd432c602ee561dfffe10aa1a7df28751b7990fcb5ba7a66055452fd680beb44c"
+  },
+  {
+   "in": "0x878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31",
+   "out": "0x8ab570337c9a3a773c3605160ca58e3f0546d92d217c908669cc4f35a31933bc"
+  },
+  {
+   "in": "0x888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b3239",
+   "out": "0x16b30a6be318a7acbcba7a2194789f628abf68dfbbf55a4d840f22f6a4d29efd"
+  },
+  {
+   "in": "0x8990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41",
+   "out": "0x6a7e8293441d51be41bf4994995b35981f90c07866c7fd0465f405e2b7a8f8dd"
+  },
+  {
+   "in": "0xc8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b3239",
+   "out": "0x5df43bf0d784fc93408fa76ffebdf2b45f60884dbbae8b0f1e47ab05f37f8508"
+  },
+  {
+   "in": "0x10171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b7279",
+   "out": "0x443464c0c3ac8036d14a6f8647fc93b592d514adefbe88683cbbda3b4b2c4553"
+  },
+  {
+   "in": "0x2c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b5259",
+   "out": "0x041e8c517fe884213c996b802c6da4f4db2513bf81ff42dd9c36748dace31bb8"
+  }
+ ],
+ "caps": [
+  {
+   "stake": "1000000",
+   "maxWin": "1000000000",
+   "capX100": 100100
+  },
+  {
+   "stake": "10000000",
+   "maxWin": "1000000000",
+   "capX100": 10100
+  },
+  {
+   "stake": "100000000",
+   "maxWin": "1000000000",
+   "capX100": 1100
+  },
+  {
+   "stake": "3333333",
+   "maxWin": "1000000000",
+   "capX100": 30101
+  },
+  {
+   "stake": "25000000",
+   "maxWin": "10000000",
+   "capX100": 140
+  },
+  {
+   "stake": "7000000",
+   "maxWin": "1",
+   "capX100": 101
+  }
+ ],
+ "payouts": [
+  {
+   "stake": "10000000",
+   "multX100": 187,
+   "maxWin": "1000000000",
+   "payout": "18700000"
+  },
+  {
+   "stake": "10000000",
+   "multX100": 100,
+   "maxWin": "1000000000",
+   "payout": "10000000"
+  },
+  {
+   "stake": "3333333",
+   "multX100": 234,
+   "maxWin": "1000000000",
+   "payout": "7799999"
+  },
+  {
+   "stake": "100000000",
+   "multX100": 1500,
+   "maxWin": "1000000000",
+   "payout": "1100000000"
+  },
+  {
+   "stake": "1000000",
+   "multX100": 101,
+   "maxWin": "1000000000",
+   "payout": "1010000"
+  },
+  {
+   "stake": "25000000",
+   "multX100": 160,
+   "maxWin": "10000000",
+   "payout": "35000000"
+  }
+ ],
+ "curve": [
+  {
+   "ms": 0,
+   "x100": 100
+  },
+  {
+   "ms": 1,
+   "x100": 100
+  },
+  {
+   "ms": 165,
+   "x100": 100
+  },
+  {
+   "ms": 166,
+   "x100": 101
+  },
+  {
+   "ms": 167,
+   "x100": 101
+  },
+  {
+   "ms": 1000,
+   "x100": 106
+  },
+  {
+   "ms": 5000,
+   "x100": 134
+  },
+  {
+   "ms": 11552,
+   "x100": 199
+  },
+  {
+   "ms": 11553,
+   "x100": 200
+  },
+  {
+   "ms": 11600,
+   "x100": 200
+  },
+  {
+   "ms": 20000,
+   "x100": 332
+  },
+  {
+   "ms": 38376,
+   "x100": 999
+  },
+  {
+   "ms": 60000,
+   "x100": 3659
+  },
+  {
+   "ms": 100000,
+   "x100": 40342
+  }
+ ],
+ "times": [
+  {
+   "x100": 100,
+   "ms": 0
+  },
+  {
+   "x100": 101,
+   "ms": 166
+  },
+  {
+   "x100": 150,
+   "ms": 6758
+  },
+  {
+   "x100": 187,
+   "ms": 10433
+  },
+  {
+   "x100": 200,
+   "ms": 11553
+  },
+  {
+   "x100": 234,
+   "ms": 14170
+  },
+  {
+   "x100": 500,
+   "ms": 26824
+  },
+  {
+   "x100": 1000,
+   "ms": 38377
+  },
+  {
+   "x100": 1200,
+   "ms": 41416
+  },
+  {
+   "x100": 12345,
+   "ms": 80264
+  }
+ ]
+}</script>
+  <script src="crashmath.js?v=crash1"></script>
+  <script>
+  (function () {
+    'use strict';
+    var M = window.ConfettiCrashMath, out = document.getElementById('cvOut'), pass = 0, fail = 0, list = null;
+    function read(id) { try { return JSON.parse(document.getElementById(id).textContent); } catch (e) { return null; } }
+    function section(title) { var h = document.createElement('h2'); h.textContent = title; out.appendChild(h); list = document.createElement('ul'); list.className = 'cv-rows'; out.appendChild(list); }
+    function same(a, b) { return String(a).toLowerCase() === String(b).toLowerCase(); }
+    function row(ok, text) {
+      var li = document.createElement('li'), b = document.createElement('b'), s = document.createElement('span');
+      b.textContent = ok ? 'PASS' : 'FAIL'; s.textContent = text; li.appendChild(b); li.appendChild(s); if (!ok) li.className = 'is-fail';
+      list.appendChild(li); if (ok) pass++; else fail++;
+    }
+    function x(v) { return (Number(v) / 100).toFixed(2) + 'x'; }
+    function sh(hx) { return String(hx).slice(0, 10) + '…' + String(hx).slice(-6); }
+    var K = read('cvKit'), O = read('cvOwn');
+    if (K) {
+      section('The contract\'s and the round server\'s vectors (ops/crash/vectors.json): crash points');
+      (K.crash || []).forEach(function (r, i) { var got = M.crashX100(r.seed, r.salt, r.edgeBps); row(same(got, r.crashX100), 'crash ' + (i + 1) + '  seed ' + sh(r.seed) + '  salt ' + sh(r.salt) + '  edge ' + (r.edgeBps / 100) + '%  ->  ' + x(got) + (same(got, r.crashX100) ? '' : '  (wanted ' + x(r.crashX100) + ')')); });
+      section('Their vectors: what a bet is paid');
+      (K.bets || []).forEach(function (r, i) {
+        var cap = M.capX100(r.stake, r.maxWin), prof = M.maxProfit(r.stake, r.autoX100, r.maxWin), pm = M.payMult(r.manualX100, r.autoX100, cap, r.crashX100), pay = pm ? M.payout(r.stake, pm, r.maxWin) : 0n;
+        var ok = same(cap, r.capX100) && same(prof, r.maxProfit) && same(pm, r.payMult) && same(pay, r.payout);
+        row(ok, 'bet ' + (i + 1) + '  $' + (Number(r.stake) / 1e6) + '  auto ' + (r.autoX100 ? x(r.autoX100) : 'none') + '  by hand ' + (r.manualX100 ? x(r.manualX100) : 'none') + '  crash ' + x(r.crashX100) + '  ->  cap ' + x(cap) + ', set aside $' + (Number(prof) / 1e6) + ', paid at ' + (pm ? x(pm) : 'nothing') + ': $' + (Number(pay) / 1e6) + (ok ? '' : '  (wanted cap ' + r.capX100 + ', aside ' + r.maxProfit + ', mult ' + r.payMult + ', pay ' + r.payout + ')'));
+      });
+      if (K.chain) {
+        section('Their vectors: the chain');
+        var prev = K.chain.first;
+        (K.chain.links || []).forEach(function (l, i) { var got = M.keccakHex(prev); row(same(got, l) && M.chainOk(prev, l, 1), 'link ' + (i + 1) + '  keccak256(' + sh(prev) + ')  ->  ' + sh(got)); prev = l; });
+        if (K.chain.links && K.chain.links.length) row(M.chainOk(K.chain.first, K.chain.links[K.chain.links.length - 1], K.chain.links.length), 'the first number, hashed ' + K.chain.links.length + ' times, is the last link');
+      }
+      if (K.eip712) {
+        section('Their vectors: the messages a session key signs (EIP-712)');
+        var e = K.eip712, dom = M.domainSeparator(e.chainId, e.contract);
+        row(same(dom, e.domainSeparator), 'domain  ConfettiCrash / 1 / chain ' + e.chainId + '  ->  ' + sh(dom));
+        row(same(M.betDigest(dom, e.bet), e.betDigest), 'bet      round ' + e.bet.round + ', $' + (Number(e.bet.stake) / 1e6) + ', auto ' + x(e.bet.autoX100) + '  ->  ' + sh(M.betDigest(dom, e.bet)));
+        row(same(M.cashOutDigest(dom, e.cashOut), e.cashOutDigest), 'cash-out round ' + e.cashOut.round + ' at ' + x(e.cashOut.multX100) + '  ->  ' + sh(M.cashOutDigest(dom, e.cashOut)));
+        if (e.cancelBet) row(same(M.cancelBetDigest(dom, e.cancelBet), e.cancelBetDigest), 'cancel   round ' + e.cancelBet.round + '  ->  ' + sh(M.cancelBetDigest(dom, e.cancelBet)));
+      }
+    }
+    if (O) {
+      section('A second set, worked from the spec with another keccak: the hash itself');
+      (O.keccak || []).forEach(function (r, i) { var got = M.keccakHex(r['in']); row(same(got, r.out), 'keccak256 of ' + ((r['in'].length - 2) / 2) + ' bytes  ->  ' + sh(got)); });
+      section('Second set: crash points, with the hash and its first 52 bits');
+      (O.rounds || []).forEach(function (r, i) { var hh = M.roundHash(r.seed, r.salt), rr = M.r52(hh), got = M.crashFromR(rr, r.edgeBps); row(same(hh, r.hash) && same(rr, r.r) && same(got, r.crashX100), 'crash ' + (i + 1) + '  seed ' + sh(r.seed) + '  edge ' + (r.edgeBps / 100) + '%  r ' + rr + '  ->  ' + x(got)); });
+      section('Second set: the ends of the range');
+      (O.byR || []).forEach(function (r) { var got = M.crashFromR(BigInt(r.r), r.edgeBps); row(same(got, r.crashX100), 'r = ' + r.r + '  edge ' + (r.edgeBps / 100) + '%  ->  ' + x(got)); });
+      section('Second set: the curve, m(t) = e^(0.00006 t)');
+      (O.curve || []).forEach(function (r) { var got = M.x100At(r.ms); row(same(got, r.x100), (r.ms / 1000).toFixed(3) + ' s of flight  ->  ' + x(got)); });
+      (O.times || []).forEach(function (r) { var got = M.msFor(r.x100); row(same(got, r.ms), x(r.x100) + ' is first on show at ' + got + ' ms'); });
+      if (O.chain) { section('Second set: a chain revealed backwards'); var p = O.chain.terminal; O.chain.reveals.forEach(function (s, i) { row(M.chainOk(s, p, 1), 'round ' + (i + 1) + '  ' + sh(s) + '  hashes to the one before it'); p = s; }); row(!M.chainOk(O.chain.reveals[2], O.chain.terminal, 1), 'a number from the wrong place in the chain is refused'); }
+    }
+    var sum = document.getElementById('cvSum');
+    sum.textContent = fail ? fail + ' of ' + (pass + fail) + ' rows FAIL' : 'All ' + pass + ' rows PASS' + (K ? '' : ' (own vectors only: the kit\'s file is not here yet)');
+    if (fail) sum.className = 'cv-sum is-bad';
+    document.title = (fail ? 'FAIL ' + fail : 'PASS ' + pass) + ' · crash vectors';
+  })();
+  </script>
+</body>
+</html>

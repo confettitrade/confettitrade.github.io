@@ -30,7 +30,11 @@
     "v3Exchange": "0x723943c8fdd71e0e670b18d15be737222f3a0810",
     "v3Staking": "0x167549bb697f96ee19e0ffbfa5ab5f6487f10051",
     "v3Referrals": "0xdf0c59514877f38a7b59bd7db1422217ab25714b",
-    "coinFlip": "0xF9702C710c7aa1df82f028339d9abd876b1E2555"
+    "coinFlip": "0xF9702C710c7aa1df82f028339d9abd876b1E2555",
+    "crash": ""
+  },
+  "crash": {
+    "api": ""
   },
   "onramp": {
     "moonpayKey": "",

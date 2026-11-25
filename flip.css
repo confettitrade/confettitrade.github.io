@@ -161,15 +161,9 @@
   :is(.sm-root, .sm-sheet) .fl-how-links a { --k-lip: 2px; --k-r: 8px; display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; font-size: 14px; font-weight: 600; position: relative; }
   .fl-how-links a::after { content: ""; position: absolute; inset: -5px -2px; }
 
-  /* ---- the menu sheet and the wallet chooser (Simple's sheet, Simple's rows) ------- */
+  /* ---- the menu sheet (Simple's sheet, Simple's rows; the wallet sheet is gamewallet.js's own) ------- */
   .fl-menu-now { pointer-events: none; }
-  .fl-wallets { padding-top: 6px; }
-  .fl-wallets img { width: 28px; height: 28px; border-radius: 6px; flex: none; }
-  :is(.sm-root, .sm-sheet) .fl-wallets button { justify-content: flex-start; gap: 12px; }
-  .fl-wallets button i { margin-left: auto; }
   dialog.sm-sheet.fl-sheet { max-width: 520px; margin: 0 auto; }
-  :is(.sm-root, .sm-sheet) .fl-wallets a { justify-content: flex-start; gap: 12px; }
-  .fl-wallets a i { margin-left: auto; }
 
   /* ---- Add money (Simple's own form: its rows, its steps, its address box) ---------- */
   .fl-addkey { margin-left: 2px; font-weight: 600; }

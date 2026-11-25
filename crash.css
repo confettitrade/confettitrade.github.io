@@ -1,0 +1,248 @@
+/* ==========================================================================
+   confetti_  —  crash.css
+   The crash page (crash.html, crash.js). Like the coin flip it lives inside
+   Simple's own shell (.sm-root: the paper, the tokens, the keys of
+   simple.css), so every button here is one of Simple's keys and every word
+   is set in Simple's type. This file only adds what the game needs: the
+   stage the round is drawn on, the strip of the last rounds, the bet box,
+   the players' list, and the layout on a wide screen. Every rule hangs on a
+   .cr- class. One spacing scale, Simple's: 4 8 12 16 24 32.
+
+   The page is one object doing one thing: a number climbing and a key under
+   the thumb. Everything else here is quiet.
+   ========================================================================== */
+
+@media screen {
+
+  /* ---- the shell ------------------------------------------------------------ */
+  body.cr-page { margin: 0; overflow: hidden; background-color: var(--page); }
+  .sm-root.cr-root { display: flex; }
+  .cr-root [hidden] { display: none !important; }
+  .cr-main {
+    flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; padding: 10px var(--sm-pad) 28px;
+  }
+  .cr-wrap { max-width: 480px; margin: 0 auto; }
+  .cr-cta {
+    flex: none; position: relative; z-index: 1; display: grid; gap: 6px;
+    padding: 6px var(--sm-pad) calc(16px + env(safe-area-inset-bottom)); background-color: var(--page);
+    transition: box-shadow 150ms ease-out;
+  }
+  .cr-root.is-more .cr-cta { box-shadow: 0 -1px 0 var(--rule), 0 -12px 16px -12px rgba(42, 37, 32, 0.28); }
+  .cr-keys, .cr-sayrow { max-width: 480px; width: 100%; margin: 0 auto; }
+  /* the line over the key: its room is always there, so the key never moves */
+  .cr-sayrow { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 30px; }
+  .cr-say { min-height: 0; text-align: center; text-wrap: balance; font-variant-numeric: tabular-nums; }
+  .cr-say.is-ok { color: var(--ink); }
+  .cr-say.is-won { color: var(--sm-pos-t); font-weight: 600; }
+  :is(.sm-root, .sm-sheet) .cr-share { --k-lip: 2px; --k-r: 8px; flex: none; position: relative; height: 28px; padding: 0 10px; font-size: 14px; font-weight: 600; }
+  .cr-share::after { content: ""; position: absolute; inset: -8px -6px; }                /* the 44 px target around the small key */
+
+  /* the one key. Its words change with the round; its place and size never do. */
+  .cr-keys .sm-btn { height: 58px; }
+  .cr-go { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cr-go-t { display: inline-block; contain: layout style; }        /* the figure ticks every frame: its layout stays its own */
+  .cr-go.is-long { font-size: 16px; }
+  /* said, not asked: a result on the key is flat (nothing looks pressable that is not) */
+  :is(.sm-root, .sm-sheet) .cr-go.is-said { box-shadow: none; transform: translateY(var(--k-lip, 4px)); cursor: default; }
+  :is(.sm-root, .sm-sheet) .cr-go.is-said.is-won { --k-face: var(--pos); --k-rim: var(--pos); --k-ink: #fff; }
+  :is(.sm-root, .sm-sheet) .cr-go.is-said.is-lost { --k-face: var(--ink-muted); --k-rim: var(--ink-muted); --k-ink: var(--page); }
+  :is(.sm-root, .sm-sheet) .cr-go.is-said.is-sent { --k-face: #3a332c; --k-rim: #3a332c; --k-ink: var(--page); }
+  .cr-go.is-said::before, .cr-go.is-said::after { content: none; }
+  .cr-root .sm-top .sm-who-key #crWhoAddr { font-variant-numeric: tabular-nums; }
+
+  /* ---- the table: title, the last rounds, the stage, the bet box --------------------- */
+  .cr-mode { margin: 0 0 6px !important; text-wrap: balance; }
+  .cr-mode b { color: var(--ink); font-weight: 600; }
+  .cr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 20px; }
+  .cr-head h1 { margin: 0; }
+  .cr-count { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cr-count.is-none { font-weight: 500; color: var(--ink-muted); }
+
+  /* the last rounds: small paper tags, newest first. Ink for 2x and over, grey under. */
+  .cr-striprow { display: flex; align-items: center; gap: 8px; height: 40px; margin: 2px 0 0; }
+  .cr-strip {
+    flex: 1 1 auto; min-width: 0; height: 40px; display: flex; align-items: center; gap: 6px; overflow-x: auto; overflow-y: hidden;
+    padding: 0 16px 0 1px; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+  }
+  .cr-strip::-webkit-scrollbar { display: none; }
+  :is(.sm-root, .sm-sheet) .cr-tag {
+    --k-lip: 2px; --k-r: 7px; flex: none; position: relative; height: 26px; min-width: 50px; padding: 0 7px; margin-bottom: 2px;
+    font-size: 13px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .cr-tag::after { content: ""; position: absolute; inset: -8px -3px -10px; }           /* a 44 px tall target around the small tag */
+  :is(.sm-root, .sm-sheet) .cr-tag.is-low { --k-ink: var(--ink-faint); --k-face: var(--page); font-weight: 600; }
+  .cr-tag.is-new { animation: cr-tag-in 260ms ease-out; }
+  @keyframes cr-tag-in { from { opacity: 0; transform: translateX(-10px); } }
+  .cr-strip-say { font-size: 13px; color: var(--ink-faint); white-space: nowrap; }
+  :is(.sm-root, .sm-sheet) .cr-fair { --k-lip: 2px; --k-r: 8px; flex: none; position: relative; height: 28px; padding: 0 10px; margin-bottom: 2px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .cr-fair::after { content: ""; position: absolute; inset: -8px -4px; }
+
+  /* the stage: one canvas. It takes the height the rest of the screen leaves (everything else above the fold has a set
+     height, summed in the calc), so the bet box stays above the key on a tall phone and the number stays big on a short one */
+  .cr-stage {
+    --h: clamp(176px, 30vh, 300px); --h: clamp(176px, calc(100dvh - 568px), 320px);
+    position: relative; height: var(--h); margin: 2px -4px 0;
+    -webkit-user-select: none; user-select: none;
+  }
+  .cr-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .cr-sr { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* the bet box: the amount and the auto cash out side by side, each with its own quick keys under it */
+  .cr-form { margin-top: 8px; transition: opacity 160ms ease-out; }
+  .cr-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: 8px; }
+  .cr-l-amt, .cr-b-amt, .cr-c-amt { grid-column: 1 / span 3; }
+  .cr-l-auto, .cr-b-auto, .cr-c-auto { grid-column: 4 / span 2; }
+  .cr-grid .sm-label { white-space: nowrap; letter-spacing: 0.04em; }
+  .cr-form .sm-amt.cr-box { margin: 5px 0 0; padding: 4px 12px; min-height: 50px; font-size: 30px; align-items: center; }
+  #crAmount, #crAuto { min-height: 40px; height: 40px; font-family: inherit !important; font-size: inherit !important; font-weight: inherit; letter-spacing: inherit; color: inherit; background: transparent; border: 0; }
+  .cr-form .sm-amt.cr-box.is-bad { box-shadow: inset 0 0 0 2px var(--neg), inset 0 3px 5px rgba(42, 37, 32, 0.16); }
+  /* the auto box: the number is as wide as what is typed, so its x sits right after it ("2.00x"); empty, it says off */
+  .cr-form .cr-b-auto #crAuto { flex: 0 1 auto; width: 3ch; min-width: 2ch; max-width: calc(100% - 22px); }
+  .cr-b-auto input::placeholder { font-family: var(--font-ui); font-size: 20px; font-weight: 500; letter-spacing: 0; color: var(--ink-faint); }
+  .cr-b-auto > span { font-size: 0.62em; color: var(--ink); padding-left: 1px; align-self: center; margin-top: 0.32em; }
+  .cr-b-auto:not(.is-on):not(.is-bad) > span { visibility: hidden; }
+  .cr-form .sm-chips.cr-chips { margin: 8px 0 0; display: grid; gap: 8px; align-content: start; }
+  .cr-c-amt { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cr-c-auto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cr-form .cr-chips button { height: 44px; padding: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+  /* one line worked from the live numbers: what this bet does */
+  .cr-wins { margin: 10px 0 0 !important; min-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cr-wins b { color: var(--ink); font-weight: 600; }
+  /* Bet every round: the whole row is the switch. On: pressed in (Simple's own "chosen"), and the small switch says so too. */
+  :is(.sm-root, .sm-sheet) .cr-every { --k-lip: 2px; --k-r: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; margin: 8px 0 4px; padding: 6px 12px; text-align: left; }
+  .cr-every-t { min-width: 0; }
+  .cr-every-t b { display: block; font-size: 16px; font-weight: 600; line-height: 1.25; }
+  .cr-every-t i { display: block; font-style: normal; font-size: 13px; line-height: 1.3; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .cr-switch { flex: none; position: relative; width: 46px; height: 26px; border-radius: 13px; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--key-rim, #8a7f66), inset 0 2px 3px rgba(42, 37, 32, 0.18); transition: background-color 150ms ease-out; }
+  .cr-switch i { position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); box-shadow: 0 0 0 1px var(--key-rim, #8a7f66), 0 2px 0 var(--key-rim, #8a7f66); transition: transform 150ms ease-out; }
+  .cr-every[aria-checked="true"] .cr-switch { background: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .cr-every[aria-checked="true"] .cr-switch i { transform: translateX(20px); box-shadow: 0 0 0 1px #0f0d0b, 0 2px 0 #0f0d0b; }
+  .cr-wallet { margin: 10px 0 0 !important; text-wrap: balance; }
+  .cr-wallet b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  /* in the air with money on it: the box steps back (it can change nothing in this round), the stage and the key have the page */
+  .cr-root.is-riding .cr-grid, .cr-root.is-riding .cr-wins { opacity: 0.5; }
+
+  /* ---- this round's players (under the fold) ------------------------------------- */
+  .cr-side { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--rule); }
+  .cr-side-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; }
+  .cr-side-head h2, .cr-how h2 { margin: 0; }
+  .cr-live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--sm-pos-t); }
+  .cr-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--pos); }
+  .cr-live.is-demo, .cr-live.is-off { color: var(--ink-muted); }
+  .cr-live.is-demo i, .cr-live.is-off i { background: var(--ink-faint); }
+  .cr-players { margin-top: 8px; min-height: 196px; }
+  .cr-prow { display: flex; align-items: center; gap: 10px; min-height: 49px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+  .cr-prow-t { flex: 1 1 auto; min-width: 0; }
+  .cr-prow-t b { display: block; font-size: 15px; font-weight: 600; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cr-prow-t i { display: block; font-style: normal; font-size: 13px; line-height: 1.3; color: var(--ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cr-prow-r { flex: none; text-align: right; }
+  .cr-prow-r b { display: block; font-size: 15px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cr-prow-r i { display: block; font-style: normal; font-size: 13px; line-height: 1.3; color: var(--ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cr-prow.is-you .cr-prow-t b { font-weight: 700; }
+  .cr-prow.is-you { box-shadow: inset 3px 0 0 var(--ink); padding-left: 10px; }
+  .cr-prow.is-new { animation: cr-row-in 280ms ease-out; }
+  @keyframes cr-row-in { from { opacity: 0; transform: translateY(-6px); } }
+  .cr-players-say { display: grid; place-items: center; min-height: 196px; padding: 0 12px; text-align: center; font-size: 15px; line-height: 1.4; color: var(--ink-muted); border-bottom: 1px solid var(--rule); text-wrap: balance; }
+  .cr-how { margin-top: 24px; }
+  .cr-how .sm-fine { margin-top: 8px; text-wrap: pretty; }
+  .cr-how-links { display: flex; flex-wrap: wrap; gap: 10px 8px; margin-top: 14px !important; }
+  :is(.sm-root, .sm-sheet) .cr-how-links :is(a, button) { --k-lip: 2px; --k-r: 8px; display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; font-size: 14px; font-weight: 600; position: relative; }
+  .cr-how-links :is(a, button)::after { content: ""; position: absolute; inset: -5px -2px; }
+
+  /* ---- sheets (gamewallet.js's own sheet; Simple's rows) ------------------------------ */
+  .cr-menu-now { pointer-events: none; }
+  .cr-sheet .sm-fine { text-wrap: pretty; }
+  .cr-sheet .sm-fine b { color: var(--ink); font-weight: 600; }
+  /* Set up to play: two steps, each said before its press */
+  .cr-budget { margin: 6px 0 2px; }
+  .cr-sheet .sm-chips.cr-budget-chips { margin: 8px 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .cr-sheet .cr-budget-chips button { height: 46px; padding: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .cr-sheet .sm-steps.is-tight { margin-top: 18px; }
+  .cr-setsay { margin: 0; min-height: 0; }
+  .cr-setsay:empty { display: none; }
+  /* Fair?: the check, written out */
+  .cr-fairbox { margin-top: 14px; border: 1px solid var(--rule-strong); background: var(--page); padding: 4px 14px; }
+  .cr-fairrow { padding: 10px 0; }
+  .cr-fairrow + .cr-fairrow { border-top: 1px solid var(--rule); }
+  .cr-fairrow > span { display: block; font-size: 13px; line-height: 1.3; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+  .cr-fairrow > b { display: block; margin-top: 3px; font-size: 17px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+  .cr-fairrow > code { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 13px; line-height: 1.45; color: var(--ink); word-break: break-all; }
+  .cr-fairrow > i { display: block; margin-top: 4px; font-style: normal; font-size: 14px; line-height: 1.4; color: var(--ink-muted); }
+  .cr-fairrow .is-yes { color: var(--sm-pos-t); font-weight: 600; }
+  .cr-fairrow .is-no { color: var(--sm-neg-t); font-weight: 600; }
+  .cr-fairbig { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 4px; }
+  .cr-fairbig b { font-family: var(--font-brand); font-weight: 700; font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .cr-fairbig span { font-size: 15px; font-weight: 600; text-align: right; }
+  .cr-fairnav { display: flex; gap: 8px; margin-top: 12px; }
+  :is(.sm-root, .sm-sheet) .cr-fairnav button { --k-lip: 2px; --k-r: 9px; flex: 1 1 0; min-height: 44px; padding: 0 8px; font-size: 15px; font-weight: 600; }
+  .cr-fairnav button[disabled] { opacity: 0.45; }
+  .cr-limit { margin-top: 16px !important; padding: 10px 12px; border-left: 3px solid var(--ink); background: var(--page); color: var(--ink) !important; }
+
+  /* ---- short and narrow phones: the number, the line, the amount and the key stay on one screen; the rest scrolls ---- */
+  @media (max-height: 700px) and (max-width: 640px) {
+    .cr-main { padding-top: 6px; }
+    .cr-stage { --h: clamp(150px, 26vh, 300px); --h: clamp(150px, calc(100dvh - 452px), 300px); }
+    .cr-keys .sm-btn { height: 54px; }
+    .cr-sayrow { min-height: 26px; }
+    .cr-cta { padding-top: 4px; }
+  }
+  @media (max-height: 600px) and (max-width: 640px) {
+    .cr-mode { margin-bottom: 2px !important; }
+    .cr-striprow, .cr-strip { height: 36px; }
+    .cr-stage { --h: clamp(138px, 24vh, 300px); --h: clamp(138px, calc(100dvh - 430px), 300px); }
+  }
+  @media (max-width: 374px) {
+    .cr-grid { column-gap: 6px; }
+    .cr-grid .sm-label { font-size: 11.5px; letter-spacing: 0.02em; }
+    .cr-form .sm-amt.cr-box { font-size: 26px; padding: 4px 10px; }
+    .cr-form .sm-chips.cr-chips { gap: 6px; }
+    .cr-form .cr-chips button { font-size: 14px; }
+    .cr-go { font-size: 17px; }
+    .cr-go.is-long { font-size: 14.5px; }
+    .cr-tag { min-width: 46px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cr-tag.is-new, .cr-prow.is-new { animation: none; }
+    .cr-cta, .cr-form, .cr-switch, .cr-switch i { transition: none; }
+  }
+}
+
+/* ==========================================================================
+   Wide screens (641 px and up): the trade page's own shape, as the coin flip
+   has it. The players are the left column, ruled off like the coin list; the
+   table sits in the middle with its key under it, so the press is where the
+   eye already is.
+   ========================================================================== */
+@media screen and (min-width: 641px) {
+  .cr-root { flex-direction: column; }
+  .cr-main { padding: 0; display: flex; overflow: hidden; }
+  .cr-wrap { flex: 1 1 auto; min-height: 0; display: flex; max-width: 1600px; width: 100%; margin: 0 auto; }
+  .cr-side {
+    order: -1; flex: 0 0 400px; width: 400px; margin: 0; padding: 22px 20px 28px; border-top: 0; border-right: 1px solid var(--rule);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .cr-table { flex: 1 1 auto; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 32px 124px; }
+  .cr-table > * { max-width: 560px; margin-left: auto; margin-right: auto; }
+  .cr-table > .cr-mode { margin: 0 auto 8px !important; }
+  .cr-table > .cr-striprow { margin-top: 4px; }
+  .cr-stage { --h: clamp(220px, 34vh, 380px); --h: clamp(220px, calc(100dvh - 590px), 400px); margin-top: 4px; }
+  .cr-table > .cr-form { margin-top: 12px; }
+  /* the key rides at the foot of the middle column */
+  .cr-cta { position: absolute; left: max(400px, calc((100vw - 1600px) / 2 + 400px)); right: max(0px, calc((100vw - 1600px) / 2)); bottom: 0; padding: 8px 32px 22px; box-shadow: 0 -1px 0 var(--rule); }
+  .cr-keys, .cr-sayrow { max-width: 560px; }
+  .cr-players { min-height: 0; }
+}
+@media screen and (min-width: 641px) and (max-width: 899px) {
+  .cr-side { flex-basis: 300px; width: 300px; padding: 20px 16px 24px; }
+  .cr-cta { left: 300px; right: 0; }
+  .cr-table { padding-left: 24px; padding-right: 24px; }
+}
+@media screen and (min-width: 1280px) {
+  .cr-side { flex-basis: 460px; width: 460px; padding-left: 24px; padding-right: 24px; }
+  .cr-cta { left: max(460px, calc((100vw - 1600px) / 2 + 460px)); }
+  /* a big screen gives the line more room to climb */
+  .cr-table > *, .cr-keys, .cr-sayrow { max-width: 640px; }
+  .cr-stage { --h: clamp(240px, 36vh, 420px); --h: clamp(240px, calc(100dvh - 590px), 440px); }
+}

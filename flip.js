@@ -9,8 +9,9 @@
    shows what the contract settled; it decides nothing.
 
    Two ways the page runs:
-   - live: contracts.coinFlip is an address. Reads go to config.json's rpcUrl; the wallet is asked only to connect, to allow
-     the game to take USDC (once), to send a flip, and to take back the stake of a flip that never got its number.
+   - live: contracts.coinFlip is an address. Reads go to config.json's rpcUrl. The wallet part is gamewallet.js (the sheet with
+     every wallet the browser offers, the connect, the move to HyperEVM); this script asks the wallet only to allow the game
+     to take USDC (once), to send a flip, and to take back the stake of a flip that never got its number.
    - demo: flip.html?demo=1, or no address in the config yet (the page then also says "Coming soon"). Pretend money, a coin
      decided by the browser's own random bytes, a feed of pretend flips. No wallet, no network.
 
@@ -19,7 +20,7 @@
   'use strict';
 
   var E = window.ethers;
-  var WALLET_KEY = 'confetti.wallet';                 /* the wallet chosen on any page of the site (tabs.js) */
+  var GW = window.ConfettiGameWallet || null;         /* gamewallet.js: find, connect, HyperEVM, the wallet sheet */
   var OPEN_KEY = 'confetti.flip.open.';               /* + account: a flip still waiting for its number */
   var QUICK = [1, 5, 10, 25, 50, 100, 150, 200];
   var FEED_ROWS = 10;
@@ -265,10 +266,11 @@
         h('div', 'sm-links', [btn('sm-link', 'Switch wallet', function () { sh.close(); setTimeout(function () { connect(true); }, 200); }), btn('sm-link', 'Disconnect', function () { sh.close(); setTimeout(disconnect, 200); })])]));
     }
     var list = h('div', 'sm-menu');
-    if (!S.demo && !S.account) add(list, item(hasWallet() ? 'Connect wallet' : 'Open in your wallet app', '', function () { connect(false); }));
+    if (!S.demo && !S.account) add(list, item('Connect wallet', 'MetaMask, Phantom, any wallet', function () { connect(false); }));
     if (!S.demo && S.account) add(list, item('Add money', 'HYPE, ETH, USDT, Bitcoin', function () { openAdd(); }));
     add(list, item('Trade', 'coins, up or down', null, 'trade.html'));
     add(list, item('Coin flip', 'you are here', null, 'flip.html' + (S.demo && !S.soon ? '?demo=1' : ''), true));
+    add(list, item('Crash', 'cash out before it does', null, 'crash.html'));
     add(list, item('Portfolio', 'your trades', null, 'portfolio.html'));
     add(list, item('Leaderboard', 'top traders', null, 'leaderboard.html'));
     add(list, item('House', 'LP and stats', null, 'house.html'));
@@ -282,59 +284,8 @@
     sh.open();
   }
 
-  /* ---- the wallet (live only): the site's own way (tabs.js): EIP-6963, the choice remembered, MetaMask's account list ---- */
-  var announced = [];
-  function listenForProviders() {
-    window.addEventListener('eip6963:announceProvider', function (ev) { if (ev && ev.detail && ev.detail.provider) announced.push(ev.detail); });
-    try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (e) { /* ignore */ }
-  }
-  function walletList() {
-    var seen = {};
-    return announced.filter(function (d) { var k = d && d.info ? (d.info.rdns || d.info.uuid || d.info.name) : ''; if (!k || seen[k]) return false; seen[k] = 1; return true; });
-  }
-  function hasWallet() { return walletList().length > 0 || !!window.ethereum; }
-  function nameOf(eth) { var hit = walletList().filter(function (d) { return d.provider === eth; })[0]; return hit && hit.info && hit.info.name ? String(hit.info.name) : 'Wallet'; }
-  function getInjected() {
-    var list = walletList(), pref = lsGet(WALLET_KEY) || '';
-    if (pref) { var hit = list.filter(function (d) { return d.info && d.info.rdns === pref; })[0]; if (hit) return hit.provider; }
-    if (list.length === 1) return list[0].provider;
-    var eth = window.ethereum;
-    if (eth) return Array.isArray(eth.providers) && eth.providers.length ? eth.providers[0] : eth;
-    return list.length ? list[0].provider : null;
-  }
-  var PICK = null;
-  function chooseWallet(always) {
-    var list = walletList();
-    if (list.length < 2 && !(always && list.length)) return Promise.resolve(getInjected());
-    return new Promise(function (resolve) {
-      var sh = PICK || (PICK = makeSheet('Wallet')), done = false;
-      function finish(p) { if (done) return; done = true; sh.onClose = null; sh.close(); resolve(p); }
-      txt(sh.title, 'Choose a wallet'); sh.body.textContent = ''; sh.foot.textContent = '';
-      var box = h('div', 'sm-menu fl-wallets');
-      list.forEach(function (d) {
-        var kids = [];
-        if (d.info.icon && /^data:image\//.test(d.info.icon)) { var img = h('img'); img.src = d.info.icon; img.alt = ''; kids.push(img); }
-        kids.push(d.info.name || d.info.rdns || 'Wallet'); kids.push(h('i', null, '›'));
-        add(box, btn(null, kids, function () { lsSet(WALLET_KEY, d.info.rdns || ''); finish(d.provider); }));
-      });
-      add(sh.body, box);
-      sh.onClose = function () { finish(null); };
-      sh.open();
-    });
-  }
-  function isMetaMask(eth) {
-    var hit = walletList().filter(function (d) { return d.provider === eth; })[0], rdns = hit && hit.info && hit.info.rdns ? String(hit.info.rdns) : '';
-    if (rdns) return /^io\.metamask/.test(rdns);
-    return !!(eth && eth.isMetaMask && !eth.isPhantom && !eth.isRabby && !eth.isBraveWallet && !eth.isCoinbaseWallet && !eth.isOkxWallet && !eth.isTrust && !eth.isTrustWallet);
-  }
-  function pickAccounts(eth) {
-    var plain = function () { return eth.request({ method: 'eth_requestAccounts', params: [] }); };
-    if (!isMetaMask(eth)) return plain();
-    return eth.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] }).then(function () { return eth.request({ method: 'eth_accounts', params: [] }); }, function (e) {
-      if (e && (e.code === 4001 || e.code === -32002 || /user (rejected|denied)/i.test(String(e.message || '')))) throw e;
-      return plain();
-    });
-  }
+  /* ---- the wallet (live only). gamewallet.js finds the wallets, shows the sheet, connects and moves the wallet to HyperEVM;
+     here is what the page does with the wallet it is handed. ---- */
   var subscribed = [];
   function subscribe(eth) {
     if (subscribed.indexOf(eth) >= 0 || typeof eth.on !== 'function') return;
@@ -343,61 +294,35 @@
     eth.on('chainChanged', function (hex) { if (eth !== S.eth) return; S.chainOk = parseInt(hex, 16) === Number(S.cfg.chainId); paint(); });
   }
   function setAccount(eth, account) {
-    S.eth = eth; S.account = E.getAddress(account); S.walletName = nameOf(eth); S.bal = null; S.allowance = 0n; S.hype = null; S.pending = null;
+    S.eth = eth; S.account = E.getAddress(account); S.walletName = GW.nameOf(eth); S.bal = null; S.allowance = 0n; S.hype = null; S.pending = null;
     subscribe(eth); loadPend();
-    return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) { S.chainOk = parseInt(hex, 16) === Number(S.cfg.chainId); }, function () { S.chainOk = true; }).then(function () {
+    return GW.chainOf(eth).then(function (id) { S.chainOk = id === Number(S.cfg.chainId); }, function () { S.chainOk = true; }).then(function () {
       paint(); paintFeed();      /* the feed marks this wallet's own flips */
       return Promise.all([readWallet(), resume()]);
     }).then(paint);
   }
+  /* a Connect press: the sheet (every wallet this browser offers; on a phone with none, the keys that open this page inside a
+     wallet app), the wallet's own connect, then HyperEVM, added or switched to for them. A wallet that will not move stays
+     connected: its words go on the line over the key, and the key offers the switch again. */
   function connect(always) {
     if (S.demo) return Promise.resolve();
-    if (!hasWallet()) { openWalletApps(); return Promise.resolve(); }
-    S.phase = 'wallet'; say(''); paint();
-    return chooseWallet(always).then(function (eth) {
-      if (!eth) return null;
-      return pickAccounts(eth).then(function (accounts) {
-        if (!accounts || !accounts.length) throw new Error('No account returned by the wallet.');
-        return setAccount(eth, accounts[0]);
-      });
-    }).catch(function (e) { say(describe(e)); }).then(function () { if (S.phase === 'wallet') S.phase = 'idle'; paint(); });
-  }
-  /* No wallet in this browser (mostly a phone's own browser): the keys that open this very page inside a wallet app, the way
-     the trading page does it (trade.js openWalletApps). On a computer: where to get a wallet. */
-  var APPS = null;
-  function isPhone() { try { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)); } catch (e) { return false; } }
-  function openWalletApps() {
-    var sh = APPS || (APPS = makeSheet('Apps')), enc = encodeURIComponent;
-    var https = /^https:$/.test(location.protocol), page = (https ? location.origin + location.pathname : 'https://confetti.trade/flip.html'), origin = https ? location.origin : 'https://confetti.trade';
-    var phone = isPhone(), list = h('div', 'sm-menu fl-wallets');
-    function link(label, href, hint) { var a = h('a', null, [label, h('i', null, hint || '›')]); a.href = href; a.target = '_blank'; a.rel = 'noopener'; return a; }
-    txt(sh.title, phone ? 'Open in your wallet app' : 'Get a wallet'); sh.body.textContent = ''; sh.foot.textContent = '';
-    if (phone) {
-      add(sh.body, h('p', 'sm-fine', 'This browser has no wallet. Pick your wallet app: it opens this page inside it, ready to connect.'));
-      add(list, [link('Phantom', 'https://phantom.app/ul/browse/' + enc(page) + '?ref=' + enc(origin)), link('MetaMask', 'https://metamask.app.link/dapp/' + page.replace(/^https:\/\//, '')),
-        link('Coinbase Wallet', 'https://go.cb-w.com/dapp?cb_url=' + enc(page)), link('OKX Wallet', 'okx://wallet/dapp/url?dappUrl=' + enc(page))]);
-    } else {
-      add(sh.body, h('p', 'sm-fine', 'This browser has no wallet yet. Add one, then come back to this page and press Connect.'));
-      add(list, [link('Get MetaMask', 'https://metamask.io/download/'), link('Get Phantom', 'https://phantom.com/download'), link('Get Rabby', 'https://rabby.io/')]);
-    }
-    add(sh.body, list);
-    var copy = btn('sm-btn is-ghost', 'Copy this page\'s link', function () { copyText(page, copy); });
-    add(sh.foot, copy);
-    sh.open();
+    if (!GW) { say('The wallet part of this page did not load. Reload the page.'); paint(); return Promise.resolve(); }
+    say(''); paint();
+    return GW.connect({
+      always: !!always, note: 'Pick the wallet to flip from. Flips play straight from its USDC on HyperEVM: no deposit first.',
+      onStep: function (step, name) { if (S.phase === 'idle' || S.phase === 'landed') S.phase = 'wallet'; S.wstep = step === 'chain' ? 'Switching to HyperEVM…' : 'Confirm in ' + name + '…'; paint(); }
+    }).then(function (r) {
+      if (!r) return null;
+      return setAccount(r.eth, r.account).then(function () { if (r.say && !S.chainOk) say(r.say); });
+    }, function (e) { say(e && e.plain ? e.message : describe(e)); }).then(function () { S.wstep = ''; if (S.phase === 'wallet') S.phase = 'idle'; paint(); });
   }
   function disconnect() { ADD.pend = null; clearTimeout(ADD.tt); if (ADD.sh && ADD.sh.isOpen) ADD.sh.close(); S.account = null; S.eth = null; S.bal = null; S.allowance = 0n; S.hype = null; S.pending = null; if (S.phase !== 'air') S.phase = 'idle'; say(''); paint(); paintFeed(); }
+  /* a wallet connected before: asked quietly on load (nothing opens). It is not moved to HyperEVM without a press. */
   function autoConnect() {
-    var eth = getInjected();
-    if (!eth) return;
-    eth.request({ method: 'eth_accounts', params: [] }).then(function (accounts) { if (accounts && accounts.length) return setAccount(eth, accounts[0]); }).catch(function () { /* stay disconnected */ });
+    if (!GW) return;
+    GW.restore().then(function (r) { if (r && !S.account) return setAccount(r.eth, r.account); }).catch(function () { /* stay disconnected */ });
   }
-  function switchChain() {
-    var c = S.cfg, eth = S.eth;
-    return eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: c.chainIdHex }] }).catch(function (e) {
-      if (!e || (e.code !== 4902 && !/unrecognized|not added|unknown chain/i.test(String(e.message || '')))) throw e;
-      return eth.request({ method: 'wallet_addEthereumChain', params: [{ chainId: c.chainIdHex, chainName: c.chainName, rpcUrls: [c.rpcUrl], nativeCurrency: c.nativeCurrency, blockExplorerUrls: [c.explorerUrl] }] });
-    }).then(function () { return eth.request({ method: 'eth_chainId', params: [] }); }).then(function (hex) { S.chainOk = parseInt(hex, 16) === Number(c.chainId); });
-  }
+  function switchChain() { return GW.toChain(S.eth).then(function () { S.chainOk = true; }); }
 
   /* ---- reading the chain (live) ---- */
   var RPC = null, LOGS = null, GAME = null, USDC = null;
@@ -482,6 +407,8 @@
     if (S.usd < S.minBet) return { key: 'The least is ' + usdShort(S.minBet), why: 'The least a flip may be is ' + usd(S.minBet) + '.', field: true };
     if (S.maxBet != null && S.usd > S.maxBet + 1e-9) return { key: 'The most is ' + usd(S.maxBet), why: 'The most a flip may be right now is ' + usd(S.maxBet) + '.', field: true };
     if (S.bal != null && S.usd > S.bal + 1e-9) return { key: 'Not enough USDC', why: (S.demo ? 'Your demo wallet holds ' : 'Your wallet holds ') + usd(S.bal) + (S.demo ? '.' : ' USDC. Add money with HYPE, ETH, USDT or Bitcoin.'), field: true, add: !S.demo && !!S.account };
+    /* USDC but no HYPE: HyperEVM takes a little for every flip (the network, the random number), so the key brings some */
+    if (!S.demo && S.account && S.hype != null && S.hype < S.fee * 5n / 4n + 200000000000000n) return { key: 'Add money', why: 'Your wallet has no HYPE to spare, and each flip takes a little (about ' + hypeText(S.fee * 5n / 4n + 300000000000000n) + ' HYPE: the network, and the random number). Add money brings some along.', add: true };
     return null;
   }
 
@@ -517,10 +444,13 @@
     /* (the amount's own word about it shows once it has been touched) */
     el.amt.classList.toggle('is-bad', !!(pr && pr.field && !pr.quiet && S.touched));
     var w = el.wallet; w.textContent = '';
-    if (S.bal != null && (S.demo || S.account)) add(w, ['Flips play from your wallet\'s USDC. It holds ', h('b', null, usd(S.bal)), '.']);
-    else add(w, 'Flips play from your wallet\'s USDC.');
-    if (!S.demo && S.account) add(w, [' ', btn('sm-link fl-addkey', ADD.pend ? 'Money on its way' : 'Add money', function () { openAdd(); })]);
-    else if (!S.demo) add(w, ' Pay in with HYPE, ETH, USDT or Bitcoin.');
+    if (S.demo) add(w, S.bal != null ? ['Flips play from your wallet\'s USDC. It holds ', h('b', null, usd(S.bal)), '.'] : 'Flips play from your wallet\'s USDC.');
+    else if (!S.account) add(w, 'Connect MetaMask, Phantom or any wallet and flip straight from its USDC. No deposit first.');
+    else {
+      add(w, [h('b', null, S.walletName || 'Your wallet'), ' is connected. Flips play straight from its USDC']);
+      add(w, S.bal != null ? [': ', h('b', null, usd(S.bal)), ' now.'] : '.');
+      add(w, [' ', btn('sm-link fl-addkey', ADD.pend ? 'Money on its way' : 'Add money', function () { openAdd(); })]);
+    }
   }
   function paintResult() {
     var r = el.result, big, sub, c = '';
@@ -550,12 +480,12 @@
   function paintKey() {
     var k = el.go, label, dis = false, busy = false, share = false, pr = problem(), words = 'Flip · ' + usdShort(S.usd) + ' on ' + sideWord(S.heads);
     var sayText = S.say, sayOk = S.sayOk;
-    if (S.phase === 'wallet') { label = 'Confirm in your wallet…'; busy = true; }
+    if (S.phase === 'wallet') { label = S.wstep || 'Confirm in your wallet…'; busy = true; }
     else if (S.phase === 'allowing') { label = 'Allowing USDC…'; busy = true; }
     else if (S.phase === 'sending') { label = 'Sending your flip…'; busy = true; }
     else if (S.phase === 'refunding') { label = 'Taking it back…'; busy = true; }
     else if (S.phase === 'air') { label = 'Flipping…'; busy = true; if (!sayText && S.slow) { sayText = 'The number is taking longer than usual. Your stake is safe: the flip lands when it arrives.'; sayOk = true; } }
-    else if (!S.demo && !S.account) { label = hasWallet() || !S.walletsAsked ? 'Connect wallet' : 'Open in your wallet app'; }
+    else if (!S.demo && !S.account) { label = 'Connect wallet'; }
     else if (!S.demo && !S.chainOk) { label = 'Switch to HyperEVM'; }
     else if (S.pending && !S.demo && pendingLate()) { label = 'Take your ' + usdShort(S.pending.stake) + ' back'; if (!sayText) { sayText = pendingSay(); sayOk = true; } }
     else if (S.pending && !S.demo) { label = 'Waiting for the number…'; dis = true; if (!sayText) { sayText = pendingSay(); sayOk = true; } }
@@ -671,7 +601,7 @@
     if (e && e.code === -32002) return 'Your wallet is already asking you something. Open it and answer there.';
     return 'That did not go through. Nothing was taken. Try again in a moment.';
   }
-  function signerGame() { return new E.BrowserProvider(S.eth).getSigner().then(function (s) { return { s: s, g: new E.Contract(S.game, ABI, s), u: new E.Contract(S.cfg.contracts.usdc, ERC20, s) }; }); }
+  function signerGame() { return Promise.resolve().then(function () { var s = GW.signer(S.eth, S.account); return { s: s, g: new E.Contract(S.game, ABI, s), u: new E.Contract(S.cfg.contracts.usdc, ERC20, s) }; }); }
   function liveFlip() {
     var stake6 = to6(S.usd), called = S.heads, stake = S.usd, x100 = S.x100, tossed = false;
     S.phase = 'wallet'; say(''); paint();
@@ -1077,7 +1007,7 @@
       if (acct !== S.account) throw plain('The wallet changed. Nothing was sent.');
       if (spare != null && q.payWei > spare) throw plain('Your wallet can spare ' + hypeText(spare) + ' HYPE. Try a smaller amount.');
       ADD.busy = 'wallet'; fillAdd();
-      return new E.BrowserProvider(S.eth).getSigner().then(function (s) {
+      return Promise.resolve(GW.signer(S.eth, S.account)).then(function (s) {
         var tx = { to: q.to, data: q.data, value: q.payWei };
         if (q.gas > 0n) tx.gasLimit = q.gas * 13n / 10n;
         return s.sendTransaction(tx);
@@ -1124,8 +1054,8 @@
   /* ---- the one key ---- */
   function press() {
     if (S.phase !== 'idle' && S.phase !== 'landed') return;
-    if (!S.demo && !S.account) { S.walletsAsked = true; connect(false); return; }
-    if (!S.demo && !S.chainOk) { S.phase = 'wallet'; say(''); paint(); switchChain().catch(function (e) { say(describe(e)); }).then(function () { S.phase = 'idle'; paint(); }); return; }
+    if (!S.demo && !S.account) { connect(false); return; }
+    if (!S.demo && !S.chainOk) { S.phase = 'wallet'; S.wstep = 'Switching to HyperEVM…'; say(''); paint(); switchChain().catch(function (e) { say(e && e.plain ? e.message : describe(e)); }).then(function () { S.wstep = ''; S.phase = 'idle'; paint(); }); return; }
     if (S.pending && !S.demo) { if (now() >= S.pending.at + S.refundDelay) refund(); return; }
     S.touched = true;
     var pr = problem();
@@ -1191,7 +1121,7 @@
       setInterval(demoDrip, 6500);
       setInterval(paintFeed, 20000);
     } else {
-      listenForProviders();
+      if (GW) GW.init(cfg);
       readGame().then(function () { S.readErr = false; paint(); }, function () { S.readErr = true; paint(); });
       readFeed().then(paintFeed);
       setTimeout(autoConnect, 250);

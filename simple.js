@@ -452,6 +452,7 @@
       /* money back for stakers (fetti.js): the same key as on a phone */
       DK.R.fx = fxShow(w, st) ? fxCard() : null; if (DK.R.fx) add(scroll, h('div', 'sm-sec', DK.R.fx.n));
       add(scroll, h('div', 'sm-sec', flipCard()));
+      add(scroll, h('div', 'sm-sec', crashCard()));
       /* money still on the earlier version (v5 only): one key to the page that closes it out */
       var o4d = old4Card(); if (o4d) add(scroll, h('div', 'sm-sec', o4d));
 
@@ -1082,6 +1083,7 @@
     }
     R.fx = fxShow(w, st) ? fxCard() : null; if (R.fx) add(main, R.fx.n);
     add(main, flipCard());
+    add(main, crashCard());
     var o4 = old4Card(); if (o4) add(main, o4);
     if (p) { R.pend = noteCard(); R.pend.n.addEventListener('click', () => { openAdd(); }); add(main, R.pend.n); }
     if (S.res) {
@@ -1180,6 +1182,13 @@
     var coin = h('span', 'sm-flip-coin');
     coin.innerHTML = '<svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true" focusable="false"><circle cx="24" cy="24" r="22" fill="#f4ecd8" stroke="#1c1a17" stroke-width="2.5"/><circle cx="24" cy="24" r="16.5" fill="none" stroke="#1c1a17" stroke-width="1" stroke-dasharray="1.5 2.2"/><text x="24" y="31" text-anchor="middle" font-size="19" font-weight="700" font-family="Georgia, serif" fill="#1c1a17">H</text></svg>';
     return btn('sm-note sm-flip-note', [coin, h('span', 'sm-t', [h('b', null, 'FLIP A COIN'), h('i', null, 'Heads or tails. A win pays 1.96x.')]), h('span', 'sm-chev', '›')], () => { location.href = 'flip.html'; });
+  }
+  /* the crash game's card, beside the coin flip's and built the same way (its classes too): the climbing line drawn in the
+     page's own ink and paper with the paper piece at its tip, the words, and the whole card a key to crash.html */
+  function crashCard() {
+    var pic = h('span', 'sm-flip-coin');
+    pic.innerHTML = '<svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true" focusable="false"><rect x="2" y="2" width="44" height="44" rx="9" fill="#f4ecd8" stroke="#1c1a17" stroke-width="2.5"/><path d="M9 38.5h30" fill="none" stroke="#1c1a17" stroke-width="1" stroke-dasharray="1.5 2.2"/><path d="M9 36.5C21 35.5 30 30 35.5 14" fill="none" stroke="#1c1a17" stroke-width="3" stroke-linecap="round"/><rect x="31.5" y="7.5" width="10" height="6.5" rx="0.8" transform="rotate(-24 36.5 10.75)" fill="#2e7a4c"/></svg>';
+    return btn('sm-note sm-flip-note', [pic, h('span', 'sm-t', [h('b', null, 'CRASH'), h('i', null, 'Cash out before it does.')]), h('span', 'sm-chev', '›')], () => { location.href = 'crash.html'; });
   }
   function noteCard() {
     var c = { icon: h('span', 'sm-spin'), b: h('b'), i: h('i') };
@@ -1317,6 +1326,7 @@
     add(list, item('House', 'LP and stats', null, 'house.html'));
     add(list, item('$FETTI', fxMenuHint(w), null, 'confetti.html'));
     add(list, item('Coin flip', 'heads or tails', null, 'flip.html'));
+    add(list, item('Crash', 'cash out before it does', null, 'crash.html'));
     var F = fx();
     if (F && w.account && F.drawOn()) add(list, item('Weekly draw', fxDrawHint(w), () => { openDraw(); }));
     if (F && F.tableHref()) add(list, item('FETTI table', 'stake FETTI, win FETTI', null, F.tableHref()));
