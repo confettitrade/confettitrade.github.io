@@ -266,6 +266,7 @@
     }
     var list = h('div', 'sm-menu');
     if (!S.demo && !S.account) add(list, item(hasWallet() ? 'Connect wallet' : 'Open in your wallet app', '', function () { connect(false); }));
+    if (!S.demo && S.account) add(list, item('Add money', 'HYPE, ETH, USDT, Bitcoin', function () { openAdd(); }));
     add(list, item('Trade', 'coins, up or down', null, 'trade.html'));
     add(list, item('Coin flip', 'you are here', null, 'flip.html' + (S.demo && !S.soon ? '?demo=1' : ''), true));
     add(list, item('Portfolio', 'your trades', null, 'portfolio.html'));
@@ -343,7 +344,7 @@
   }
   function setAccount(eth, account) {
     S.eth = eth; S.account = E.getAddress(account); S.walletName = nameOf(eth); S.bal = null; S.allowance = 0n; S.hype = null; S.pending = null;
-    subscribe(eth);
+    subscribe(eth); loadPend();
     return eth.request({ method: 'eth_chainId', params: [] }).then(function (hex) { S.chainOk = parseInt(hex, 16) === Number(S.cfg.chainId); }, function () { S.chainOk = true; }).then(function () {
       paint(); paintFeed();      /* the feed marks this wallet's own flips */
       return Promise.all([readWallet(), resume()]);
@@ -351,7 +352,7 @@
   }
   function connect(always) {
     if (S.demo) return Promise.resolve();
-    if (!hasWallet()) { say('No wallet found in this browser. Open confetti.trade in your wallet app, or add a wallet extension.'); paint(); return Promise.resolve(); }
+    if (!hasWallet()) { openWalletApps(); return Promise.resolve(); }
     S.phase = 'wallet'; say(''); paint();
     return chooseWallet(always).then(function (eth) {
       if (!eth) return null;
@@ -361,7 +362,30 @@
       });
     }).catch(function (e) { say(describe(e)); }).then(function () { if (S.phase === 'wallet') S.phase = 'idle'; paint(); });
   }
-  function disconnect() { S.account = null; S.eth = null; S.bal = null; S.allowance = 0n; S.hype = null; S.pending = null; if (S.phase !== 'air') S.phase = 'idle'; say(''); paint(); paintFeed(); }
+  /* No wallet in this browser (mostly a phone's own browser): the keys that open this very page inside a wallet app, the way
+     the trading page does it (trade.js openWalletApps). On a computer: where to get a wallet. */
+  var APPS = null;
+  function isPhone() { try { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)); } catch (e) { return false; } }
+  function openWalletApps() {
+    var sh = APPS || (APPS = makeSheet('Apps')), enc = encodeURIComponent;
+    var https = /^https:$/.test(location.protocol), page = (https ? location.origin + location.pathname : 'https://confetti.trade/flip.html'), origin = https ? location.origin : 'https://confetti.trade';
+    var phone = isPhone(), list = h('div', 'sm-menu fl-wallets');
+    function link(label, href, hint) { var a = h('a', null, [label, h('i', null, hint || '›')]); a.href = href; a.target = '_blank'; a.rel = 'noopener'; return a; }
+    txt(sh.title, phone ? 'Open in your wallet app' : 'Get a wallet'); sh.body.textContent = ''; sh.foot.textContent = '';
+    if (phone) {
+      add(sh.body, h('p', 'sm-fine', 'This browser has no wallet. Pick your wallet app: it opens this page inside it, ready to connect.'));
+      add(list, [link('Phantom', 'https://phantom.app/ul/browse/' + enc(page) + '?ref=' + enc(origin)), link('MetaMask', 'https://metamask.app.link/dapp/' + page.replace(/^https:\/\//, '')),
+        link('Coinbase Wallet', 'https://go.cb-w.com/dapp?cb_url=' + enc(page)), link('OKX Wallet', 'okx://wallet/dapp/url?dappUrl=' + enc(page))]);
+    } else {
+      add(sh.body, h('p', 'sm-fine', 'This browser has no wallet yet. Add one, then come back to this page and press Connect.'));
+      add(list, [link('Get MetaMask', 'https://metamask.io/download/'), link('Get Phantom', 'https://phantom.com/download'), link('Get Rabby', 'https://rabby.io/')]);
+    }
+    add(sh.body, list);
+    var copy = btn('sm-btn is-ghost', 'Copy this page\'s link', function () { copyText(page, copy); });
+    add(sh.foot, copy);
+    sh.open();
+  }
+  function disconnect() { ADD.pend = null; clearTimeout(ADD.tt); if (ADD.sh && ADD.sh.isOpen) ADD.sh.close(); S.account = null; S.eth = null; S.bal = null; S.allowance = 0n; S.hype = null; S.pending = null; if (S.phase !== 'air') S.phase = 'idle'; say(''); paint(); paintFeed(); }
   function autoConnect() {
     var eth = getInjected();
     if (!eth) return;
@@ -457,7 +481,7 @@
     if (!(S.usd > 0)) return { key: 'Type an amount', why: '', field: true, quiet: true };
     if (S.usd < S.minBet) return { key: 'The least is ' + usdShort(S.minBet), why: 'The least a flip may be is ' + usd(S.minBet) + '.', field: true };
     if (S.maxBet != null && S.usd > S.maxBet + 1e-9) return { key: 'The most is ' + usd(S.maxBet), why: 'The most a flip may be right now is ' + usd(S.maxBet) + '.', field: true };
-    if (S.bal != null && S.usd > S.bal + 1e-9) return { key: 'Not enough USDC', why: (S.demo ? 'Your demo wallet holds ' : 'Your wallet holds ') + usd(S.bal) + (S.demo ? '.' : ' USDC.'), field: true };
+    if (S.bal != null && S.usd > S.bal + 1e-9) return { key: 'Not enough USDC', why: (S.demo ? 'Your demo wallet holds ' : 'Your wallet holds ') + usd(S.bal) + (S.demo ? '.' : ' USDC. Add money with HYPE, ETH, USDT or Bitcoin.'), field: true, add: !S.demo && !!S.account };
     return null;
   }
 
@@ -495,6 +519,8 @@
     var w = el.wallet; w.textContent = '';
     if (S.bal != null && (S.demo || S.account)) add(w, ['Flips play from your wallet\'s USDC. It holds ', h('b', null, usd(S.bal)), '.']);
     else add(w, 'Flips play from your wallet\'s USDC.');
+    if (!S.demo && S.account) add(w, [' ', btn('sm-link fl-addkey', ADD.pend ? 'Money on its way' : 'Add money', function () { openAdd(); })]);
+    else if (!S.demo) add(w, ' Pay in with HYPE, ETH, USDT or Bitcoin.');
   }
   function paintResult() {
     var r = el.result, big, sub, c = '';
@@ -533,6 +559,7 @@
     else if (!S.demo && !S.chainOk) { label = 'Switch to HyperEVM'; }
     else if (S.pending && !S.demo && pendingLate()) { label = 'Take your ' + usdShort(S.pending.stake) + ' back'; if (!sayText) { sayText = pendingSay(); sayOk = true; } }
     else if (S.pending && !S.demo) { label = 'Waiting for the number…'; dis = true; if (!sayText) { sayText = pendingSay(); sayOk = true; } }
+    else if (pr && pr.add) { label = 'Add money'; if (!sayText) { sayText = pr.why; sayOk = true; } }      /* short of USDC: the key adds it */
     else if (pr) { label = pr.key; dis = true; if (!sayText && pr.why && (!pr.field || S.touched)) sayText = pr.why; }
     else if (S.phase === 'landed') { label = 'Flip again'; share = !!(S.last && S.last.won && window.ConfettiShare); }
     else {
@@ -671,7 +698,7 @@
       S.pending = { id: id, at: Math.round(now()), stake: stake, heads: called, x100: x100 };
       lsSet(OPEN_KEY + S.account.toLowerCase(), String(id));
       S.phase = 'air'; S.slow = false; S.airAt = Date.now(); tossed = true; coinToss(); paint();
-      readWallet().then(paint);
+      readWallet().then(rebase).then(paint);
       return waitResult(id);
     }).catch(function (e) {
       if (tossed) coinRest(called); else coinShow(called);
@@ -698,7 +725,7 @@
           var row = flipRow(id, f); rowCache[id] = row;
           var finish = function () {
             landedNow({ id: id, won: won, heads: landed, called: called, stake: stake, payout: won ? payOf(stake, x100) : 0, x100: x100, tx: '' });
-            Promise.all([readWallet(), readGame(), readFeed()]).then(function () { paint(); paintFeed(); });
+            Promise.all([readWallet().then(rebase), readGame(), readFeed()]).then(function () { paint(); paintFeed(); });
             resolve();
           };
           if (S.phase !== 'air') { S.phase = 'air'; coinToss(); }
@@ -735,6 +762,365 @@
     }).catch(function (e) { S.phase = 'idle'; say(describe(e)); }).then(paint);
   }
 
+  /* ---- Add money (live): other coins in, USDC in the wallet out ----
+     The trading page's way (simple.js, Add money), cut to what a flip needs: the dollars land as USDC in the visitor's own wallet,
+     where flips play from, so no order carries any call and the page keeps no share.
+     - HYPE in this wallet: one transaction on HyperEVM to Relay's router, which swaps it and sends the USDC back.
+     - ETH (Base, Arbitrum, Ethereum), USDT (Tron, Arbitrum, Ethereum), Bitcoin, or HYPE from somewhere else: Relay gives an address
+       for this wallet; what is paid there arrives as USDC, with a little HYPE for the flips' own costs when the wallet has none.
+     Every order is read before anything is shown or asked and refused unless it is the one asked for. */
+  var RELAY = 'https://api.relay.link', ZERO = '0x0000000000000000000000000000000000000000';
+  var HYPE_ROUTER = '0x0729e2a4716d9f7dd17858d5d504426d228697f7', MC = '0xcd6e13f7', SWEEP = '0x9bb43718';      /* Relay's router here; its multicall and cleanupErc20s */
+  var DEP_EVM = '0x4cd00e387622c35bddb9b4c962c136462338bc31', RELAY_SOLVER = '0xf70da97812cb96acdf810712aa562db8dfa3dbef';
+  var HYPE_KEEP = 20000000000000000n;       /* HYPE left in the wallet for flips (each takes the number's cost and its gas) */
+  var HYPE_LOW = 30000000000000000n;        /* under this an address order brings a little HYPE along */
+  var ADD_KEY = 'confetti.flip.add.', EVM_OK = /^0x[0-9a-fA-F]{40}$/;
+  function evmK(chain, coin, sym, name, dec, showDec, eta) { return { evm: true, chain: chain, coin: coin, dep: DEP_EVM, sym: sym, name: name, dec: dec, show: showDec, min: 10, eta: eta, ok: EVM_OK }; }
+  var AK = {
+    btc: { chain: 8253038, coin: 'bc1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmql8k8', dep: 'bc1qzmtn0q92ayejt2hpffvlktcpmyy7vvsd06sefu', sym: 'BTC', name: 'Bitcoin', dec: 8, show: 5, min: 25, eta: 'about 20 minutes', ok: /^(bc1[02-9ac-hj-np-z]{20,80}|[13][1-9A-HJ-NP-Za-km-z]{25,39})$/ },
+    tron: { chain: 728126428, coin: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', dep: 'TXtEs6t2oUWQsNos7m68gbHdE9Q5n6x2oN', sym: 'USDT', name: 'Tron', dec: 6, show: 2, min: 10, eta: 'a minute or two', ok: /^T[1-9A-HJ-NP-Za-km-z]{33}$/ },
+    eth8453: evmK(8453, ZERO, 'ETH', 'Base', 18, 5, 'about a minute'), eth42161: evmK(42161, ZERO, 'ETH', 'Arbitrum', 18, 5, 'about a minute'), eth1: evmK(1, ZERO, 'ETH', 'Ethereum', 18, 5, 'a few minutes'),
+    usdt42161: evmK(42161, '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', 'USDT', 'Arbitrum', 6, 2, 'about a minute'), usdt1: evmK(1, '0xdac17f958d2ee523a2206206994597c13d831ec7', 'USDT', 'Ethereum', 6, 2, 'a few minutes'),
+    hype: evmK(999, ZERO, 'HYPE', 'HyperEVM', 18, 3, 'about a minute')
+  };
+  /* the ways on the form. kinds: the address orders a way can be (its networks); none: paid from this wallet */
+  var WAYS = [
+    { key: 'hype', title: 'HYPE in this wallet', kinds: null },
+    { key: 'eth', title: 'ETH', sub: 'Base, Arbitrum or Ethereum', kinds: ['eth8453', 'eth42161', 'eth1'] },
+    { key: 'usdt', title: 'USDT', sub: 'Tron, Arbitrum or Ethereum', kinds: ['tron', 'usdt42161', 'usdt1'] },
+    { key: 'btc', title: 'Bitcoin', sub: 'from any Bitcoin wallet', kinds: ['btc'] },
+    { key: 'hypeA', title: 'HYPE from an exchange', sub: 'or from another wallet', kinds: ['hype'] }
+  ];
+  var ADD_CHIPS = [10, 25, 50, 100];
+  var ADD = { sh: null, R: null, view: 'form', typed: '25', way: 'hype', net: { eth: 0, usdt: 0 }, refund: { tron: '', btc: '' }, q: null, err: '', busy: '', pend: null, px: null, pxAt: 0, seq: 0, qt: 0, tt: 0 };
+  function lowS(x) { return String(x || '').toLowerCase(); }
+  function getJson(url, body) {
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null, timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 12000) : null;
+    var opt = body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : { headers: { accept: 'application/json' } };
+    if (ctrl) opt.signal = ctrl.signal;
+    return fetch(url, opt).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error((j && (j.message || j.errorMessage)) || ('answered ' + r.status)); e.api = j || {}; throw e; } return j; });
+    }).then(function (j) { if (timer) clearTimeout(timer); return j; }, function (e) { if (timer) clearTimeout(timer); throw e; });
+  }
+  function plain(s) { var e = new Error(s); e.plain = true; return e; }
+  function copyText(s, b) {
+    var done = function () { if (b._was == null) b._was = b.textContent; b.textContent = 'Copied'; clearTimeout(b._t); b._t = setTimeout(function () { b.textContent = b._was; b._was = null; }, 1400); };
+    function old() { try { var t = h('textarea'); t.value = s; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'; (b.closest('dialog') || document.body).appendChild(t); t.select(); document.execCommand('copy'); t.remove(); done(); } catch (e) { /* the text is on the screen */ } }
+    try { navigator.clipboard.writeText(s).then(done, old); } catch (e) { old(); }
+  }
+  function drawQr(cv, text) {
+    var go = function () {
+      try {
+        var q = window.ConfettiQR.create(text, { errorCorrectionLevel: 'M' }), n = q.modules.size, s = 6, pad = 3, c = cv.getContext('2d');
+        cv.width = cv.height = (n + pad * 2) * s; c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height); c.fillStyle = '#000';
+        for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (q.modules.get(y, x)) c.fillRect((x + pad) * s, (y + pad) * s, s, s);
+      } catch (e) { cv.hidden = true; }
+    };
+    if (window.ConfettiQR) { go(); return; }
+    var sc = document.createElement('script'); sc.src = 'qr.js?v=card1'; sc.async = true; sc.onload = go; sc.onerror = function () { cv.hidden = true; }; document.head.appendChild(sc);
+  }
+  /* exact: the digits to type, never a float's */
+  function coinS(v, dec) { var s = String(BigInt(v)), i, f; while (s.length <= dec) s = '0' + s; i = s.length - dec; f = s.slice(i).replace(/0+$/, ''); return s.slice(0, i) + (f ? '.' + f : ''); }
+  var B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  function b58d(s) {
+    var n = 0n, i, z = 0; s = String(s);
+    for (i = 0; i < s.length; i++) { var k = B58.indexOf(s[i]); if (k < 0) throw new Error('not base58'); n = n * 58n + BigInt(k); }
+    while (z < s.length && s[z] === '1') z++;
+    var hex = n === 0n ? '' : n.toString(16); if (hex.length % 2) hex = '0' + hex;
+    var out = new Uint8Array(z + hex.length / 2); for (i = 0; i < hex.length / 2; i++) out[z + i] = parseInt(hex.substr(i * 2, 2), 16);
+    return out;
+  }
+  function tronOk(s) {
+    try { var b = b58d(s); if (!AK.tron.ok.test(s) || b.length !== 25 || b[0] !== 0x41) return false; var c = E.getBytes(E.sha256(E.sha256(b.slice(0, 21)))); return c[0] === b[21] && c[1] === b[22] && c[2] === b[23] && c[3] === b[24]; } catch (e) { return false; }
+  }
+  /* the prices the form works a coin amount from: Hyperliquid's own mids (config.json hyperliquidInfoUrl), asked again after 30 s */
+  function readPx() {
+    if (ADD.px && Date.now() - ADD.pxAt < 30000) return Promise.resolve(ADD.px);
+    return getJson(S.cfg.hyperliquidInfoUrl || 'https://api.hyperliquid.xyz/info', { type: 'allMids' }).then(function (j) {
+      var p = { BTC: Number(j.BTC), ETH: Number(j.ETH), HYPE: Number(j.HYPE), USDT: 1 };
+      if (!(p.BTC > 0 && p.ETH > 0 && p.HYPE > 0)) throw new Error('prices');
+      ADD.px = p; ADD.pxAt = Date.now(); return p;
+    });
+  }
+  function addWay() { return WAYS.filter(function (w) { return w.key === ADD.way; })[0] || WAYS[0]; }
+  function addKind() { var w = addWay(); return w.kinds ? w.kinds[Math.min(w.kinds.length - 1, ADD.net[w.key] || 0)] : null; }
+  function addUsd() { return Number(ADD.typed) || 0; }
+  function addMin() { var k = addKind(); return k ? AK[k].min : 5; }
+  function hypeSpare() { return S.hype == null ? null : S.hype > HYPE_KEEP ? S.hype - HYPE_KEEP : 0n; }
+  function needRefund(k) { return k === 'tron'; }                 /* Tron has no "the wallet that paid": a refund needs an address */
+  function refundOf(k) { return k === 'tron' || k === 'btc' ? String(ADD.refund[k] || '').trim() : ''; }
+  function refundOk(k) { var r = refundOf(k); return !r ? !needRefund(k) : k === 'tron' ? tronOk(r) : AK.btc.ok.test(r); }
+  /* a little HYPE with an address order when the wallet has next to none: a flip cannot be sent without it */
+  function topUsd(usdAmt) { return S.hype != null && S.hype >= HYPE_LOW ? 0 : usdAmt >= 20 ? 2 : 1; }
+
+  /* HYPE in the wallet -> exactly these dollars of USDC, same chain. Refused unless: HyperEVM; Relay's router; HYPE in, paid as the
+     value; at least these dollars out; the wallet as the recipient; and every sweep the router makes going to the wallet. */
+  function hypeOk(data, account) {
+    var co = E.AbiCoder.defaultAbiCoder(), calls, sweeps = 0;
+    try { if (lowS(data).slice(0, 10) !== MC) return false; calls = co.decode(['(address,bool,uint256,bytes)[]', 'address', 'address', 'bytes'], '0x' + String(data).slice(10))[0]; } catch (e) { return false; }
+    var back = Array.from(calls).every(function (x) {
+      if (lowS(x[0]) !== HYPE_ROUTER || lowS(x[3]).slice(0, 10) !== SWEEP) return true;
+      sweeps++;
+      try { var to = co.decode(['address[]', 'address[]', 'uint256[]', 'bytes'], '0x' + String(x[3]).slice(10))[1]; return to.length > 0 && Array.from(to).every(function (a) { return lowS(a) === lowS(account); }); } catch (e) { return false; }
+    });
+    return back && sweeps > 0;
+  }
+  function orderHype(account, gross6) {
+    var b = { user: account, recipient: account, refundTo: account, originChainId: Number(S.cfg.chainId), destinationChainId: Number(S.cfg.chainId), originCurrency: ZERO, destinationCurrency: S.cfg.contracts.usdc, amount: String(gross6), tradeType: 'EXACT_OUTPUT', slippageTolerance: '50' };
+    return getJson(RELAY + '/quote/v2', b).then(function (j) {
+      var d = j.details || {}, st = j.steps || [], it = st.length === 1 && st[0].items && st[0].items.length === 1 ? st[0].items[0] : null, tx = it && it.data;
+      if (!tx || !d.currencyIn || !d.currencyOut) throw new Error('unexpected quote');
+      var cin = d.currencyIn.currency || {}, cout = d.currencyOut.currency || {}, min = BigInt(d.currencyOut.minimumAmount || 0), chain = Number(S.cfg.chainId);
+      if (Number(tx.chainId) !== chain || lowS(tx.to) !== HYPE_ROUTER || lowS(cin.address) !== ZERO || Number(cin.chainId) !== chain || lowS(cout.address) !== lowS(S.cfg.contracts.usdc) || Number(cout.chainId) !== chain
+        || String(tx.value) !== String(d.currencyIn.amount) || min < gross6 || lowS(d.recipient) !== lowS(account) || !hypeOk(tx.data, account)) throw new Error('quote does not match the order');
+      var usdIn = Number(d.currencyIn.amountUsd), px = ADD.px && ADD.px.HYPE;
+      /* the HYPE it costs held against the page's own price: never more than 4% over these dollars */
+      if (px > 0 && Number(tx.value) / 1e18 * px > Number(gross6) / 1e6 * 1.04 + 0.05) throw new Error('quote does not match the order');
+      return { rail: 'hype', usd: usdIn, payWei: BigInt(tx.value), gross6: gross6, net: Number(gross6) / 1e6, to: tx.to, data: tx.data, gas: BigInt(tx.gas || 0), id: st[0].requestId };
+    });
+  }
+  function quoteHype(account, usdAmt) {
+    var g0 = BigInt(Math.max(1, Math.floor(usdAmt * 0.985 * 1e6)));
+    return orderHype(account, g0).then(function (q) {
+      if (Math.abs(q.usd - usdAmt) < 0.02) return q;
+      return orderHype(account, g0 + BigInt(Math.round((usdAmt - q.usd) * 0.99 * 1e6)));      /* one correction lands on the typed dollars */
+    });
+  }
+  /* an address of Relay's for this wallet. Refused unless: a fresh address of the right kind (never the wallet's own, Relay's
+     depository, solver or router); this coin, this network, this amount; USDC on HyperEVM out, to the wallet and nobody else; no
+     calls; every refund to the wallet or the address given; the HYPE top-up there when asked; and about these dollars landing. */
+  function orderAddr(o) {
+    var k = AK[o.kind], amt = BigInt(Math.round(o.usd / o.px * Math.pow(10, k.show))) * 10n ** BigInt(k.dec - k.show), user = k.evm ? o.account : o.refund || (o.kind === 'btc' ? k.coin : '');
+    if (!user || !(amt > 0n)) return Promise.reject(plain('Type an address a refund can go to.'));
+    var usdc = S.cfg.contracts.usdc, chain = Number(S.cfg.chainId);
+    var b = { user: user, recipient: o.account, refundTo: user, originChainId: k.chain, destinationChainId: chain, originCurrency: k.coin, destinationCurrency: usdc, amount: String(amt), tradeType: 'EXACT_INPUT', useDepositAddress: true };
+    if (o.topUsd > 0) { b.topupGas = true; b.topupGasAmount = String(Math.round(o.topUsd * 1e6)); }
+    return getJson(RELAY + '/quote/v2', b).then(function (j) {
+      var d = j.details || {}, st = (j.steps || [])[0] || {}, dep = String(st.depositAddress || ''), v2 = (j.protocol || {}).v2 || {}, od = v2.orderData || {}, out = od.output || {}, pd = v2.paymentDetails || {};
+      if (!dep || !st.requestId || !d.currencyIn || !d.currencyOut) throw new Error('unexpected quote');
+      var cin = d.currencyIn.currency || {}, cout = d.currencyOut.currency || {}, got = BigInt(d.currencyOut.amount || 0), inUsd = Number(amt) / Math.pow(10, k.dec) * o.px, pays = out.payments || [];
+      var refunds = (od.inputs || []).every(function (inp) { return (inp.refunds || []).every(function (r) { return /^0x/.test(String(r.recipient)) ? lowS(r.recipient) === lowS(o.account) : !o.refund || String(r.recipient) === o.refund; }); });
+      var ok = (o.kind === 'tron' ? tronOk(dep) : k.ok.test(dep)) && lowS(dep) !== lowS(k.dep) && (!k.evm || (lowS(dep) !== lowS(o.account) && lowS(dep) !== RELAY_SOLVER && lowS(dep) !== HYPE_ROUTER))
+        && String(d.currencyIn.amount) === String(amt) && String(pd.amount) === String(amt)
+        && (k.evm ? lowS(pd.depository) === k.dep && lowS(pd.currency) === lowS(k.coin) && lowS(cin.address) === lowS(k.coin) : pd.depository === k.dep && cin.address === k.coin)
+        && Number(cin.chainId) === k.chain && lowS(cout.address) === lowS(usdc) && Number(cout.chainId) === chain && lowS(d.recipient) === lowS(o.account)
+        && pays.length >= 1 && pays.every(function (p) { return lowS(p.recipient) === lowS(o.account) && lowS(p.currency) === lowS(usdc); }) && Array.isArray(out.calls) && out.calls.length === 0
+        && refunds && (!(o.topUsd > 0) || !!d.currencyGasTopup)
+        && Number(got) / 1e6 <= inUsd * 1.02 && Number(got) / 1e6 >= inUsd - Math.max(8, inUsd * 0.06);
+      if (!ok) throw new Error('quote does not match the order');
+      if (Number(got) / 1e6 < inUsd * 0.7) throw plain('That is too little to send this way. Try a bit more.');
+      return { rail: 'addr', kind: o.kind, usd: inUsd, amt: amt, net: Number(got) / 1e6, addr: dep, id: st.requestId, refund: o.refund || '', top: o.topUsd > 0 };
+    });
+  }
+  function relayState(id) {
+    return getJson(RELAY + '/intents/status/v3?requestId=' + encodeURIComponent(id)).then(function (j) {
+      var s = j && j.status;
+      return s === 'success' ? 'done' : s === 'refund' ? 'refunded' : s === 'failure' ? 'failed' : s === 'pending' || s === 'submitted' ? 'moving' : 'sent';
+    });
+  }
+  function addSay(e) {
+    if (e && e.plain) return e.message;
+    var code = e && e.api && e.api.errorCode;
+    if (code === 'AMOUNT_TOO_LOW') return 'That is too little to send. Try a bit more.';
+    if (code === 'AMOUNT_TOO_HIGH') return 'That is more than can be sent in one go. Try a smaller amount.';
+    return 'There is no price for that right now. Try again in a minute.';
+  }
+  /* the form's quote: asked a moment after the last change, and only the newest answer counts */
+  function addKey() { var k = addKind(); return [S.account, ADD.way, k || '', addUsd(), k ? refundOf(k) : ''].join('|'); }
+  function scheduleQuote(ms) { clearTimeout(ADD.qt); ADD.seq++; ADD.q = null; ADD.qt = setTimeout(quoteAdd, ms == null ? 500 : ms); }
+  function quoteAdd() {
+    var seq = ++ADD.seq, k = addKind(), usdAmt = addUsd(), acct = S.account, key = addKey();
+    if (!acct || ADD.view !== 'form' || !(usdAmt >= addMin()) || usdAmt > 5000 || (k && !refundOk(k)) || (!k && hypeSpare() === 0n)) { ADD.busy = ''; fillAdd(); return Promise.resolve(); }
+    ADD.busy = 'quote'; ADD.err = ''; fillAdd();
+    return readPx().then(function (px) {
+      return k ? orderAddr({ kind: k, usd: usdAmt, px: px[AK[k].sym], account: acct, refund: refundOf(k), topUsd: k === 'hype' ? 0 : topUsd(usdAmt) }) : quoteHype(acct, usdAmt);
+    }).then(function (q) { if (seq !== ADD.seq) return; q.key = key; q.at = Date.now(); ADD.q = q; ADD.err = ''; }, function (e) { if (seq !== ADD.seq) return; ADD.q = null; ADD.err = addSay(e); })
+      .then(function () { if (seq === ADD.seq) { ADD.busy = ''; fillAdd(); } });
+  }
+  function freshQuote() { return ADD.q && ADD.q.key === addKey() && Date.now() - ADD.q.at < 45000 ? Promise.resolve(ADD.q) : quoteAdd().then(function () { return ADD.q; }); }
+
+  /* a payment to an address, remembered on this device until it lands */
+  function savePend() { if (S.account) lsSet(ADD_KEY + S.account.toLowerCase(), ADD.pend ? JSON.stringify(ADD.pend) : null); }
+  function loadPend() {
+    ADD.pend = null; clearTimeout(ADD.tt);
+    if (S.demo || !S.account) return;
+    try { var p = JSON.parse(lsGet(ADD_KEY + S.account.toLowerCase()) || 'null'); if (p && AK[p.kind] && p.addr && p.id && Date.now() - p.since < 7 * 86400000) ADD.pend = p; } catch (e) { /* none */ }
+    if (ADD.pend) trackAdd();
+  }
+  function dropPend() { ADD.pend = null; clearTimeout(ADD.tt); savePend(); }
+  /* a flip moved the wallet's USDC: what a waiting payment is measured from moves with it */
+  function rebase() { var p = ADD.pend; if (p && S.bal != null && p.bal1 != null) { p.usdc0 += S.bal - p.bal1; p.bal1 = S.bal; savePend(); } }
+  function trackAdd() {
+    clearTimeout(ADD.tt);
+    var p = ADD.pend; if (!p) return;
+    var again = function () { ADD.tt = setTimeout(trackAdd, p.seen || Date.now() - p.since < 1800000 ? 6000 : 20000); };
+    if (document.hidden) { again(); return; }
+    Promise.all([relayState(p.id).catch(function () { return null; }), readWallet()]).then(function (x) {
+      if (ADD.pend !== p) return;
+      var st = x[0], got = S.bal != null && p.usdc0 != null ? Math.round((S.bal - p.usdc0) * 100) / 100 : 0;
+      p.bal1 = S.bal;
+      if (st === 'moving' || st === 'done') p.seen = p.seen || Date.now();
+      if (st === 'refunded') { dropPend(); addDone('That payment could not be added and was sent back.', false); return; }
+      /* landed: the wallet's dollars rose after the payment was seen (a short payment is credited for what it is), or about the
+         expected dollars came, or Relay says the order is done */
+      if ((got >= 0.5 && (p.seen || got >= p.net * 0.5)) || st === 'done') { dropPend(); addDone(usd(got >= 0.5 ? got : p.net) + ' is in your wallet. Ready to flip.', true); return; }
+      p.state = st === 'failed' ? 'failed' : p.seen ? 'seen' : 'waiting'; savePend(); again();
+      if (ADD.sh && ADD.sh.isOpen && ADD.view === 'pay') fillPay();
+      paintForm();
+    });
+  }
+  function addDone(text, ok) {
+    ADD.view = 'form'; ADD.q = null; ADD.err = ''; ADD.busy = '';
+    if (ADD.sh && ADD.sh.isOpen) ADD.sh.close();
+    if (S.phase === 'idle' || S.phase === 'landed') say(text, ok);
+    readWallet().then(paint); paint();
+  }
+
+  function openAdd() {
+    if (S.demo) return;
+    if (!S.account) { connect(false); return; }
+    var sh = ADD.sh || (ADD.sh = makeSheet('Add'));
+    if (!ADD.pend) {
+      var lack = S.bal != null && S.usd > S.bal ? Math.ceil(S.usd - S.bal) : 0;
+      if (lack > 0) ADD.typed = String(Math.max(10, lack));
+      /* HYPE in the wallet is the one-tap way; without any to spare the form opens on ETH */
+      ADD.way = hypeSpare() > 0n ? 'hype' : ADD.way === 'hype' ? 'eth' : ADD.way;
+    }
+    ADD.view = ADD.pend ? 'pay' : 'form'; ADD.err = ''; ADD.busy = '';
+    paintAdd(); sh.open();
+    readWallet().then(function () { if (sh.isOpen && ADD.view === 'form') fillAdd(); });
+    if (ADD.view === 'form') scheduleQuote(0); else trackAdd();
+  }
+  function paintAdd() { var sh = ADD.sh; sh.body.textContent = ''; sh.foot.textContent = ''; ADD.R = {}; if (ADD.view === 'pay' && ADD.pend) { buildPay(); fillPay(); } else { ADD.view = 'form'; buildAddForm(); fillAdd(); } }
+  function buildAddForm() {
+    var sh = ADD.sh, r = ADD.R;
+    txt(sh.title, 'Add money');
+    r.amt = h('input'); r.amt.id = 'flAddAmount'; r.amt.type = 'text'; r.amt.inputMode = 'decimal'; r.amt.maxLength = 7; r.amt.placeholder = '0'; r.amt.value = ADD.typed; r.amt.setAttribute('autocomplete', 'off'); r.amt.setAttribute('aria-label', 'Dollars to add');
+    r.amt.addEventListener('input', function () { var v = r.amt.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1').replace(/^(\d*\.\d{0,2}).*$/, '$1'); if (r.amt.value !== v) r.amt.value = v; ADD.typed = v; ADD.err = ''; fillAdd(); scheduleQuote(); });
+    r.chips = h('div', 'sm-chips fl-chips fl-addchips');
+    ADD_CHIPS.forEach(function (v) { var b = btn(null, '$' + v, function () { ADD.typed = String(v); r.amt.value = ADD.typed; ADD.err = ''; fillAdd(); scheduleQuote(0); }); b._v = v; r.chips.appendChild(b); });
+    r.ways = h('div', 'sm-ways'); r.ways.setAttribute('role', 'radiogroup'); r.ways.setAttribute('aria-label', 'Pay with');
+    r.way = {};
+    WAYS.forEach(function (w) {
+      var sub = h('i'), b = btn('sm-pick', [h('span', 'sm-radio'), h('span', 'sm-t', [h('b', null, w.title), sub])], function () {
+        if (w.key === 'hype' && hypeSpare() === 0n) return;
+        ADD.way = w.key; ADD.err = ''; fillAdd(); scheduleQuote(0);
+      });
+      b.setAttribute('role', 'radio'); r.way[w.key] = { n: b, sub: sub }; r.ways.appendChild(b);
+    });
+    r.net = h('div', 'sm-seg2 is-net'); r.net.setAttribute('role', 'group'); r.net.setAttribute('aria-label', 'Network');
+    [0, 1, 2].forEach(function (i) { var b = btn(null, '', function () { ADD.net[ADD.way] = i; ADD.err = ''; fillAdd(); scheduleQuote(0); }); r.net.appendChild(b); });
+    r.ref = h('input', 'sm-field'); r.ref.type = 'text'; r.ref.maxLength = 90; r.ref.setAttribute('autocomplete', 'off'); r.ref.setAttribute('autocapitalize', 'off'); r.ref.setAttribute('spellcheck', 'false'); r.ref.setAttribute('aria-label', 'Refund address');
+    r.ref.addEventListener('input', function () { var k = addKind(); if (k !== 'tron' && k !== 'btc') return; ADD.refund[k] = r.ref.value.trim(); ADD.err = ''; fillAdd(); scheduleQuote(700); });
+    r.refLab = h('p', 'sm-fine', ''); r.refBox = h('div', 'sm-refbox', [r.refLab, r.ref]);
+    r.get = h('span', 'is-go', ''); r.cost = h('span', null, ''); r.costLab = h('span', null, ''); r.eta = h('span', null, '');
+    r.sum = h('div', 'sm-sum', [h('div', 'sm-sumrow', [h('span', null, 'Lands in your wallet'), r.get]), h('div', 'sm-sumrow', [r.costLab, r.cost]), h('div', 'sm-sumrow', [h('span', null, 'Ready in'), r.eta])]);
+    r.fine = h('p', 'sm-fine', ''); r.say = h('p', 'sm-say fl-addsay', ''); r.say.setAttribute('role', 'status');
+    add(sh.body, [h('div', 'sm-label', 'Amount'), h('label', 'sm-amt is-mid', [h('span', null, '$'), r.amt]), r.chips, h('div', 'sm-label', 'Pay with'), r.ways, r.net, r.refBox, r.sum, r.fine]);
+    r.go = btn('sm-btn is-primary', '', addGo);
+    add(sh.foot, [r.say, r.go]);
+  }
+  function fillAdd() {
+    var r = ADD.R; if (!r || !r.go || ADD.view !== 'form') return;
+    var w = addWay(), k = addKind(), usdAmt = addUsd(), q = ADD.q && ADD.q.key === addKey() ? ADD.q : null, spare = hypeSpare(), min = addMin(), busy = ADD.busy;
+    Array.prototype.forEach.call(r.chips.children, function (b) { b.setAttribute('aria-pressed', Math.abs(b._v - usdAmt) < 0.005 ? 'true' : 'false'); });
+    WAYS.forEach(function (x) {
+      var n = r.way[x.key], on = x.key === ADD.way, off = x.key === 'hype' && spare === 0n;
+      n.n.setAttribute('aria-checked', on ? 'true' : 'false'); n.n.classList.toggle('is-off', off); n.n.disabled = !!busy && busy !== 'quote';
+      txt(n.sub, x.key !== 'hype' ? x.sub : S.hype == null ? 'one confirmation' : off ? 'This wallet has none to spare' : 'You hold ' + hypeText(S.hype) + ' HYPE. One confirmation.');
+    });
+    show(r.net, !!(w.kinds && w.kinds.length > 1));
+    if (w.kinds && w.kinds.length > 1) Array.prototype.forEach.call(r.net.children, function (b, i) { txt(b, AK[w.kinds[i]].name); b.setAttribute('aria-pressed', (ADD.net[w.key] || 0) === i ? 'true' : 'false'); });
+    var ref = k === 'tron' || k === 'btc';
+    show(r.refBox, ref);
+    if (ref) {
+      txt(r.refLab, k === 'tron' ? 'Your own USDT address on Tron: if a payment cannot be added, it goes back there.' : 'Paying from an exchange? Type a Bitcoin address of your own for a refund. From your own wallet, leave this empty.');
+      r.ref.placeholder = k === 'tron' ? 'T…' : 'bc1… (optional)';
+      if (r.ref._k !== k) { r.ref._k = k; r.ref.value = ADD.refund[k] || ''; }
+      r.ref.classList.toggle('is-bad', !!refundOf(k) && !refundOk(k));
+    }
+    var K = k ? AK[k] : null;
+    txt(r.get, q ? 'about ' + usd(q.net) : '—');
+    txt(r.costLab, k ? 'You send' : 'It costs');
+    txt(r.cost, q ? (k ? coinS(q.amt, K.dec) + ' ' + K.sym : hypeText(q.payWei) + ' HYPE') : '—');
+    txt(r.eta, k ? K.eta + ' after you pay' : 'a few seconds');
+    txt(r.fine, k ? 'You get an address' + (K.sym === 'HYPE' ? '' : ' on ' + K.name) + ' to send ' + K.sym + ' to, from an exchange or any wallet. It arrives as USDC in your wallet ' + short(S.account) + (q && q.top ? ', with a little HYPE for your flips.' : '.')
+      : 'Your HYPE is swapped for USDC in one transaction, and the USDC stays in your wallet. ' + hypeText(HYPE_KEEP) + ' HYPE is always left for your flips.');
+    var label, dis = false, sayText = ADD.err, tooMuch = !k && q && spare != null && q.payWei > spare;
+    if (busy === 'wallet') { label = 'Confirm in your wallet…'; dis = true; }
+    else if (busy === 'sending') { label = 'Adding…'; dis = true; }
+    else if (!(usdAmt > 0)) { label = 'Type an amount'; dis = true; }
+    else if (usdAmt < min) { label = 'The least is ' + usdShort(min); dis = true; }
+    else if (usdAmt > 5000) { label = 'The most is $5,000'; dis = true; }
+    else if (k && !refundOk(k)) { label = refundOf(k) ? 'Check the refund address' : 'Type your refund address'; dis = true; }
+    else if (busy === 'quote') { label = 'One moment…'; dis = true; }
+    else if (tooMuch) { label = 'Not enough HYPE'; dis = true; sayText = 'Your wallet can spare ' + hypeText(spare) + ' HYPE. Try a smaller amount, or pay another way.'; }
+    else if (ADD.err || !q) { label = 'Try again'; }
+    else if (!S.chainOk && !k) { label = 'Switch to HyperEVM'; }
+    else label = k ? 'Show the address' : 'Add ' + usd(q.net) + ' with HYPE';
+    txt(r.go, label); r.go.disabled = dis; r.go.classList.toggle('is-busy', busy === 'wallet' || busy === 'sending' || busy === 'quote');
+    txt(r.say, sayText); r.say.classList.toggle('is-bad', !!sayText);
+  }
+  function addGo() {
+    var k = addKind();
+    if (ADD.busy) return;
+    if (ADD.err || !ADD.q || ADD.q.key !== addKey()) { ADD.err = ''; scheduleQuote(0); return; }
+    if (k) { startPay(); return; }
+    payHype();
+  }
+  function payHype() {
+    var acct = S.account;
+    ADD.busy = 'wallet'; ADD.err = ''; fillAdd();
+    (S.chainOk ? Promise.resolve() : switchChain()).then(function () { return Promise.all([freshQuote(), readWallet()]); }).then(function (x) {
+      var q = x[0], spare = hypeSpare();
+      if (!q || q.rail !== 'hype') throw plain(ADD.err || 'There is no price for that right now. Try again in a minute.');
+      if (acct !== S.account) throw plain('The wallet changed. Nothing was sent.');
+      if (spare != null && q.payWei > spare) throw plain('Your wallet can spare ' + hypeText(spare) + ' HYPE. Try a smaller amount.');
+      ADD.busy = 'wallet'; fillAdd();
+      return new E.BrowserProvider(S.eth).getSigner().then(function (s) {
+        var tx = { to: q.to, data: q.data, value: q.payWei };
+        if (q.gas > 0n) tx.gasLimit = q.gas * 13n / 10n;
+        return s.sendTransaction(tx);
+      }).then(function (tx) { ADD.busy = 'sending'; fillAdd(); return tx.wait(); }).then(function (rc) {
+        if (!rc || rc.status !== 1) throw plain('That did not go through. Nothing was taken but the network fee.');
+        return readWallet().then(function () { rebase(); addDone(usd(q.net) + ' is in your wallet. Ready to flip.', true); });
+      });
+    }).catch(function (e) { ADD.busy = ''; ADD.err = e && e.plain ? e.message : describe(e); fillAdd(); });
+  }
+  function startPay() {
+    var q = ADD.q, k = AK[q.kind];
+    ADD.pend = { kind: q.kind, addr: q.addr, id: q.id, amt: coinS(q.amt, k.dec), net: q.net, refund: q.refund, top: q.top, since: Date.now(), usdc0: S.bal, bal1: S.bal, seen: 0, state: 'waiting' };
+    savePend(); ADD.q = null; ADD.view = 'pay'; paintAdd(); paintForm(); trackAdd();
+  }
+  function step(box) { var s = { n: h('div', 'sm-st'), m: h('span', 'sm-m', '✓'), b: h('b'), i: h('i') }; add(s.n, [s.m, h('span', null, [s.b, s.i])]); box.appendChild(s.n); return s; }
+  function setStep(s, state, b, i) { s.n.className = 'sm-st is-' + state; txt(s.b, b); txt(s.i, i); }
+  function buildPay() {
+    var sh = ADD.sh, r = ADD.R, p = ADD.pend, k = AK[p.kind], box = h('div', 'sm-steps is-tight');
+    txt(sh.title, 'Send ' + (k.sym === 'BTC' ? 'Bitcoin' : k.sym) + (k.sym === 'HYPE' || k.sym === 'BTC' ? '' : ' on ' + k.name));
+    r.cAmt = btn('sm-copy', 'Copy', function () { copyText(p.amt, r.cAmt); }); r.cAmt.setAttribute('aria-label', 'Copy the amount');
+    r.qr = h('canvas', 'sm-qr'); r.qr.setAttribute('role', 'img'); r.qr.setAttribute('aria-label', 'QR code of the address');
+    drawQr(r.qr, p.kind === 'btc' ? 'bitcoin:' + p.addr + '?amount=' + p.amt : p.addr);
+    r.s = [step(box), step(box), step(box)];
+    r.fine = h('p', 'sm-fine', '');
+    r.stop = btn('sm-link', 'Cancel: I have not paid', function () { dropPend(); ADD.view = 'form'; paintAdd(); paintForm(); scheduleQuote(0); });
+    add(sh.body, [h('div', 'sm-label', 'Send'), h('div', 'sm-payrow', [h('div', 'sm-big is-mid sm-payamt', [p.amt, h('small', null, ' ' + k.sym)]), r.cAmt]),
+      h('div', 'sm-label', 'To this address' + (k.sym === 'BTC' ? '' : ', on ' + k.name)), h('div', 'sm-addr', p.addr), r.qr, box, r.fine, h('div', 'sm-links', [r.stop])]);
+    r.go = btn('sm-btn is-primary', 'Copy address', function () { copyText(p.addr, r.go); });
+    add(sh.foot, r.go);
+    sh.body.scrollTop = 0;
+  }
+  function fillPay() {
+    var r = ADD.R, p = ADD.pend; if (!p || !r || !r.s) return;
+    var k = AK[p.kind], seen = !!p.seen, failed = p.state === 'failed';
+    var back = p.refund ? 'your address …' + p.refund.slice(-4) : k.evm ? 'your wallet ' + short(S.account) + ' on ' + k.name : 'the wallet that paid';
+    setStep(r.s[0], seen ? 'done' : 'now', seen ? 'Payment seen' : 'Waiting for your payment', seen ? 'It is on the ' + k.name + ' network' : 'Pay from ' + (p.kind === 'btc' && !p.refund ? 'a Bitcoin wallet of your own' : 'an exchange or any wallet') + '. This page sees it by itself.');
+    setStep(r.s[1], seen ? 'now' : 'later', k.name + ' confirms it', failed ? 'This one has not gone through yet. The page keeps looking.' : seen ? 'Arriving in your wallet…' : 'Usually ' + k.eta + ' after you pay');
+    setStep(r.s[2], 'later', 'About ' + usd(p.net) + ' of USDC lands in your wallet ' + short(S.account), p.top ? 'With a little HYPE for your flips. Then flip.' : 'Then flip.');
+    txt(r.fine, 'Any amount works: you get what it is worth when it arrives. A payment too small to send on goes back to ' + back + ', less what sending it back costs.'
+      + (p.kind === 'btc' && !p.refund ? ' Do not pay this one from an exchange: a payment from an exchange that cannot be added is not sent back by itself.' : '') + ' You can close this: the page shows it when it lands.');
+    show(r.stop, !seen);
+  }
+
   /* ---- the one key ---- */
   function press() {
     if (S.phase !== 'idle' && S.phase !== 'landed') return;
@@ -742,7 +1128,9 @@
     if (!S.demo && !S.chainOk) { S.phase = 'wallet'; say(''); paint(); switchChain().catch(function (e) { say(describe(e)); }).then(function () { S.phase = 'idle'; paint(); }); return; }
     if (S.pending && !S.demo) { if (now() >= S.pending.at + S.refundDelay) refund(); return; }
     S.touched = true;
-    if (problem()) { paint(); return; }
+    var pr = problem();
+    if (pr && pr.add) { openAdd(); return; }
+    if (pr) { paint(); return; }
     S.last = null;
     if (S.demo) demoFlip(); else liveFlip();
   }

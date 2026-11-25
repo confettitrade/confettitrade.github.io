@@ -168,6 +168,19 @@
   :is(.sm-root, .sm-sheet) .fl-wallets button { justify-content: flex-start; gap: 12px; }
   .fl-wallets button i { margin-left: auto; }
   dialog.sm-sheet.fl-sheet { max-width: 520px; margin: 0 auto; }
+  :is(.sm-root, .sm-sheet) .fl-wallets a { justify-content: flex-start; gap: 12px; }
+  .fl-wallets a i { margin-left: auto; }
+
+  /* ---- Add money (Simple's own form: its rows, its steps, its address box) ---------- */
+  .fl-addkey { margin-left: 2px; font-weight: 600; }
+  #flAddAmount { font-size: inherit !important; }
+  .fl-addchips { margin-bottom: 14px; }
+  .fl-sheet .sm-pick.is-off { opacity: 0.5; }
+  .fl-sheet .sm-field.is-bad { border-color: var(--neg); box-shadow: 0 0 0 1px var(--neg); }
+  .fl-sheet .sm-refbox { margin-top: 8px; }
+  .fl-sheet .sm-sum { margin-top: 12px; }
+  .fl-addsay { margin: 0 0 8px; min-height: 0; }
+  .fl-addsay:empty { display: none; }
 
   /* ---- short and narrow phones: everything a flip needs stays on one screen. The coin gives way first, then the
      gaps, then the name over the two sides (the keys say it themselves; a screen reader still hears it). ------------ */
