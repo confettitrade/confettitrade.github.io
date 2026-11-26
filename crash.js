@@ -782,7 +782,12 @@
     else if (S.auto) {
       var stake6 = to6(S.usd), cap = S.maxWin6 == null ? 1e15 : M.capX100(stake6, S.maxWin6), x = Math.min(S.auto, cap), pay = payCents(stake6, x) / 100;
       add(w, ['Pays ', h('b', null, usd(pay)), ' if it reaches ' + xs(x) + ': ', h('b', null, '+' + usd(pay - S.usd)), x < S.auto ? ' (the most one bet may win)' : '.']);
-    } else add(w, 'No auto cash out: you press before it crashes.');
+    } else {
+      /* the profit cap is a ceiling too: say where THIS bet is cashed out for its player, so it never reads as a stuck auto key */
+      var capS = to6(S.usd), capX = S.maxWin6 == null ? 1e15 : M.capX100(capS, S.maxWin6);
+      if (capX <= 5000) add(w, ['Cashes out for you at ', h('b', null, xs(capX)), ': a bet wins ' + usdShort(S.maxWin6 / 1e6) + ' at most.']);
+      else add(w, 'No auto cash out: you press before it crashes.');
+    }
     txt(el.everyHint, S.every ? 'On: ' + usdShort(S.usd) + ' goes in as every round opens.' : 'Off: one bet for each press.');
     var wl = el.wallet; wl.textContent = '';
     if (S.demo && !S.walk) add(wl, S.bal != null ? ['Your demo wallet holds ', h('b', null, usd(S.bal)), ' of pretend money.'] : 'Pretend money.');
@@ -854,7 +859,7 @@
     if (!S.cfg) return;
     var my = S.my && S.my.round === S.round ? S.my : null, s = S.say, text = '', cls = '', share = false, L = S.last;
     if (s) { text = s.text; cls = s.ok ? 'is-ok' : 'is-bad'; }
-    else if (my && my.state === 'out') { text = perf() - my.outAt < SAID_WON ? (L && L.settled ? 'It is in your wallet.' : 'Paid into your wallet as the round ends.') : 'Cashed out at ' + xs(my.outX) + ': +' + usd(my.win) + '. ' + (L && L.settled ? 'It is in your wallet.' : 'Paid as the round ends.'); cls = 'is-won'; share = my.outX >= 200; }
+    else if (my && my.state === 'out') { text = perf() - my.outAt < SAID_WON ? (L && L.settled ? 'It is in your wallet.' : 'Paid into your wallet as the round ends.') : (my.outX >= my.cap && !(my.auto && my.auto <= my.cap) ? 'Cashed out for you at ' : 'Cashed out at ') + xs(my.outX) + ': +' + usd(my.win) + (my.outX >= my.cap && !(my.auto && my.auto <= my.cap) ? ' (the most one bet can win)' : '') + '. ' + (L && L.settled ? 'It is in your wallet.' : 'Paid as the round ends.'); cls = 'is-won'; share = my.outX >= 200; }
     else if (my && my.state === 'pending') { text = 'Sent at ' + xs(my.sentX) + '.'; cls = 'is-ok'; }
     else if (my && (my.state === 'in' || my.state === 'sent') && S.phase === 'BETTING') { text = 'You are in this round: ' + usdShort(my.usd) + (my.auto ? ', auto cash out at ' + xs(my.auto) + '.' : '.'); cls = 'is-ok'; }
     else if (my && my.state === 'in' && S.phase === 'FLIGHT') { text = my.auto ? 'It cashes out by itself at ' + xs(my.auto) + ', or press sooner.' : ''; cls = 'is-ok'; }
