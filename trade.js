@@ -171,6 +171,7 @@
     v4DepositFactory: '0xe5bb8b4703787f428aaa6a3755add72b9c82fb75',
     v4CodeVaultFactory: '0x72955C3C315890dE44A3dF7bE6Bdc2FB8C69F27d',
     coinFlip: '0xF9702C710c7aa1df82f028339d9abd876b1E2555',      /* the coin flip's own contract (flip.html) */
+    crash: '0x20e83763CFbea848d62E15dd2895F62221257B0E',         /* the crash game's own contract (crash.html) */
     v5Exchange: '',
     v5ExchangeExt: '',
     v5Staking: '',

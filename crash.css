@@ -105,6 +105,8 @@
   .cr-b-auto:not(.is-on):not(.is-bad) > span { visibility: hidden; }
   .cr-form .sm-chips.cr-chips { margin: 8px 0 0; display: grid; gap: 8px; align-content: start; }
   .cr-c-amt { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* ten amounts: three a row, and the largest takes the whole last row */
+  .cr-c-amt > button:nth-child(10):last-child { grid-column: 1 / -1; }
   .cr-c-auto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cr-form .cr-chips button { height: 44px; padding: 0; font-size: 15px; font-variant-numeric: tabular-nums; }
   /* one line worked from the live numbers: what this bet does */
